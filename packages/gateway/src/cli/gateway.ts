@@ -16,6 +16,8 @@ import { TELEGRAM_WEBHOOK_PATH, type TelegramConfig } from "../telegram/config";
 import type { TelegramPlatform } from "../telegram/platform";
 import type { WhatsAppConfig } from "../whatsapp/config";
 import { authRoutes } from "../routes/public/auth.js";
+import { projectsRouter } from "../routes/api/projects.js";
+import { keysRouter } from "../routes/api/keys.js";
 
 const logger = createLogger("gateway-startup");
 
@@ -95,8 +97,12 @@ function setupServer(
 
   app.get("/ready", (c) => c.json({ ready: true }));
 
-  // Femrun auth routes (Google OAuth, session management)
+  // Femrun auth routes (Google OAuth, GitHub OAuth, session management)
   app.route("/api/auth", authRoutes);
+
+  // Femrun project and API key management
+  app.route("/api/projects", projectsRouter);
+  app.route("/api/keys", keysRouter);
 
   // Prometheus metrics endpoint
   app.get("/metrics", async (c) => {
