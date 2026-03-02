@@ -15,6 +15,7 @@ import type { SlackConfig } from "../slack";
 import { TELEGRAM_WEBHOOK_PATH, type TelegramConfig } from "../telegram/config";
 import type { TelegramPlatform } from "../telegram/platform";
 import type { WhatsAppConfig } from "../whatsapp/config";
+import { authRoutes } from "../routes/public/auth.js";
 
 const logger = createLogger("gateway-startup");
 
@@ -93,6 +94,9 @@ function setupServer(
   });
 
   app.get("/ready", (c) => c.json({ ready: true }));
+
+  // Femrun auth routes (Google OAuth, session management)
+  app.route("/api/auth", authRoutes);
 
   // Prometheus metrics endpoint
   app.get("/metrics", async (c) => {
