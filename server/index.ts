@@ -16,6 +16,7 @@ import {
   deleteTeamRoute,
   restartAgent,
 } from "./middleware.js"
+import { startTriagePoller, stopTriagePoller } from "./triage.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = 3001
@@ -54,6 +55,17 @@ app.post("/api/teams/:name/tasks", postTeamTask)
 app.patch("/api/teams/:name/tasks/:id", patchTeamTask)
 app.delete("/api/teams/:name/tasks/:id", deleteTeamTask)
 app.post("/api/teams/:name/agents/:agent/restart", restartAgent)
+
+// Triage poller control
+app.post("/api/teams/:name/triage/start", (req, res) => {
+  startTriagePoller(req.params.name)
+  res.json({ ok: true })
+})
+
+app.post("/api/teams/:name/triage/stop", (req, res) => {
+  stopTriagePoller(req.params.name)
+  res.json({ ok: true })
+})
 
 // Board config routes (lowdb-backed)
 app.get("/api/boards", (_req, res) => {

@@ -2,3 +2,5 @@ node_modules
 dist
 server/db.json
 *.log
+*.png
+.playwright-mcp/
