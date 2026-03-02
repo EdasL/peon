@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react"
 import { Loader2, Check, AlertCircle, Server, FolderCog, Users, Rocket } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import type { Project } from "@/lib/api"
 
 interface ProvisioningStep {
   label: string
@@ -14,9 +15,9 @@ const STEPS: ProvisioningStep[] = [
   { label: "Ready to go!", icon: <Rocket className="h-4 w-4" /> },
 ]
 
-const STEP_DELAYS = [3000, 6000, 0] // ms before auto-advancing to steps 1, 2, 3 (3 is SSE-driven)
+const STEP_DELAYS = [3000, 6000, 0]
 
-type Status = "creating" | "running" | "error"
+const SKIP_TIMEOUT_MS = 45_000
 
 export function ProvisioningOverlay({
   projectName,
@@ -25,15 +26,15 @@ export function ProvisioningOverlay({
   onBack,
 }: {
   projectName: string
-  status: Status
+  status: Project["status"]
   onReady: () => void
   onBack: () => void
 }) {
   const [activeStep, setActiveStep] = useState(0)
+  const [canSkip, setCanSkip] = useState(false)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   useEffect(() => {
-    // Auto-advance through the first few steps on timers
     let cumulative = 0
     for (let i = 0; i < STEP_DELAYS.length; i++) {
       const delay = STEP_DELAYS[i]
@@ -45,11 +46,15 @@ export function ProvisioningOverlay({
       }, cumulative)
       timersRef.current.push(timer)
     }
+
+    const skipTimer = setTimeout(() => setCanSkip(true), SKIP_TIMEOUT_MS)
+    timersRef.current.push(skipTimer)
+
     return () => timersRef.current.forEach(clearTimeout)
   }, [])
 
   useEffect(() => {
-    if (status === "running") {
+    if (status === "running" || status === "stopped") {
       setActiveStep(STEPS.length - 1)
       const timer = setTimeout(onReady, 1200)
       return () => clearTimeout(timer)
@@ -66,15 +71,14 @@ export function ProvisioningOverlay({
           <p className="text-sm text-muted-foreground">
             {isError
               ? "Something went wrong during setup"
-              : "This usually takes 15–30 seconds"}
+              : "This usually takes 15\u201330 seconds"}
           </p>
         </div>
 
         <div className="space-y-4">
           {STEPS.map((step, i) => {
             const isActive = i === activeStep && !isError
-            const isComplete = i < activeStep || (i === STEPS.length - 1 && status === "running")
-            const isPending = i > activeStep
+            const isComplete = i < activeStep || (i === STEPS.length - 1 && (status === "running" || status === "stopped"))
 
             return (
               <div
@@ -131,6 +135,17 @@ export function ProvisioningOverlay({
                 </Button>
               </div>
             </div>
+          </div>
+        )}
+
+        {canSkip && !isError && status === "creating" && (
+          <div className="mt-6 text-center">
+            <p className="text-xs text-muted-foreground mb-2">
+              Taking longer than expected?
+            </p>
+            <Button variant="ghost" size="sm" onClick={onReady}>
+              Continue to project
+            </Button>
           </div>
         )}
       </div>
