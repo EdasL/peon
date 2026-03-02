@@ -1,6 +1,8 @@
 node_modules
 dist
-server/db.json
+.env
 *.log
 *.png
 .playwright-mcp/
+server/db.json
+bun.lock

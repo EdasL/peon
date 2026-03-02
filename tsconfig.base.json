@@ -1,0 +1,47 @@
+{
+  "compilerOptions": {
+    // Environment setup & latest features
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+
+    // Bundler mode (Bun-specific)
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+
+    // Some stricter flags
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noPropertyAccessFromIndexSignature": false,
+
+    // Workspace module resolution
+    "baseUrl": ".",
+    "paths": {
+      "@lobu/core": ["packages/core/src/index.ts"],
+      "@lobu/core/*": ["packages/core/src/*"],
+      "@lobu/gateway": ["packages/gateway/src/index.ts"],
+      "@lobu/gateway/*": ["packages/gateway/src/*"],
+      "@lobu/worker": ["packages/worker/src/index.ts"],
+      "@lobu/worker/*": ["packages/worker/src/*"]
+    }
+  },
+  "include": ["packages/*/src/**/*", "src/**/*", "test/**/*"],
+  "exclude": [
+    "node_modules",
+    "packages/*/src/__tests__/**/*",
+    "packages/landing/**/*",
+    "packages/gateway/src/routes/public/settings-page/**/*",
+    "packages/gateway/src/routes/public/history-page/**/*"
+  ]
+}

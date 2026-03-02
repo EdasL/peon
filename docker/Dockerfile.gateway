@@ -1,0 +1,45 @@
+FROM node:20-alpine
+
+# Install bun for fast dependency installation, docker-cli for runtime
+RUN apk add --no-cache curl bash docker-cli && \
+    curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash && \
+    chmod +x /usr/local/bin/bun
+ENV PATH="/usr/local/bin:${PATH}"
+
+WORKDIR /app
+
+# Set up workspace for gateway + core
+COPY tsconfig.json ./
+RUN echo '{ "name": "@lobu/gateway-build", "private": true, "workspaces": [ "packages/core", "packages/gateway" ] }' > package.json
+COPY packages/core/package.json ./packages/core/
+COPY packages/gateway/package.json ./packages/gateway/
+
+# Install dependencies with Bun (faster than npm)
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install || true
+
+# Copy source code
+COPY packages/core/ ./packages/core/
+COPY packages/gateway/ ./packages/gateway/
+# Copy CLI's mcp-servers.json (referenced by gateway's mcp-registry)
+COPY packages/cli/src/mcp-servers.json ./packages/cli/src/mcp-servers.json
+
+# Build core package dist (used by Node.js in production, Bun uses src/ via conditional exports)
+WORKDIR /app/packages/core
+RUN bun run build
+
+# Generate Tailwind CSS for settings page
+WORKDIR /app/packages/gateway
+RUN bun run generate:css
+
+WORKDIR /app
+
+# Runtime configuration
+ENV NODE_ENV=production
+EXPOSE 3000
+
+# Fix permissions for non-root K8s execution (user 1001)
+RUN chmod -R a+rX /app
+
+# Run with bun for TypeScript support and hot reload in dev
+ENTRYPOINT []
+CMD ["bun", "--watch", "packages/gateway/src/index.ts"]

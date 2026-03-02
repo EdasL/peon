@@ -1,0 +1,152 @@
+import type { ClaudeCredentials } from "../claude/credential-store";
+import { BaseOAuth2Client } from "./base-client";
+import { CLAUDE_PROVIDER, type OAuthProviderConfig } from "./providers";
+
+interface ClaudeTokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  token_type?: string;
+  expires_in: number;
+  scope?: string;
+}
+
+/**
+ * Claude-specific OAuth client using config-driven approach
+ * Extends BaseOAuth2Client with Claude provider configuration
+ *
+ * Features:
+ * - PKCE support (RFC 7636) for public client security
+ * - Browser-like headers for anti-bot protection
+ * - Configurable via OAUTH_PROVIDERS registry
+ */
+export class ClaudeOAuthClient extends BaseOAuth2Client {
+  private config: OAuthProviderConfig;
+
+  constructor(customConfig?: Partial<OAuthProviderConfig>) {
+    super("claude-oauth-client");
+    // Use provider config with optional overrides
+    this.config = { ...CLAUDE_PROVIDER, ...customConfig };
+  }
+
+  /**
+   * Build authorization URL with PKCE parameters
+   */
+  buildAuthUrl(
+    state: string,
+    codeVerifier: string,
+    customRedirectUri?: string
+  ): string {
+    const codeChallenge = this.generateCodeChallenge(codeVerifier);
+    const redirectUri = customRedirectUri || this.config.redirectUri;
+
+    const url = new URL(this.config.authUrl);
+    url.searchParams.set("client_id", this.config.clientId);
+    url.searchParams.set("redirect_uri", redirectUri);
+    url.searchParams.set("response_type", this.config.responseType || "code");
+    url.searchParams.set("state", state);
+    url.searchParams.set("scope", this.config.scope);
+    url.searchParams.set("code_challenge", codeChallenge);
+    url.searchParams.set("code_challenge_method", "S256");
+
+    return url.toString();
+  }
+
+  /**
+   * Exchange authorization code for access token using PKCE
+   */
+  async exchangeCodeForToken(
+    code: string,
+    codeVerifier: string,
+    customRedirectUri?: string,
+    state?: string
+  ): Promise<ClaudeCredentials> {
+    const redirectUri = customRedirectUri || this.config.redirectUri;
+
+    const body: Record<string, string> = {
+      grant_type: this.config.grantType || "authorization_code",
+      client_id: this.config.clientId,
+      code,
+      redirect_uri: redirectUri,
+      code_verifier: codeVerifier,
+    };
+
+    // Include state if provided (required by Claude OAuth)
+    if (state) {
+      body.state = state;
+    }
+
+    // Add provider-specific custom headers
+    const tokenData = await this.exchangeToken<ClaudeTokenResponse>(
+      this.config.tokenUrl,
+      body,
+      "json",
+      this.config.customHeaders
+    );
+
+    const credentials = this.buildCredentials(tokenData);
+    this.logger.info(
+      `Token exchange successful, expires_in: ${tokenData.expires_in}s`,
+      { scopes: credentials.scopes }
+    );
+
+    return credentials;
+  }
+
+  /**
+   * Refresh access token using refresh token
+   * Uses generic refresh method from base client with Claude-specific config
+   */
+  async refreshToken(refreshToken: string): Promise<ClaudeCredentials> {
+    const tokenData = await this.refreshTokenWithConfig<ClaudeTokenResponse>(
+      this.config.tokenUrl,
+      this.config.clientId,
+      refreshToken,
+      {
+        customHeaders: this.config.customHeaders,
+        contentType: "json",
+        tokenEndpointAuthMethod: this.config.tokenEndpointAuthMethod,
+      }
+    );
+
+    const credentials = this.buildCredentials(tokenData, refreshToken);
+    this.logger.info(
+      `Token refresh successful, expires_in: ${tokenData.expires_in}s`
+    );
+
+    return credentials;
+  }
+
+  private buildCredentials(
+    tokenData: {
+      access_token: string;
+      refresh_token?: string;
+      token_type?: string;
+      expires_in: number;
+      scope?: string;
+    },
+    fallbackRefreshToken?: string
+  ): ClaudeCredentials {
+    const expiresAt = this.calculateExpiresAt(tokenData.expires_in)!;
+    const scopes = this.parseScopes(tokenData.scope);
+    const refreshToken = tokenData.refresh_token ?? fallbackRefreshToken;
+
+    if (!refreshToken) {
+      throw new Error("Claude OAuth response missing refresh token");
+    }
+
+    return {
+      accessToken: tokenData.access_token,
+      refreshToken,
+      tokenType: tokenData.token_type || "Bearer",
+      expiresAt,
+      scopes,
+    };
+  }
+
+  /**
+   * Get the provider configuration (useful for debugging)
+   */
+  getConfig(): OAuthProviderConfig {
+    return { ...this.config };
+  }
+}

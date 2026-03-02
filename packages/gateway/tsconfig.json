@@ -1,0 +1,32 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "verbatimModuleSyntax": false,
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "downlevelIteration": true,
+    "target": "ES2017",
+    "skipLibCheck": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "composite": true
+  },
+  "include": ["src/**/*", "../core/src/deployment/base-deployment-manager.ts"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "**/*.test.ts",
+    "**/__tests__/**",
+    "src/routes/public/history-page/**/*.tsx",
+    "src/routes/public/settings-page/**/*.tsx"
+  ],
+  "references": [{ "path": "../core" }]
+}

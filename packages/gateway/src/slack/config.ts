@@ -1,0 +1,144 @@
+/**
+ * Slack-specific configuration and constants
+ */
+
+import {
+  type AgentOptions as CoreAgentOptions,
+  getOptionalEnv,
+  getOptionalNumber,
+} from "@lobu/core";
+import type { LogLevel } from "@slack/bolt";
+
+// ============================================================================
+// Defaults
+// ============================================================================
+
+const SLACK_DEFAULTS = {
+  HTTP_PORT: 3000,
+  SLACK_API_URL: "https://slack.com/api",
+} as const;
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+export const SLACK = {
+  /** Maximum number of blocks in a Slack message */
+  MAX_BLOCKS: 50,
+  /** Maximum characters per block text */
+  MAX_BLOCK_TEXT_LENGTH: 3000,
+} as const;
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export type AgentOptions = CoreAgentOptions;
+
+export interface SlackConfig {
+  token: string;
+  appToken?: string;
+  signingSecret?: string;
+  socketMode: boolean;
+  port: number;
+  botUserId?: string;
+  botId?: string;
+  apiUrl: string;
+  clientId?: string;
+  clientSecret?: string;
+}
+
+/**
+ * Platform-agnostic configuration needed by Slack platform
+ */
+export interface SlackPlatformConfig {
+  slack: SlackConfig;
+  logLevel: LogLevel;
+  health: {
+    checkIntervalMs: number;
+    staleThresholdMs: number;
+    protectActiveWorkers: boolean;
+  };
+}
+
+/**
+ * Message handler configuration
+ */
+export interface MessageHandlerConfig {
+  slack: SlackConfig;
+  agentOptions: AgentOptions;
+  sessionTimeoutMinutes: number;
+}
+
+// ============================================================================
+// Configuration Builder
+// ============================================================================
+
+/**
+ * Build Slack-specific configuration from environment variables
+ * Returns null if neither SLACK_BOT_TOKEN nor SLACK_CLIENT_ID is set (Slack disabled)
+ */
+export function buildSlackConfig(): SlackConfig | null {
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  const clientId = process.env.SLACK_CLIENT_ID;
+  const clientSecret = process.env.SLACK_CLIENT_SECRET;
+
+  // Slack is enabled if we have a bot token OR OAuth client credentials
+  if (!botToken && !clientId) {
+    return null;
+  }
+
+  // Use HTTP/webhooks when a public gateway URL is available (not localhost);
+  // fall back to Socket Mode for local development.
+  const publicUrl = process.env.PUBLIC_GATEWAY_URL;
+  let socketMode = true;
+  if (publicUrl) {
+    try {
+      const host = new URL(publicUrl).hostname;
+      if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1") {
+        socketMode = false;
+      }
+    } catch {
+      // invalid URL, keep socket mode
+    }
+  }
+
+  return {
+    token: botToken || "",
+    appToken: process.env.SLACK_APP_TOKEN,
+    signingSecret: process.env.SLACK_SIGNING_SECRET,
+    socketMode,
+    port: getOptionalNumber("PORT", SLACK_DEFAULTS.HTTP_PORT),
+    botUserId: process.env.SLACK_BOT_USER_ID,
+    botId: undefined, // Will be set during initialization
+    apiUrl: getOptionalEnv("SLACK_API_URL", SLACK_DEFAULTS.SLACK_API_URL),
+    clientId,
+    clientSecret,
+  };
+}
+
+/**
+ * Display Slack configuration
+ */
+export function displaySlackConfig(
+  config: SlackConfig | null,
+  tokenPreviewLength = 10
+): void {
+  if (config) {
+    console.log("\nSlack:");
+    console.log(`  Mode: ${config.socketMode ? "Socket Mode" : "HTTP Mode"}`);
+    console.log(`  Port: ${config.port}`);
+    console.log(
+      `  Bot Token: ${config.token?.substring(0, tokenPreviewLength)}... (${config.token.length} chars)`
+    );
+    console.log(
+      `  App Token: ${config.appToken ? `${config.appToken.substring(0, tokenPreviewLength)}... (${config.appToken.length} chars)` : "not set"}`
+    );
+    console.log(`  API URL: ${config.apiUrl}`);
+    console.log(
+      `  OAuth Distribution: ${config.clientId ? `enabled (client_id: ${config.clientId.substring(0, 8)}...)` : "disabled"}`
+    );
+  } else {
+    console.log("\nSlack: disabled");
+  }
+}

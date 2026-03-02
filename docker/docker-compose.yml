@@ -1,0 +1,117 @@
+name: femrun
+
+services:
+  # Redis for queue and state management
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy noeviction --save 60 1 --dir /data
+    volumes:
+      - redis-data:/data
+    networks:
+      - lobu-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Build worker image that orchestrator will use
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+      args:
+        NODE_ENV: production
+    image: lobu-worker:latest
+    # This service only builds the image, doesn't run continuously
+    command: echo "Worker image built successfully"
+    profiles:
+      - build-only
+
+  # Postgres for user accounts and project metadata
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: femrun
+      POSTGRES_PASSWORD: femrun_dev
+      POSTGRES_DB: femrun
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - lobu-public
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U femrun"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gateway
+    image: lobu-gateway:latest
+    environment:
+      # Docker context overrides (gateway loads mounted .env file via dotenv)
+      NODE_ENV: development
+      DEPLOYMENT_MODE: docker
+      QUEUE_URL: redis://redis:6379
+      DATABASE_URL: postgresql://femrun:femrun_dev@postgres:5432/femrun
+      LOBU_MCP_SERVERS_URL: ${LOBU_MCP_SERVERS_URL:-examples/mcp/oauth.json}
+      # Host project path for worker bind mounts (Docker-in-Docker)
+      LOBU_DEV_PROJECT_PATH: ${PWD}
+    volumes:
+      # Mount Docker socket
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount .env so gateway can load it via dotenv (avoids ARG_MAX with large vars)
+      - ../.env:/app/.env:ro
+      # Mount MCP config for live editing
+      - ../examples:/app/examples:ro
+      # Mount source for hot reload (bun --watch detects changes)
+      - ../packages/core/src:/app/packages/core/src
+      - ../packages/gateway/src:/app/packages/gateway/src
+      # Mount worker source so spawned worker containers get latest code
+      - ../packages/worker/src:/app/packages/worker/src
+      - ../packages/worker/scripts:/app/packages/worker/scripts
+    ports:
+      - "8080:8080"
+      - "8118:8118" # HTTP proxy for workers
+    networks:
+      - lobu-public   # Internet access
+      - lobu-internal # Internal services (redis, workers)
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ../packages/gateway/src
+          target: /app/packages/gateway/src
+        - action: sync
+          path: ../packages/core/src
+          target: /app/packages/core/src
+        - action: rebuild
+          path: ../packages/gateway/package.json
+        - action: rebuild
+          path: ../packages/core/package.json
+
+volumes:
+  redis-data:
+  postgres_data:
+
+networks:
+  # Public network with internet access (gateway only)
+  lobu-public:
+    driver: bridge
+
+  # Internal network - no direct internet access
+  # Workers use this network and can only reach internet via gateway's proxy
+  lobu-internal:
+    internal: true
+    driver: bridge

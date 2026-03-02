@@ -1,20 +1,20 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@lobu/core": ["packages/core/src/index.ts"],
+      "@lobu/core/*": ["packages/core/src/*"],
+      "@lobu/gateway": ["packages/gateway/src/index.ts"],
+      "@lobu/gateway/*": ["packages/gateway/src/*"],
+      "@lobu/worker": ["packages/worker/src/index.ts"],
+      "@lobu/worker/*": ["packages/worker/src/*"]
     }
   },
-  "include": ["src", "server"]
+  "include": ["packages/*/src/**/*"],
+  "exclude": [
+    "node_modules",
+    "packages/web/**/*",
+    "packages/*/src/__tests__/**/*"
+  ]
 }
