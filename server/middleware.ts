@@ -6,6 +6,9 @@ import {
   createTask,
   updateTask,
   deleteTask,
+  createTeam,
+  deleteTeam,
+  spawnAgent,
 } from "./claude-files.js"
 
 type Handler = (req: Request, res: Response, next?: NextFunction) => void
@@ -84,5 +87,50 @@ export const deleteTeamTask: Handler = async (req, res) => {
     res.status(404).json({ error: `Task "${id}" not found in team "${name}"` })
     return
   }
+  res.json({ ok: true })
+}
+
+// POST /api/teams — create a new team
+export const postTeam: Handler = async (req, res) => {
+  const body = req.body
+  if (!body || !body.name || !body.cwd || !Array.isArray(body.agents)) {
+    res
+      .status(400)
+      .json({ error: "name, cwd, and agents[] are required" })
+    return
+  }
+  try {
+    const config = await createTeam(body)
+    res.status(201).json(config)
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create team" })
+  }
+}
+
+// DELETE /api/teams/:name — delete a team
+export const deleteTeamRoute: Handler = async (req, res) => {
+  const { name } = req.params
+  const ok = await deleteTeam(name)
+  if (!ok) {
+    res.status(500).json({ error: `Failed to delete team "${name}"` })
+    return
+  }
+  res.json({ ok: true })
+}
+
+// POST /api/teams/:name/agents/:agent/restart — restart a specific agent
+export const restartAgent: Handler = async (req, res) => {
+  const { name, agent } = req.params
+  const config = await readTeamConfig(name)
+  if (!config) {
+    res.status(404).json({ error: `Team "${name}" not found` })
+    return
+  }
+  const member = config.members.find((m) => m.name === agent)
+  if (!member) {
+    res.status(404).json({ error: `Agent "${agent}" not found in team "${name}"` })
+    return
+  }
+  spawnAgent(name, member.name, member.model, member.cwd)
   res.json({ ok: true })
 }

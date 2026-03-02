@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -8,11 +8,13 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core"
-import type { BoardColumn, BoardTask } from "../../../server/types"
+import type { BoardColumn, BoardTask, ClaudeTeamConfig } from "../../../server/types"
 import { useBoard } from "@/hooks/use-board"
+import { fetchTeamConfig } from "@/lib/api"
 import { COLUMNS } from "@/lib/state-machine"
 import { Column } from "./Column"
 import { DragOverlayCard } from "./DragOverlayCard"
+import { TeamSidebar } from "./TeamSidebar"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 
@@ -25,6 +27,11 @@ export function Board({ teamName, onBack }: BoardProps) {
   const { tasks, loading, error, addTask, moveTask, removeTask } =
     useBoard(teamName)
   const [activeTask, setActiveTask] = useState<BoardTask | null>(null)
+  const [teamConfig, setTeamConfig] = useState<ClaudeTeamConfig | null>(null)
+
+  useEffect(() => {
+    fetchTeamConfig(teamName).then(setTeamConfig).catch(() => {})
+  }, [teamName])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -75,31 +82,35 @@ export function Board({ teamName, onBack }: BoardProps) {
         )}
       </header>
 
-      {/* Board */}
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="flex-1 overflow-x-auto p-4">
-          <div className="grid h-full min-w-[1100px] grid-cols-5 gap-3">
-            {COLUMNS.map((col) => (
-              <Column
-                key={col.id}
-                id={col.id}
-                label={col.label}
-                tasks={tasksByColumn.get(col.id) ?? []}
-                onAddTask={col.id === "backlog" ? addTask : undefined}
-                onDeleteTask={removeTask}
-              />
-            ))}
+      {/* Board + Sidebar */}
+      <div className="flex flex-1 overflow-hidden">
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex-1 overflow-x-auto p-4">
+            <div className="grid h-full min-w-[1100px] grid-cols-5 gap-3">
+              {COLUMNS.map((col) => (
+                <Column
+                  key={col.id}
+                  id={col.id}
+                  label={col.label}
+                  tasks={tasksByColumn.get(col.id) ?? []}
+                  onAddTask={col.id === "backlog" ? addTask : undefined}
+                  onDeleteTask={removeTask}
+                />
+              ))}
+            </div>
           </div>
-        </div>
 
-        <DragOverlay dropAnimation={null}>
-          {activeTask ? <DragOverlayCard task={activeTask} /> : null}
-        </DragOverlay>
-      </DndContext>
+          <DragOverlay dropAnimation={null}>
+            {activeTask ? <DragOverlayCard task={activeTask} /> : null}
+          </DragOverlay>
+        </DndContext>
+
+        {teamConfig && <TeamSidebar team={teamConfig} />}
+      </div>
     </div>
   )
 }

@@ -1,5 +1,7 @@
+import { useState } from "react"
 import { useTeams } from "@/hooks/use-teams"
 import { TeamCard } from "@/components/TeamCard"
+import { CreateTeamDialog } from "@/components/CreateTeamDialog"
 import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
 
@@ -8,7 +10,8 @@ interface TeamsPageProps {
 }
 
 export function TeamsPage({ onSelectTeam }: TeamsPageProps) {
-  const { teams, loading, error } = useTeams()
+  const { teams, loading, error, refresh } = useTeams()
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   return (
     <div className="min-h-screen bg-background">
@@ -20,7 +23,7 @@ export function TeamsPage({ onSelectTeam }: TeamsPageProps) {
               Manage your agent teams and their Kanban boards
             </p>
           </div>
-          <Button disabled variant="outline">
+          <Button variant="outline" onClick={() => setDialogOpen(true)}>
             <Plus className="size-4" />
             New Team
           </Button>
@@ -64,6 +67,15 @@ export function TeamsPage({ onSelectTeam }: TeamsPageProps) {
           </div>
         )}
       </div>
+
+      <CreateTeamDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onCreated={(teamName) => {
+          refresh()
+          onSelectTeam(teamName)
+        }}
+      />
     </div>
   )
 }

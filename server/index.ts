@@ -12,6 +12,9 @@ import {
   postTeamTask,
   patchTeamTask,
   deleteTeamTask,
+  postTeam,
+  deleteTeamRoute,
+  restartAgent,
 } from "./middleware.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -43,11 +46,14 @@ app.use(json())
 
 // Custom Claude Code routes
 app.get("/api/teams", getTeams)
+app.post("/api/teams", postTeam)
 app.get("/api/teams/:name/config", getTeamConfig)
+app.delete("/api/teams/:name", deleteTeamRoute)
 app.get("/api/teams/:name/tasks", getTeamTasks)
 app.post("/api/teams/:name/tasks", postTeamTask)
 app.patch("/api/teams/:name/tasks/:id", patchTeamTask)
 app.delete("/api/teams/:name/tasks/:id", deleteTeamTask)
+app.post("/api/teams/:name/agents/:agent/restart", restartAgent)
 
 // Board config routes (lowdb-backed)
 app.get("/api/boards", (_req, res) => {
@@ -99,10 +105,13 @@ app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
   console.log(`Routes:`)
   console.log(`  GET    /api/teams`)
+  console.log(`  POST   /api/teams`)
   console.log(`  GET    /api/teams/:name/config`)
+  console.log(`  DELETE /api/teams/:name`)
   console.log(`  GET    /api/teams/:name/tasks`)
   console.log(`  POST   /api/teams/:name/tasks`)
   console.log(`  PATCH  /api/teams/:name/tasks/:id`)
   console.log(`  DELETE /api/teams/:name/tasks/:id`)
+  console.log(`  POST   /api/teams/:name/agents/:agent/restart`)
   console.log(`  CRUD   /api/boards`)
 })

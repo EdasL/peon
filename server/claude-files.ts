@@ -1,7 +1,8 @@
-import { readdir, readFile, writeFile, unlink, mkdir } from "node:fs/promises"
+import { readdir, readFile, writeFile, unlink, mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { homedir } from "node:os"
-import type { ClaudeTask, ClaudeTeamConfig } from "./types.js"
+import { exec } from "node:child_process"
+import type { ClaudeTask, ClaudeTeamConfig, ClaudeTeamMember } from "./types.js"
 
 const CLAUDE_DIR = join(homedir(), ".claude")
 const TEAMS_DIR = join(CLAUDE_DIR, "teams")
@@ -124,4 +125,112 @@ export async function deleteTask(
   } catch {
     return false
   }
+}
+
+// --- Team creation / deletion / agent spawning ---
+
+export interface CreateTeamInput {
+  name: string
+  description: string
+  cwd: string
+  agents: Array<{
+    name: string
+    agentType: string
+    model: string
+    color?: string
+    prompt?: string
+  }>
+}
+
+// Create a new team: config, inboxes, task dir, spawn agents
+export async function createTeam(input: CreateTeamInput): Promise<ClaudeTeamConfig> {
+  const now = Date.now()
+  const teamDir = join(TEAMS_DIR, input.name)
+  const inboxDir = join(teamDir, "inboxes")
+  const taskDir = join(TASKS_DIR, input.name)
+
+  // Create directories
+  await mkdir(inboxDir, { recursive: true })
+  await mkdir(taskDir, { recursive: true })
+
+  // Build members array: team-lead + agents
+  const members: ClaudeTeamMember[] = [
+    {
+      agentId: `team-lead@${input.name}`,
+      name: "team-lead",
+      agentType: "lead",
+      model: "claude-opus-4-6",
+      joinedAt: now,
+      tmuxPaneId: "",
+      cwd: input.cwd,
+      subscriptions: [],
+    },
+    ...input.agents.map((agent) => ({
+      agentId: `${agent.name}@${input.name}`,
+      name: agent.name,
+      agentType: agent.agentType,
+      model: agent.model,
+      color: agent.color,
+      prompt: agent.prompt,
+      planModeRequired: false,
+      joinedAt: now,
+      tmuxPaneId: "in-process",
+      cwd: input.cwd,
+      subscriptions: [],
+      backendType: "in-process" as const,
+    })),
+  ]
+
+  const config: ClaudeTeamConfig = {
+    name: input.name,
+    description: input.description,
+    createdAt: now,
+    leadAgentId: `team-lead@${input.name}`,
+    leadSessionId: "",
+    members,
+  }
+
+  // Write config.json
+  await writeFile(join(teamDir, "config.json"), JSON.stringify(config, null, 2))
+
+  // Create inbox files for each member
+  for (const member of members) {
+    await writeFile(join(inboxDir, `${member.name}.json`), "[]")
+  }
+
+  // Spawn agents (fire and forget)
+  for (const agent of input.agents) {
+    spawnAgent(input.name, agent.name, agent.model, input.cwd)
+  }
+
+  return config
+}
+
+// Delete a team and its task directory
+export async function deleteTeam(name: string): Promise<boolean> {
+  const teamDir = join(TEAMS_DIR, name)
+  const taskDir = join(TASKS_DIR, name)
+
+  try {
+    await rm(teamDir, { recursive: true, force: true })
+    await rm(taskDir, { recursive: true, force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Spawn a single Claude Code agent (fire and forget)
+export function spawnAgent(
+  teamName: string,
+  agentName: string,
+  model: string,
+  cwd: string
+): void {
+  const cmd = `claude --team ${teamName} --agent-name ${agentName} --model ${model} --cwd ${cwd} &`
+  exec(cmd, { cwd }, (error) => {
+    if (error) {
+      console.error(`Failed to spawn agent ${agentName}@${teamName}:`, error.message)
+    }
+  })
 }
