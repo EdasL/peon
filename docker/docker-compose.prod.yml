@@ -1,0 +1,79 @@
+name: femrun-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-femrun}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-femrun}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - lobu-public
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-femrun}"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - lobu-public
+      - lobu-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gateway
+    ports:
+      - "3000:3000"
+      - "8118:8118"
+    env_file: ../.env
+    environment:
+      QUEUE_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-femrun}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-femrun}
+      DEPLOYMENT_MODE: docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - lobu-public
+      - lobu-internal
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    image: lobu-worker:latest
+    profiles:
+      - build-only
+    networks:
+      - lobu-internal
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  lobu-public:
+    driver: bridge
+  lobu-internal:
+    driver: bridge
+    internal: true
