@@ -46,13 +46,15 @@ chatRouter.get("/:id/chat/stream", async (c) => {
     }, 30_000)
 
     // Cleanup on disconnect
+    let aborted = false
     stream.onAbort(() => {
+      aborted = true
       clearInterval(heartbeat)
       sseClients.get(projectId)?.delete(send)
     })
 
-    // Keep alive
-    while (true) {
+    // Keep alive until client disconnects
+    while (!aborted) {
       await new Promise((r) => setTimeout(r, 60_000))
     }
   })

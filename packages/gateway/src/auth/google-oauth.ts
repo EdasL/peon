@@ -79,12 +79,14 @@ export async function handleGoogleCallback(code: string): Promise<{ token: strin
       updatedAt: new Date(),
     }).where(eq(users.id, existing.id))
   } else {
-    const [newUser] = await db.insert(users).values({
+    const result = await db.insert(users).values({
       email: profile.email,
       name: profile.name,
       avatarUrl: profile.picture,
       googleId: profile.sub,
     }).returning()
+    const newUser = result[0]
+    if (!newUser) throw new Error("Failed to create user")
     userId = newUser.id
     isNew = true
   }

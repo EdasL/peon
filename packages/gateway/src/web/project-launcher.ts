@@ -57,10 +57,11 @@ export async function launchProject(config: LaunchConfig) {
   // })
   // await container.start()
 
-  // Update project status and deployment name
+  // Update project with deployment name — keep status as "creating" until container is actually running
+  // TODO: Set to "running" only after confirming Docker container is up
   await db.update(projects).set({
     deploymentName,
-    status: "running",
+    status: "creating",
     updatedAt: new Date(),
   }).where(eq(projects.id, config.projectId))
 

@@ -28,7 +28,7 @@ projectsRouter.post("/", async (c) => {
     templateId: string
   }>()
 
-  const [project] = await db.insert(projects).values({
+  const result = await db.insert(projects).values({
     userId: session.userId,
     name: body.name,
     repoUrl: body.repoUrl,
@@ -36,6 +36,8 @@ projectsRouter.post("/", async (c) => {
     templateId: body.templateId,
     status: "creating",
   }).returning()
+  const project = result[0]
+  if (!project) return c.json({ error: "Failed to create project" }, 500)
 
   // Launch container in background
   const apiKey = await getProjectApiKey(session.userId)
@@ -46,9 +48,9 @@ projectsRouter.post("/", async (c) => {
       repoUrl: body.repoUrl ?? null,
       templateId: body.templateId,
       apiKey,
-    }).catch((err) => {
+    }).catch(async (err) => {
       console.error(`Failed to launch project ${project.id}:`, err)
-      db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))
+      await db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))
     })
   }
 

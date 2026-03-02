@@ -7,12 +7,4 @@ export async function runMigrations() {
   console.log("Migrations complete.")
 }
 
-// Allow running directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  runMigrations()
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error("Migration failed:", err)
-      process.exit(1)
-    })
-}
+// Run directly via: bun run src/db/migrate.ts

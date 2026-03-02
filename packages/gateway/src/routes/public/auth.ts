@@ -1,8 +1,10 @@
 import { Hono } from "hono"
+import { getCookie } from "hono/cookie"
 import { getGoogleAuthUrl, handleGoogleCallback } from "../../auth/google-oauth.js"
 import { getGithubAuthUrl, handleGithubCallback, listUserRepos } from "../../auth/github-oauth.js"
 import { requireAuth, getSession } from "../../auth/middleware.js"
 import { verifySessionToken } from "../../auth/session.js"
+import { decrypt } from "../../services/encryption.js"
 import { db } from "../../db/connection.js"
 import { users } from "../../db/schema.js"
 import { eq } from "drizzle-orm"
@@ -40,12 +42,7 @@ auth.get("/google/callback", async (c) => {
 
 // GET /api/auth/me — get current user
 auth.get("/me", async (c) => {
-  const cookie = c.req.header("cookie")
-  const token = cookie
-    ?.split(";")
-    .find((c) => c.trim().startsWith("session="))
-    ?.split("=")[1]
-
+  const token = getCookie(c, "session")
   if (!token) return c.json({ user: null })
 
   try {
@@ -99,7 +96,7 @@ auth.get("/github/repos", requireAuth, async (c) => {
   if (!user?.githubAccessToken) {
     return c.json({ error: "GitHub not connected" }, 400)
   }
-  const repos = await listUserRepos(user.githubAccessToken)
+  const repos = await listUserRepos(decrypt(user.githubAccessToken))
   return c.json({ repos })
 })
 

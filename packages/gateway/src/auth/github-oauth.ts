@@ -1,6 +1,7 @@
 import { db } from "../db/connection.js"
 import { users } from "../db/schema.js"
 import { eq } from "drizzle-orm"
+import { encrypt, decrypt } from "../services/encryption.js"
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID!
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET!
@@ -36,7 +37,10 @@ export async function handleGithubCallback(
       redirect_uri: GITHUB_REDIRECT_URI,
     }),
   })
-  const tokenData = (await tokenRes.json()) as { access_token: string }
+  const tokenData = (await tokenRes.json()) as { access_token?: string; error?: string; error_description?: string }
+  if (!tokenData.access_token || tokenData.error) {
+    throw new Error(`GitHub token exchange failed: ${tokenData.error ?? "no access_token"} — ${tokenData.error_description ?? ""}`)
+  }
 
   // Get GitHub profile
   const profileRes = await fetch("https://api.github.com/user", {
@@ -44,10 +48,10 @@ export async function handleGithubCallback(
   })
   const profile = (await profileRes.json()) as { id: number; login: string }
 
-  // Store GitHub connection on user
+  // Store GitHub connection on user (encrypted)
   await db.update(users).set({
     githubId: String(profile.id),
-    githubAccessToken: tokenData.access_token,
+    githubAccessToken: encrypt(tokenData.access_token),
     updatedAt: new Date(),
   }).where(eq(users.id, userId))
 

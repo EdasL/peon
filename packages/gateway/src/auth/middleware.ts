@@ -1,13 +1,9 @@
 import type { Context, Next } from "hono"
+import { getCookie } from "hono/cookie"
 import { verifySessionToken, type SessionPayload } from "./session.js"
 
 export async function requireAuth(c: Context, next: Next) {
-  const cookie = c.req.header("cookie")
-  const token = cookie
-    ?.split(";")
-    .find((c) => c.trim().startsWith("session="))
-    ?.split("=")[1]
-
+  const token = getCookie(c, "session")
   if (!token) {
     return c.json({ error: "Unauthorized" }, 401)
   }
