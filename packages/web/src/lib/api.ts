@@ -38,23 +38,25 @@ export const sendChatMessage = (projectId: string, content: string) =>
   })
 
 // Legacy team APIs (for Board component compatibility)
-export async function fetchTeams(): Promise<unknown[]> {
-  return request<unknown[]>("/api/teams")
+import type { ClaudeTeamConfig, ClaudeTask } from "../../server/types"
+
+export async function fetchTeams(): Promise<ClaudeTeamConfig[]> {
+  return request<ClaudeTeamConfig[]>("/api/teams")
 }
 
-export async function fetchTeamConfig(name: string): Promise<unknown> {
-  return request<unknown>(`/api/teams/${name}/config`)
+export async function fetchTeamConfig(name: string): Promise<ClaudeTeamConfig> {
+  return request<ClaudeTeamConfig>(`/api/teams/${name}/config`)
 }
 
-export async function fetchTasks(name: string): Promise<unknown[]> {
-  return request<unknown[]>(`/api/teams/${name}/tasks`)
+export async function fetchTasks(name: string): Promise<ClaudeTask[]> {
+  return request<ClaudeTask[]>(`/api/teams/${name}/tasks`)
 }
 
 export async function createTask(
   name: string,
   data: { subject: string; description?: string }
-): Promise<unknown> {
-  return request<unknown>(`/api/teams/${name}/tasks`, {
+): Promise<ClaudeTask> {
+  return request<ClaudeTask>(`/api/teams/${name}/tasks`, {
     method: "POST",
     body: JSON.stringify(data),
   })
@@ -63,16 +65,16 @@ export async function createTask(
 export async function updateTask(
   name: string,
   id: string,
-  data: Record<string, unknown>
-): Promise<unknown> {
-  return request<unknown>(`/api/teams/${name}/tasks/${id}`, {
+  data: Partial<Pick<ClaudeTask, "status" | "owner">>
+): Promise<ClaudeTask> {
+  return request<ClaudeTask>(`/api/teams/${name}/tasks/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   })
 }
 
 export async function deleteTask(name: string, id: string): Promise<void> {
-  await request<unknown>(`/api/teams/${name}/tasks/${id}`, { method: "DELETE" })
+  await request<void>(`/api/teams/${name}/tasks/${id}`, { method: "DELETE" })
 }
 
 // Types
