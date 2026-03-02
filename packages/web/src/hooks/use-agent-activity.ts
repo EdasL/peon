@@ -1,0 +1,172 @@
+import { useState, useEffect, useRef, useCallback } from "react"
+import { fetchTasks } from "@/lib/api"
+import type { ClaudeTask } from "../../server/types"
+
+export type AgentStatus = "idle" | "working" | "error"
+
+export interface AgentState {
+  name: string
+  status: AgentStatus
+  currentTask: string | null
+  activeForm: string | null
+}
+
+export interface ActivityEvent {
+  id: string
+  timestamp: number
+  agentName: string
+  type: "started" | "completed" | "status_change" | "task_update"
+  taskSubject: string
+  detail?: string
+}
+
+const POLL_INTERVAL = 4000
+const MAX_FEED_EVENTS = 100
+
+function deriveAgentStatus(tasks: ClaudeTask[], agentName: string): AgentState {
+  const owned = tasks.filter((t) => t.owner === agentName)
+  const active = owned.find((t) => t.status === "in_progress")
+  if (active) {
+    return {
+      name: agentName,
+      status: "working",
+      currentTask: active.subject,
+      activeForm: active.activeForm ?? null,
+    }
+  }
+  return {
+    name: agentName,
+    status: "idle",
+    currentTask: null,
+    activeForm: null,
+  }
+}
+
+function extractAgents(tasks: ClaudeTask[]): string[] {
+  const names = new Set<string>()
+  for (const t of tasks) {
+    if (t.owner && t.owner !== "qa") names.add(t.owner)
+    if (t.owner === "qa") names.add("qa")
+  }
+  return Array.from(names)
+}
+
+export function useAgentActivity(projectId: string) {
+  const [tasks, setTasks] = useState<ClaudeTask[]>([])
+  const [agents, setAgents] = useState<AgentState[]>([])
+  const [feed, setFeed] = useState<ActivityEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const prevTasksRef = useRef<Map<string, ClaudeTask>>(new Map())
+  const eventSourceRef = useRef<EventSource | null>(null)
+
+  const addFeedEvent = useCallback((event: Omit<ActivityEvent, "id">) => {
+    const e: ActivityEvent = { ...event, id: `${Date.now()}-${Math.random()}` }
+    setFeed((prev) => [e, ...prev].slice(0, MAX_FEED_EVENTS))
+  }, [])
+
+  const processTasks = useCallback(
+    (incoming: ClaudeTask[]) => {
+      const prev = prevTasksRef.current
+
+      for (const task of incoming) {
+        const old = prev.get(task.id)
+        const agentName = task.owner ?? "team-lead"
+
+        if (!old) {
+          // New task appeared
+          if (task.status === "in_progress") {
+            addFeedEvent({
+              timestamp: Date.now(),
+              agentName,
+              type: "started",
+              taskSubject: task.subject,
+            })
+          }
+        } else {
+          // Existing task changed
+          if (old.status !== task.status) {
+            if (task.status === "in_progress") {
+              addFeedEvent({
+                timestamp: Date.now(),
+                agentName,
+                type: "started",
+                taskSubject: task.subject,
+              })
+            } else if (task.status === "completed" && old.status === "in_progress") {
+              addFeedEvent({
+                timestamp: Date.now(),
+                agentName,
+                type: "completed",
+                taskSubject: task.subject,
+              })
+            }
+          } else if (old.owner !== task.owner && task.owner) {
+            addFeedEvent({
+              timestamp: Date.now(),
+              agentName: task.owner,
+              type: "task_update",
+              taskSubject: task.subject,
+              detail: `assigned to ${task.owner}`,
+            })
+          }
+        }
+      }
+
+      // Update prev map
+      const nextMap = new Map<string, ClaudeTask>()
+      for (const t of incoming) nextMap.set(t.id, t)
+      prevTasksRef.current = nextMap
+
+      setTasks(incoming)
+
+      // Derive agent states
+      const agentNames = extractAgents(incoming)
+      // Always include team-lead if there are in_progress tasks without explicit owner
+      const hasLeadWork = incoming.some((t) => !t.owner && t.status === "in_progress")
+      if (hasLeadWork && !agentNames.includes("team-lead")) agentNames.unshift("team-lead")
+
+      const agentStates = agentNames.map((name) => deriveAgentStatus(incoming, name))
+      setAgents(agentStates)
+    },
+    [addFeedEvent]
+  )
+
+  const refresh = useCallback(async () => {
+    try {
+      const raw = await fetchTasks(projectId)
+      processTasks(raw)
+    } catch {
+      // Silently fail — polling will retry
+    } finally {
+      setLoading(false)
+    }
+  }, [projectId, processTasks])
+
+  // Initial load + polling
+  useEffect(() => {
+    refresh()
+    const id = setInterval(refresh, POLL_INTERVAL)
+    return () => clearInterval(id)
+  }, [refresh])
+
+  // SSE for immediate task_update events
+  useEffect(() => {
+    const es = new EventSource(`/api/projects/${projectId}/chat/stream`, {
+      withCredentials: true,
+    })
+
+    es.addEventListener("task_update", () => {
+      // Trigger a refresh to get the latest state
+      refresh()
+    })
+
+    es.addEventListener("task_delete", () => {
+      refresh()
+    })
+
+    eventSourceRef.current = es
+    return () => es.close()
+  }, [projectId, refresh])
+
+  return { tasks, agents, feed, loading }
+}
