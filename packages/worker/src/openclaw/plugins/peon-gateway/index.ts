@@ -11,8 +11,8 @@
  */
 
 import { readFileSync } from "node:fs";
-import { readFile, stat, readdir, writeFile, mkdir, unlink } from "node:fs/promises";
-import { basename, extname, isAbsolute, join, dirname } from "node:path";
+import { readFile, stat, writeFile, mkdir, unlink } from "node:fs/promises";
+import { basename, extname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { spawn, type ChildProcess } from "node:child_process";
 
@@ -458,7 +458,7 @@ async function delegateToProject(
     activeTeams.set(params.projectId, team);
 
     child.stdout?.on("data", (chunk: Buffer) => { team.output += chunk.toString(); });
-    child.stderr?.on("data", (chunk: Buffer) => { /* stderr captured but not surfaced */ });
+    child.stderr?.on("data", (_chunk: Buffer) => { /* stderr captured but not surfaced */ });
 
     child.on("exit", (code) => {
       team.completed = true;
@@ -520,8 +520,6 @@ async function getTeamResult(
 // ---------------------------------------------------------------------------
 
 export default function register(api: any): void {
-  const T = { String: () => ({ type: "string" }), Number: () => ({ type: "number" }), Array: (items: any) => ({ type: "array", items }) };
-
   api.registerTool({
     name: "UploadUserFile",
     description: "Share files with the user (visualizations, charts, documents, etc.)",

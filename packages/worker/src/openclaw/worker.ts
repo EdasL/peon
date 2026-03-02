@@ -27,7 +27,6 @@ import {
 import { writeOpenClawConfig, clearOpenClawSession } from "./config-bridge";
 import { OpenClawCoreInstructionProvider } from "./instructions";
 import {
-  DEFAULT_PROVIDER_BASE_URL_ENV,
   PROVIDER_REGISTRY_ALIASES,
   resolveModelRef,
 } from "./model-resolver";
@@ -415,7 +414,13 @@ Use it when the user references past discussions or you need context.`);
       cliBackends: pc.cliBackends,
     });
 
-    // Credential injection — set env vars for OpenClaw gateway to use
+    // Credential injection — set env vars for OpenClaw gateway to use.
+    //
+    // In the proxy pattern the real API key never reaches the worker.
+    // The gateway sets ANTHROPIC_BASE_URL to its proxy endpoint and the
+    // proxy resolves the real credential at request time using the agentId
+    // from the URL path.  The worker only needs *some* non-empty value in
+    // ANTHROPIC_API_KEY so that OpenClaw accepts the provider as configured.
     const gatewayUrl = process.env.DISPATCHER_URL ?? "";
     const workerToken = process.env.WORKER_TOKEN ?? "";
     const credEnvVar = process.env.CREDENTIAL_ENV_VAR_NAME || null;
@@ -427,6 +432,11 @@ Use it when the user references past discussions or you need context.`);
       process.env.ANTHROPIC_API_KEY = process.env[credEnvVar]!;
     } else if (process.env[apiKeyEnvVar]) {
       process.env.ANTHROPIC_API_KEY = process.env[apiKeyEnvVar]!;
+    } else if (process.env.ANTHROPIC_BASE_URL) {
+      // Proxy is configured but no credential env var was set (user
+      // credentials live in the gateway DB, resolved by the proxy).
+      // Provide a placeholder so OpenClaw doesn't reject the provider.
+      process.env.ANTHROPIC_API_KEY = "lobu-proxy";
     }
 
     // Set MCP server env vars so OpenClaw passes them to the peon-gateway MCP subprocess
