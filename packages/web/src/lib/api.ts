@@ -61,11 +61,6 @@ export const sendChatMessage = (projectId: string, content: string) =>
 // Board/task APIs (project-scoped)
 import type { ClaudeTeamConfig, ClaudeTask } from "../../server/types"
 
-export async function fetchTeams(): Promise<ClaudeTeamConfig[]> {
-  // Not used in multi-user mode — return empty
-  return []
-}
-
 export async function fetchTeamConfig(projectId: string): Promise<ClaudeTeamConfig> {
   const { project } = await request<{ project: Project }>(`/api/projects/${projectId}`)
   return { name: project.name, members: [], taskList: project.id } as unknown as ClaudeTeamConfig

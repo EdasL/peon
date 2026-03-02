@@ -3,7 +3,7 @@ import { useAgentActivity } from "@/hooks/use-agent-activity"
 import { AgentStatusCards } from "./AgentStatusCards"
 import { ActivityFeed } from "./ActivityFeed"
 import { Button } from "@/components/ui/button"
-import { LayoutGrid, Activity } from "lucide-react"
+import { LayoutGrid } from "lucide-react"
 
 interface AgentDashboardProps {
   projectId: string
