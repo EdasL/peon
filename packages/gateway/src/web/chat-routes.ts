@@ -111,4 +111,19 @@ chatRouter.post("/:id/chat", async (c) => {
   return c.json({ message: userMsg }, 201)
 })
 
+// GET /api/projects/:id/tasks — get current Kanban tasks
+chatRouter.get("/:id/tasks", async (c) => {
+  const session = getSession(c)
+  const projectId = c.req.param("id")
+
+  const project = await db.query.projects.findFirst({
+    where: and(eq(projects.id, projectId), eq(projects.userId, session.userId)),
+  })
+  if (!project) return c.json({ error: "Not found" }, 404)
+
+  const { getProjectTasks } = await import("./task-sync.js")
+  const tasks = getProjectTasks(projectId)
+  return c.json({ tasks })
+})
+
 export { chatRouter }
