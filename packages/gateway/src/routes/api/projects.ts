@@ -3,6 +3,7 @@ import { requireAuth, getSession } from "../../auth/middleware.js"
 import { db } from "../../db/connection.js"
 import { projects } from "../../db/schema.js"
 import { eq, and } from "drizzle-orm"
+import { launchProject, getProjectApiKey } from "../../web/project-launcher.js"
 
 const projectsRouter = new Hono()
 projectsRouter.use("*", requireAuth)
@@ -35,6 +36,21 @@ projectsRouter.post("/", async (c) => {
     templateId: body.templateId,
     status: "creating",
   }).returning()
+
+  // Launch container in background
+  const apiKey = await getProjectApiKey(session.userId)
+  if (apiKey) {
+    launchProject({
+      projectId: project.id,
+      userId: session.userId,
+      repoUrl: body.repoUrl ?? null,
+      templateId: body.templateId,
+      apiKey,
+    }).catch((err) => {
+      console.error(`Failed to launch project ${project.id}:`, err)
+      db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))
+    })
+  }
 
   return c.json({ project }, 201)
 })
