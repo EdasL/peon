@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { createLogger } from "@lobu/core"
 import { db } from "../db/connection.js"
 import { users, apiKeys } from "../db/schema.js"
-import { eq, and } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { decrypt } from "../services/encryption.js"
 import type { CoreServices } from "../platform.js"
 
@@ -37,10 +37,13 @@ export async function ensureLobuAgent(
 }
 
 /**
- * Bridges the user's Anthropic API key from Postgres into Lobu's
- * AgentSettingsStore so the orchestrator can inject it into workers.
+ * Bridges the user's API keys from Postgres into Lobu's AgentSettingsStore
+ * so the orchestrator can inject them into workers via the proxy pattern.
  *
- * Returns true if a credential was bridged, false if no key found.
+ * Bridges both Anthropic and OpenAI keys. Always upserts credentials so
+ * changes to API keys in settings are picked up on every call.
+ *
+ * Returns true if at least one credential was bridged, false if no keys found.
  */
 export async function bridgeCredentials(
   userId: string,
@@ -49,12 +52,11 @@ export async function bridgeCredentials(
 ): Promise<boolean> {
   const agentSettingsStore = services.getAgentSettingsStore()
 
-  // Check if profile already exists
   const { AuthProfilesManager } = await import(
     "../auth/settings/auth-profiles-manager.js"
   )
   const profilesManager = new AuthProfilesManager(agentSettingsStore)
-  // Always ensure provider is installed in catalog (idempotent)
+
   const { ProviderCatalogService } = await import(
     "../auth/provider-catalog.js"
   )
@@ -62,40 +64,56 @@ export async function bridgeCredentials(
     agentSettingsStore,
     profilesManager
   )
-  // "anthropic" in apiKeys table maps to "claude" in the module registry
-  await catalogService.installProvider(lobuAgentId, "claude")
 
-  const hasProfile = await profilesManager.hasProviderProfiles(
-    lobuAgentId,
-    "claude"
-  )
-  if (hasProfile) {
-    return true
-  }
-
-  // Read user's Anthropic API key from Postgres
-  const key = await db.query.apiKeys.findFirst({
-    where: and(eq(apiKeys.userId, userId), eq(apiKeys.provider, "anthropic")),
+  // Fetch all API keys for this user
+  const userKeys = await db.query.apiKeys.findMany({
+    where: eq(apiKeys.userId, userId),
   })
-  if (!key) {
-    logger.warn({ userId, lobuAgentId }, "No Anthropic API key found for user")
+
+  if (userKeys.length === 0) {
+    logger.warn({ userId, lobuAgentId }, "No API keys found for user")
     return false
   }
 
-  const decryptedKey = decrypt(key.encryptedKey)
+  let bridgedCount = 0
 
-  await profilesManager.upsertProfile({
-    agentId: lobuAgentId,
-    provider: "claude",
-    credential: decryptedKey,
-    authType: "api-key",
-    label: `Peon bridge (${key.label || "default"})`,
-    makePrimary: true,
-  })
+  for (const key of userKeys) {
+    const decryptedKey = decrypt(key.encryptedKey)
 
-  logger.info(
-    { userId, lobuAgentId },
-    "Bridged Anthropic credential to Lobu agent"
-  )
-  return true
+    if (key.provider === "anthropic") {
+      // "anthropic" in apiKeys table maps to "claude" in the module registry
+      await catalogService.installProvider(lobuAgentId, "claude")
+      await profilesManager.upsertProfile({
+        agentId: lobuAgentId,
+        provider: "claude",
+        credential: decryptedKey,
+        authType: "api-key",
+        label: `Peon bridge (${key.label || "default"})`,
+        makePrimary: true,
+      })
+      logger.info(
+        { userId, lobuAgentId },
+        "Bridged Anthropic credential to Lobu agent"
+      )
+      bridgedCount++
+    } else if (key.provider === "openai") {
+      // "openai" in apiKeys table maps to "openai" in the module registry
+      await catalogService.installProvider(lobuAgentId, "openai")
+      await profilesManager.upsertProfile({
+        agentId: lobuAgentId,
+        provider: "openai",
+        credential: decryptedKey,
+        authType: "api-key",
+        label: `Peon bridge (${key.label || "default"})`,
+        makePrimary: true,
+      })
+      logger.info(
+        { userId, lobuAgentId },
+        "Bridged OpenAI credential to Lobu agent"
+      )
+      bridgedCount++
+    }
+  }
+
+  return bridgedCount > 0
 }
