@@ -18,6 +18,7 @@ import type { WhatsAppConfig } from "../whatsapp/config";
 import { authRoutes } from "../routes/public/auth.js";
 import { projectsRouter } from "../routes/api/projects.js";
 import { keysRouter } from "../routes/api/keys.js";
+import { chatRouter } from "../web/chat-routes.js";
 
 const logger = createLogger("gateway-startup");
 
@@ -103,6 +104,9 @@ function setupServer(
   // Femrun project and API key management
   app.route("/api/projects", projectsRouter);
   app.route("/api/keys", keysRouter);
+
+  // Femrun web chat (SSE streaming, chat history, message sending)
+  app.route("/api/projects", chatRouter);
 
   // Prometheus metrics endpoint
   app.get("/metrics", async (c) => {
