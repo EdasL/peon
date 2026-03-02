@@ -11,6 +11,37 @@ import {
   removeContainer,
 } from "../../web/container-manager.js"
 
+// ---------------------------------------------------------------------------
+// Name generation — adjective + noun pairs
+// ---------------------------------------------------------------------------
+
+const ADJECTIVES = [
+  "bold", "brave", "bright", "calm", "clever", "cool", "crisp", "daring",
+  "deep", "eager", "fast", "fierce", "firm", "fleet", "free", "fresh",
+  "grand", "great", "hardy", "keen", "kind", "light", "lofty", "loyal",
+  "mighty", "nimble", "noble", "quick", "quiet", "rapid", "ready", "sharp",
+  "sleek", "smart", "solid", "steady", "strong", "sure", "swift", "vast",
+  "vivid", "warm", "wild", "wise",
+]
+
+const NOUNS = [
+  "badger", "bear", "boar", "buck", "bull", "condor", "crane", "crow",
+  "deer", "dove", "duck", "eagle", "elk", "falcon", "finch", "fox",
+  "frog", "hawk", "heron", "ibis", "jay", "kite", "kiwi", "lark",
+  "lion", "lynx", "mink", "mole", "moose", "moth", "mouse", "newt",
+  "orca", "otter", "owl", "panda", "pike", "puma", "quail", "raven",
+  "robin", "seal", "shark", "snipe", "stag", "swan", "teal", "tiger",
+  "vole", "wolf", "wren",
+]
+
+function generateProjectName(): string {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)]!
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)]!
+  return `${adj}-${noun}`
+}
+
+// ---------------------------------------------------------------------------
+
 const projectsRouter = new Hono()
 projectsRouter.use("*", requireAuth)
 
@@ -51,7 +82,7 @@ projectsRouter.get("/", async (c) => {
 projectsRouter.post("/", async (c) => {
   const session = getSession(c)
   const body = await c.req.json<{
-    name: string
+    name?: string
     repoUrl?: string
     repoBranch?: string
     templateId: string
@@ -65,9 +96,12 @@ projectsRouter.post("/", async (c) => {
     return c.json({ error: "Add an Anthropic API key in settings before creating a project" }, 400)
   }
 
+  // Generate a human-readable name if none provided
+  const projectName = body.name?.trim() || generateProjectName()
+
   const result = await db.insert(projects).values({
     userId: session.userId,
-    name: body.name,
+    name: projectName,
     repoUrl: body.repoUrl,
     repoBranch: body.repoBranch ?? "main",
     templateId: body.templateId,
@@ -78,20 +112,20 @@ projectsRouter.post("/", async (c) => {
 
   // Ensure user has a container (idempotent) + init project workspace
   const services = getPeonPlatform().getServices()
-  ensureUserContainer(session.userId, services).then(async (result) => {
-    if (result.error === "no-api-key") {
+  ensureUserContainer(session.userId, services).then(async (containerResult) => {
+    if (containerResult.error === "no-api-key") {
       await db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))
       return
     }
     // Store deployment name in DB for future status queries and cleanup
-    const deploymentName = getPeonDeploymentName(session.userId, result.lobuAgentId)
+    const deploymentName = getPeonDeploymentName(session.userId, containerResult.lobuAgentId)
     await db.update(projects)
       .set({ deploymentName, status: "creating" })
       .where(eq(projects.id, project.id))
 
     await initProjectWorkspace(
       session.userId,
-      result.lobuAgentId,
+      containerResult.lobuAgentId,
       project.id,
       body.templateId,
       body.repoUrl ?? null,
@@ -125,7 +159,46 @@ projectsRouter.get("/:id", async (c) => {
   return c.json({ project })
 })
 
-// DELETE /api/projects/:id — stop/remove container if this is the last project
+// GET /api/projects/:id/status — return real container state
+projectsRouter.get("/:id/status", async (c) => {
+  const session = getSession(c)
+  const project = await db.query.projects.findFirst({
+    where: and(eq(projects.id, c.req.param("id")), eq(projects.userId, session.userId)),
+  })
+  if (!project) return c.json({ error: "Not found" }, 404)
+
+  let containerStatus: "starting" | "running" | "stopped" | "error"
+
+  if (project.deploymentName) {
+    const dockerStatus = await getContainerStatus(project.deploymentName)
+    if (dockerStatus !== null) {
+      containerStatus = dockerStatus
+      // Sync DB status
+      const dbStatus = dockerStatus === "starting" ? "creating" : dockerStatus
+      if (project.status !== dbStatus) {
+        await db.update(projects).set({ status: dbStatus as any, updatedAt: new Date() })
+          .where(eq(projects.id, project.id))
+      }
+    } else {
+      containerStatus = mapDbStatus(project.status)
+    }
+  } else {
+    containerStatus = mapDbStatus(project.status)
+  }
+
+  return c.json({ status: containerStatus, projectId: project.id })
+})
+
+function mapDbStatus(dbStatus: string): "starting" | "running" | "stopped" | "error" {
+  switch (dbStatus) {
+    case "creating": return "starting"
+    case "running": return "running"
+    case "error": return "error"
+    default: return "stopped"
+  }
+}
+
+// DELETE /api/projects/:id — remove project from DB, remove container if last project
 projectsRouter.delete("/:id", async (c) => {
   const session = getSession(c)
   const [deleted] = await db.delete(projects)
