@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
@@ -17,15 +17,18 @@ const TEMPLATES = [
   { id: "mobile", name: "Mobile Only", desc: "Designer + Mobile developer + QA agents" },
 ]
 
+const ALL_STEPS: Step[] = ["github", "repo", "template", "apikey", "launch"]
+
 export function OnboardingPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const githubStatus = searchParams.get("github")
   const githubError = searchParams.get("message")
-  const [step, setStep] = useState<Step>(
-    githubStatus === "connected" ? "repo" : user?.githubId ? "repo" : "github"
-  )
+
+  const [existingKeys, setExistingKeys] = useState<api.ApiKeyInfo[]>([])
+  const [keysLoaded, setKeysLoaded] = useState(false)
+
   const [repos, setRepos] = useState<api.GithubRepo[]>([])
   const [selectedRepo, setSelectedRepo] = useState<api.GithubRepo | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState("")
@@ -33,6 +36,36 @@ export function OnboardingPage() {
   const [apiKey, setApiKey] = useState("")
   const [apiProvider, setApiProvider] = useState<"anthropic" | "openai">("anthropic")
   const [launching, setLaunching] = useState(false)
+
+  useEffect(() => {
+    api.getApiKeys()
+      .then((d) => setExistingKeys(d.keys))
+      .catch(() => {})
+      .finally(() => setKeysLoaded(true))
+  }, [])
+
+  const hasKey = (provider: string) => existingKeys.some((k) => k.provider === provider)
+  const hasAnyKey = existingKeys.length > 0
+
+  const initialStep: Step =
+    githubStatus === "connected" ? "repo" : user?.githubId ? "repo" : "github"
+  const [step, setStep] = useState<Step>(initialStep)
+
+  const goToNextFromTemplate = () => {
+    // Skip apikey step if user already has at least one key
+    if (hasAnyKey) {
+      setStep("launch")
+    } else {
+      setStep("apikey")
+    }
+  }
+
+  const visibleSteps = keysLoaded
+    ? ALL_STEPS.filter((s) => s !== "apikey" || !hasAnyKey)
+    : ALL_STEPS
+
+  const stepNumber = visibleSteps.indexOf(step) + 1
+  const totalSteps = visibleSteps.length
 
   const connectGithub = () => {
     window.location.href = "/api/auth/github"
@@ -47,10 +80,13 @@ export function OnboardingPage() {
   const launch = async () => {
     setLaunching(true)
     try {
-      await api.addApiKey({ provider: apiProvider, key: apiKey })
+      // Only add API key if user doesn't already have one
+      if (!hasAnyKey && apiKey.trim()) {
+        await api.addApiKey({ provider: apiProvider, key: apiKey.trim() })
+      }
 
       const { project } = await api.createProject({
-        name: projectName || selectedRepo?.name || "My Project",
+        name: projectName || selectedRepo?.name || undefined,
         repoUrl: selectedRepo?.htmlUrl,
         templateId: selectedTemplate,
       })
@@ -61,18 +97,30 @@ export function OnboardingPage() {
     }
   }
 
+  if (!keysLoaded) {
+    return (
+      <AuthLayout>
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </AuthLayout>
+    )
+  }
+
   return (
     <AuthLayout>
       <div className="flex-1 flex items-center justify-center p-4">
         <Card className="w-[500px]">
           <CardHeader>
             <CardTitle>Set up your project</CardTitle>
-            <CardDescription>Step {["github", "repo", "template", "apikey", "launch"].indexOf(step) + 1} of 5</CardDescription>
+            <CardDescription>Step {stepNumber} of {totalSteps}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {step === "github" && (
               <>
-                <p className="text-sm text-muted-foreground">Connect GitHub so agents can work on your repositories.</p>
+                <p className="text-sm text-muted-foreground">
+                  Connect GitHub so agents can work on your repositories.
+                </p>
                 {githubStatus === "error" && (
                   <p className="text-sm text-destructive bg-destructive/10 rounded-md p-3">
                     {githubError || "GitHub connection failed"}
@@ -87,7 +135,9 @@ export function OnboardingPage() {
 
             {step === "repo" && (
               <>
-                <p className="text-sm text-muted-foreground">Pick a repository for your agents to work on.</p>
+                <p className="text-sm text-muted-foreground">
+                  Pick a repository for your agents to work on.
+                </p>
                 {repos.length === 0 && (
                   <Button onClick={loadRepos} className="w-full">Load repositories</Button>
                 )}
@@ -95,11 +145,21 @@ export function OnboardingPage() {
                   {repos.map((repo) => (
                     <button
                       key={repo.fullName}
-                      onClick={() => { setSelectedRepo(repo); setProjectName(repo.name); setStep("template") }}
-                      className={`w-full text-left p-3 rounded-lg border ${selectedRepo?.fullName === repo.fullName ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+                      onClick={() => {
+                        setSelectedRepo(repo)
+                        setProjectName(repo.name)
+                        setStep("template")
+                      }}
+                      className={`w-full text-left p-3 rounded-lg border ${
+                        selectedRepo?.fullName === repo.fullName
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/50"
+                      }`}
                     >
                       <div className="font-medium">{repo.fullName}</div>
-                      {repo.private && <span className="text-xs text-muted-foreground">Private</span>}
+                      {repo.private && (
+                        <span className="text-xs text-muted-foreground">Private</span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -116,8 +176,15 @@ export function OnboardingPage() {
                   {TEMPLATES.map((t) => (
                     <button
                       key={t.id}
-                      onClick={() => { setSelectedTemplate(t.id); setStep("apikey") }}
-                      className={`w-full text-left p-3 rounded-lg border ${selectedTemplate === t.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+                      onClick={() => {
+                        setSelectedTemplate(t.id)
+                        goToNextFromTemplate()
+                      }}
+                      className={`w-full text-left p-3 rounded-lg border ${
+                        selectedTemplate === t.id
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/50"
+                      }`}
                     >
                       <div className="font-medium">{t.name}</div>
                       <div className="text-sm text-muted-foreground">{t.desc}</div>
@@ -129,7 +196,9 @@ export function OnboardingPage() {
 
             {step === "apikey" && (
               <>
-                <p className="text-sm text-muted-foreground">Add your API key. Agents use this to run — you control the cost.</p>
+                <p className="text-sm text-muted-foreground">
+                  Add your API key. Agents use this to run — you control the cost.
+                </p>
                 <div className="space-y-3">
                   <div className="flex gap-2">
                     <Button
@@ -147,18 +216,54 @@ export function OnboardingPage() {
                       OpenAI
                     </Button>
                   </div>
-                  <div>
-                    <Label htmlFor="apikey">API Key</Label>
-                    <Input
-                      id="apikey"
-                      type="password"
-                      placeholder={apiProvider === "anthropic" ? "sk-ant-..." : "sk-..."}
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                    />
-                  </div>
+                  {hasKey(apiProvider) ? (
+                    <p className="text-sm text-muted-foreground bg-muted rounded-md p-3">
+                      You already have a{" "}
+                      <span className="font-medium capitalize">{apiProvider}</span> key connected.
+                    </p>
+                  ) : (
+                    <div>
+                      <Label htmlFor="apikey">API Key</Label>
+                      <Input
+                        id="apikey"
+                        type="password"
+                        placeholder={apiProvider === "anthropic" ? "sk-ant-..." : "sk-..."}
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                      />
+                    </div>
+                  )}
                 </div>
-                <Button onClick={launch} className="w-full" disabled={!apiKey || launching}>
+                <Button
+                  onClick={() => setStep("launch")}
+                  className="w-full"
+                  disabled={!hasKey(apiProvider) && !apiKey}
+                >
+                  Continue
+                </Button>
+              </>
+            )}
+
+            {step === "launch" && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Name your project and launch.
+                </p>
+                <div>
+                  <Label htmlFor="project-name">Project name (optional)</Label>
+                  <Input
+                    id="project-name"
+                    placeholder="Leave blank for a random name"
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                  />
+                </div>
+                {hasAnyKey && (
+                  <p className="text-xs text-muted-foreground bg-muted rounded-md px-3 py-2">
+                    Using your connected API key.
+                  </p>
+                )}
+                <Button onClick={launch} className="w-full" disabled={launching}>
                   {launching && <Loader2 className="h-4 w-4 animate-spin" />}
                   {launching ? "Launching..." : "Launch Project"}
                 </Button>

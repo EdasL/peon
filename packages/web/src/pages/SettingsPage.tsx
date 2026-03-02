@@ -20,7 +20,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Github, Key, Loader2, Trash2, User } from "lucide-react"
+import { Github, Key, Loader2, Trash2, User, CheckCircle2 } from "lucide-react"
 import * as api from "@/lib/api"
 
 type Section = "profile" | "api-keys" | "github" | "danger"
@@ -32,6 +32,9 @@ const NAV_ITEMS: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: "danger", label: "Danger Zone", icon: <Trash2 className="h-4 w-4" /> },
 ]
 
+const PROVIDERS = ["anthropic", "openai"] as const
+type Provider = (typeof PROVIDERS)[number]
+
 export function SettingsPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -40,9 +43,8 @@ export function SettingsPage() {
   const [keysLoading, setKeysLoading] = useState(true)
 
   // Add key form
-  const [newProvider, setNewProvider] = useState<"anthropic" | "openai">("anthropic")
+  const [addingProvider, setAddingProvider] = useState<Provider | null>(null)
   const [newKey, setNewKey] = useState("")
-  const [newLabel, setNewLabel] = useState("")
   const [addingKey, setAddingKey] = useState(false)
 
   // Delete key dialog
@@ -62,19 +64,20 @@ export function SettingsPage() {
       .finally(() => setKeysLoading(false))
   }, [])
 
+  const keyForProvider = (provider: string) => keys.find((k) => k.provider === provider)
+
   const handleAddKey = async () => {
-    if (!newKey.trim()) return
+    if (!newKey.trim() || !addingProvider) return
     setAddingKey(true)
     try {
       const { key } = await api.addApiKey({
-        provider: newProvider,
+        provider: addingProvider,
         key: newKey.trim(),
-        label: newLabel.trim() || undefined,
       })
       setKeys((prev) => [...prev, key])
       setNewKey("")
-      setNewLabel("")
-      toast.success("API key added")
+      setAddingProvider(null)
+      toast.success(`${addingProvider} key added`)
     } finally {
       setAddingKey(false)
     }
@@ -87,7 +90,7 @@ export function SettingsPage() {
       await api.deleteApiKey(deletingKeyId)
       setKeys((prev) => prev.filter((k) => k.id !== deletingKeyId))
       setDeletingKeyId(null)
-      toast.success("API key deleted")
+      toast.success("API key removed")
     } finally {
       setDeleteKeyLoading(false)
     }
@@ -98,7 +101,6 @@ export function SettingsPage() {
     try {
       await api.disconnectGithub()
       toast.success("GitHub disconnected")
-      // Reload to update user state
       window.location.reload()
     } finally {
       setDisconnecting(false)
@@ -168,127 +170,154 @@ export function SettingsPage() {
           )}
 
           {section === "api-keys" && (
-            <>
-              <Card>
-                <CardHeader>
-                  <CardTitle>API Keys</CardTitle>
-                  <CardDescription>Manage the API keys your agents use. You control the cost.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {keysLoading ? (
-                    <div className="space-y-3">
-                      <Skeleton className="h-12 w-full" />
-                      <Skeleton className="h-12 w-full" />
-                    </div>
-                  ) : keys.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-4 text-center">
-                      No API keys yet. Add one below.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {keys.map((k) => (
-                        <div key={k.id} className="flex items-center justify-between p-3 rounded-lg border">
-                          <div className="flex items-center gap-3">
-                            <Badge variant="secondary">{k.provider}</Badge>
-                            <span className="text-sm">{k.label || "Untitled"}</span>
-                            <span className="text-xs text-muted-foreground">
-                              Added {new Date(k.createdAt).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <Dialog
-                            open={deletingKeyId === k.id}
-                            onOpenChange={(open) => setDeletingKeyId(open ? k.id : null)}
-                          >
-                            <DialogTrigger asChild>
-                              <Button variant="ghost" size="icon-xs">
-                                <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+            <Card>
+              <CardHeader>
+                <CardTitle>API Keys</CardTitle>
+                <CardDescription>
+                  Manage the API keys your agents use. Keys are never shown in full.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {keysLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-14 w-full" />
+                    <Skeleton className="h-14 w-full" />
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {PROVIDERS.map((provider) => {
+                      const existing = keyForProvider(provider)
+                      const providerLabel =
+                        provider === "anthropic" ? "Anthropic" : "OpenAI"
+                      return (
+                        <div key={provider} className="rounded-lg border p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="font-medium text-sm">{providerLabel}</span>
+                              {existing ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="flex items-center gap-1 text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400"
+                                >
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Connected
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-muted-foreground">
+                                  Not connected
+                                </Badge>
+                              )}
+                            </div>
+                            {existing ? (
+                              <Dialog
+                                open={deletingKeyId === existing.id}
+                                onOpenChange={(open) =>
+                                  setDeletingKeyId(open ? existing.id : null)
+                                }
+                              >
+                                <DialogTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="text-xs">
+                                    Remove
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Remove {providerLabel} key?</DialogTitle>
+                                    <DialogDescription>
+                                      Agents will no longer be able to use this key. You can add a
+                                      new one at any time.
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <DialogFooter>
+                                    <Button
+                                      variant="outline"
+                                      onClick={() => setDeletingKeyId(null)}
+                                    >
+                                      Cancel
+                                    </Button>
+                                    <Button
+                                      variant="destructive"
+                                      onClick={handleDeleteKey}
+                                      disabled={deleteKeyLoading}
+                                    >
+                                      {deleteKeyLoading && (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      )}
+                                      Remove
+                                    </Button>
+                                  </DialogFooter>
+                                </DialogContent>
+                              </Dialog>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs"
+                                onClick={() => {
+                                  setAddingProvider(provider)
+                                  setNewKey("")
+                                }}
+                              >
+                                Add key
                               </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Delete API key</DialogTitle>
-                                <DialogDescription>
-                                  This will remove the key and agents will no longer be able to use it.
-                                </DialogDescription>
-                              </DialogHeader>
-                              <DialogFooter>
-                                <Button variant="outline" onClick={() => setDeletingKeyId(null)}>
-                                  Cancel
+                            )}
+                          </div>
+
+                          {/* Inline add form */}
+                          {addingProvider === provider && !existing && (
+                            <div className="space-y-2 pt-1 border-t">
+                              <Label htmlFor={`key-${provider}`} className="text-xs">
+                                {providerLabel} API Key
+                              </Label>
+                              <div className="flex gap-2">
+                                <Input
+                                  id={`key-${provider}`}
+                                  type="password"
+                                  placeholder={
+                                    provider === "anthropic" ? "sk-ant-..." : "sk-..."
+                                  }
+                                  value={newKey}
+                                  onChange={(e) => setNewKey(e.target.value)}
+                                  onKeyDown={(e) => e.key === "Enter" && handleAddKey()}
+                                  className="text-sm"
+                                />
+                                <Button
+                                  size="sm"
+                                  onClick={handleAddKey}
+                                  disabled={!newKey.trim() || addingKey}
+                                >
+                                  {addingKey ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    "Save"
+                                  )}
                                 </Button>
                                 <Button
-                                  variant="destructive"
-                                  onClick={handleDeleteKey}
-                                  disabled={deleteKeyLoading}
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setAddingProvider(null)}
                                 >
-                                  {deleteKeyLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                                  Delete
+                                  Cancel
                                 </Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Add API Key</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex gap-2">
-                    <Button
-                      variant={newProvider === "anthropic" ? "default" : "outline"}
-                      onClick={() => setNewProvider("anthropic")}
-                      size="sm"
-                    >
-                      Anthropic
-                    </Button>
-                    <Button
-                      variant={newProvider === "openai" ? "default" : "outline"}
-                      onClick={() => setNewProvider("openai")}
-                      size="sm"
-                    >
-                      OpenAI
-                    </Button>
+                      )
+                    })}
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <Label htmlFor="new-key">API Key</Label>
-                      <Input
-                        id="new-key"
-                        type="password"
-                        placeholder={newProvider === "anthropic" ? "sk-ant-..." : "sk-..."}
-                        value={newKey}
-                        onChange={(e) => setNewKey(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="new-label">Label (optional)</Label>
-                      <Input
-                        id="new-label"
-                        placeholder="e.g. Personal, Work"
-                        value={newLabel}
-                        onChange={(e) => setNewLabel(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <Button onClick={handleAddKey} disabled={!newKey.trim() || addingKey}>
-                    {addingKey && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Add Key
-                  </Button>
-                </CardContent>
-              </Card>
-            </>
+                )}
+              </CardContent>
+            </Card>
           )}
 
           {section === "github" && (
             <Card>
               <CardHeader>
                 <CardTitle>GitHub</CardTitle>
-                <CardDescription>Connect GitHub so agents can access your repositories.</CardDescription>
+                <CardDescription>
+                  Connect GitHub so agents can access your repositories.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {user?.githubId ? (
@@ -316,7 +345,9 @@ export function SettingsPage() {
                       <Github className="h-5 w-5 text-muted-foreground" />
                       <div>
                         <p className="text-sm font-medium">Not connected</p>
-                        <p className="text-xs text-muted-foreground">Link your GitHub to give agents repo access</p>
+                        <p className="text-xs text-muted-foreground">
+                          Link your GitHub to give agents repo access
+                        </p>
                       </div>
                     </div>
                     <Button size="sm" asChild>
@@ -344,18 +375,24 @@ export function SettingsPage() {
                   </div>
                   <Dialog open={deleteAccountOpen} onOpenChange={setDeleteAccountOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="destructive" size="sm">Delete Account</Button>
+                      <Button variant="destructive" size="sm">
+                        Delete Account
+                      </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle>Delete your account?</DialogTitle>
                         <DialogDescription>
-                          This will permanently delete your account and all associated data including
-                          projects, API keys, and chat history. This action cannot be undone.
+                          This will permanently delete your account and all associated data
+                          including projects, API keys, and chat history. This action cannot be
+                          undone.
                         </DialogDescription>
                       </DialogHeader>
                       <DialogFooter>
-                        <Button variant="outline" onClick={() => setDeleteAccountOpen(false)}>
+                        <Button
+                          variant="outline"
+                          onClick={() => setDeleteAccountOpen(false)}
+                        >
                           Cancel
                         </Button>
                         <Button
@@ -363,7 +400,9 @@ export function SettingsPage() {
                           onClick={handleDeleteAccount}
                           disabled={deleteAccountLoading}
                         >
-                          {deleteAccountLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                          {deleteAccountLoading && (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          )}
                           Delete Account
                         </Button>
                       </DialogFooter>

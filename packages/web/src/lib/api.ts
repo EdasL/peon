@@ -25,10 +25,12 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
 // Projects
 export const getProjects = () => request<{ projects: Project[] }>("/api/projects")
 export const getProject = (id: string) => request<{ project: Project }>(`/api/projects/${id}`)
+export const getProjectStatus = (id: string) =>
+  request<{ status: Project["status"] }>(`/api/projects/${id}/status`)
 export const createProject = (data: CreateProjectInput) =>
   request<{ project: Project }>("/api/projects", { method: "POST", body: JSON.stringify(data) })
 export const deleteProject = (id: string) =>
-  request<{ project: Project }>(`/api/projects/${id}`, { method: "DELETE" })
+  request<void>(`/api/projects/${id}`, { method: "DELETE" })
 
 // GitHub
 export const getGithubRepos = () =>
@@ -113,7 +115,7 @@ export interface Project {
 }
 
 export interface CreateProjectInput {
-  name: string
+  name?: string
   repoUrl?: string
   repoBranch?: string
   templateId: string
