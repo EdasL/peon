@@ -6,17 +6,8 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
   createLogger,
-  type PluginsConfig,
-  type ToolsConfig,
   type WorkerTransport,
 } from "@lobu/core";
-import { getModel } from "@mariozechner/pi-ai";
-import {
-  AuthStorage,
-  createAgentSession,
-  ModelRegistry,
-  SettingsManager,
-} from "@mariozechner/pi-coding-agent";
 import * as Sentry from "@sentry/node";
 import { handleExecutionError } from "../core/error-handler";
 import { listAppDirectories } from "../core/project-scanner";
@@ -33,23 +24,16 @@ import {
   getApiKeyEnvVarForProvider,
   getProviderAuthHintFromError,
 } from "../shared/provider-auth-hints";
-import { createOpenClawCustomTools } from "./custom-tools";
+import { writeOpenClawConfig, clearOpenClawSession } from "./config-bridge";
 import { OpenClawCoreInstructionProvider } from "./instructions";
 import {
   DEFAULT_PROVIDER_BASE_URL_ENV,
-  openOrCreateSessionManager,
   PROVIDER_REGISTRY_ALIASES,
   resolveModelRef,
 } from "./model-resolver";
-import { loadPlugins } from "./plugin-loader";
-import { OpenClawProgressProcessor } from "./processor";
+import { OpenClawWsClient, type OpenClawEvent } from "./openclaw-ws-client";
+import { getOpenClawProcess } from "./openclaw-process";
 import { getOpenClawSessionContext } from "./session-context";
-import {
-  buildToolPolicy,
-  enforceBashCommandPolicy,
-  isToolAllowedByPolicy,
-} from "./tool-policy";
-import { createOpenClawTools } from "./tools";
 
 const logger = createLogger("worker");
 
@@ -57,12 +41,11 @@ export class OpenClawWorker implements WorkerExecutor {
   private workspaceManager: WorkspaceManager;
   public workerTransport: WorkerTransport;
   private config: WorkerConfig;
-  private progressProcessor: OpenClawProgressProcessor;
+  private wsClient: OpenClawWsClient | null = null;
 
   constructor(config: WorkerConfig) {
     this.config = config;
     this.workspaceManager = new WorkspaceManager(config.workspace);
-    this.progressProcessor = new OpenClawProgressProcessor();
 
     // Verify required environment variables
     const gatewayUrl = process.env.DISPATCHER_URL;
@@ -100,8 +83,6 @@ export class OpenClawWorker implements WorkerExecutor {
     const executeStartTime = Date.now();
 
     try {
-      this.progressProcessor.reset();
-
       logger.info(
         `🚀 Starting OpenClaw worker for session: ${this.config.sessionKey}`
       );
@@ -246,21 +227,7 @@ export class OpenClawWorker implements WorkerExecutor {
 
       // Handle result
       if (result.success) {
-        const finalResult = this.progressProcessor.getFinalResult();
-        if (finalResult) {
-          logger.info(
-            `📤 Sending final result (${finalResult.text.length} chars) with deduplication flag`
-          );
-          await this.workerTransport.sendStreamDelta(
-            finalResult.text,
-            false,
-            finalResult.isFinal
-          );
-        } else {
-          logger.info(
-            "Session completed successfully - all content already streamed"
-          );
-        }
+        logger.info("Session completed successfully - all content already streamed via WebSocket");
         await this.workerTransport.signalDone();
       } else {
         const errorMsg = result.error || "Unknown error";
@@ -292,6 +259,10 @@ export class OpenClawWorker implements WorkerExecutor {
   async cleanup(): Promise<void> {
     try {
       logger.info("Cleaning up worker resources...");
+      if (this.wsClient) {
+        this.wsClient.disconnect();
+        this.wsClient = null;
+      }
       logger.info("Worker cleanup completed");
     } catch (error) {
       logger.error("Error during cleanup:", error);
@@ -307,7 +278,7 @@ export class OpenClawWorker implements WorkerExecutor {
   }
 
   // ---------------------------------------------------------------------------
-  // AI session
+  // AI session — OpenClaw via WebSocket
   // ---------------------------------------------------------------------------
 
   private async runAISession(
@@ -319,12 +290,8 @@ export class OpenClawWorker implements WorkerExecutor {
       string,
       unknown
     >;
-    const verboseLogging = rawOptions.verboseLogging === true;
 
-    this.progressProcessor.setVerboseLogging(verboseLogging);
-
-    // Fetch session context BEFORE model resolution so AGENT_DEFAULT_PROVIDER
-    // is available when resolveModelRef() needs a fallback provider.
+    // Fetch session context for provider config and gateway instructions
     const context = await getOpenClawSessionContext();
     const pc = context.providerConfig;
     if (pc.credentialEnvVarName) {
@@ -346,58 +313,28 @@ export class OpenClawWorker implements WorkerExecutor {
       typeof rawOptions.model === "string" ? rawOptions.model : "";
 
     const { provider: rawProvider, modelId } = resolveModelRef(modelRef);
-    // Map gateway slug to model-registry provider name (e.g. "z-ai" → "zai")
     const provider = PROVIDER_REGISTRY_ALIASES[rawProvider] || rawProvider;
 
-    // Dynamic provider base URL from agentOptions.providerBaseUrlMappings
-    let providerBaseUrl: string | undefined;
+    // Dynamic provider base URL
     const dynamicMappings = rawOptions.providerBaseUrlMappings as
       | Record<string, string>
       | undefined;
     if (dynamicMappings && typeof dynamicMappings === "object") {
-      const fallbackEnvVar = DEFAULT_PROVIDER_BASE_URL_ENV[rawProvider];
-      if (fallbackEnvVar && dynamicMappings[fallbackEnvVar]) {
-        providerBaseUrl = dynamicMappings[fallbackEnvVar];
-      }
       for (const [envVar, url] of Object.entries(dynamicMappings)) {
         if (!process.env[envVar]) {
           process.env[envVar] = url;
         }
       }
     }
-    if (!providerBaseUrl) {
-      providerBaseUrl =
-        typeof rawOptions.providerBaseUrl === "string"
-          ? rawOptions.providerBaseUrl.trim() || undefined
-          : undefined;
-    }
-    if (!providerBaseUrl) {
-      const baseUrlEnvVar = DEFAULT_PROVIDER_BASE_URL_ENV[rawProvider];
-      if (baseUrlEnvVar && process.env[baseUrlEnvVar]) {
-        providerBaseUrl = process.env[baseUrlEnvVar];
-      }
-    }
-
-    const baseModel = getModel(provider as any, modelId as any) as any;
-    if (!baseModel) {
-      throw new Error(
-        `Model "${modelId}" not found for provider "${provider}". Check that the model ID is valid and registered in the model registry.`
-      );
-    }
-    const model = providerBaseUrl
-      ? { ...baseModel, baseUrl: providerBaseUrl }
-      : baseModel;
 
     const workspaceDir = this.getWorkingDirectory();
-    await fs.mkdir(path.join(workspaceDir, ".openclaw"), { recursive: true });
-    const sessionFile = path.join(workspaceDir, ".openclaw", "session.jsonl");
+
+    // Detect provider change and reset session if needed
     const providerStateFile = path.join(
       workspaceDir,
       ".openclaw",
       "provider.json"
     );
-
-    // Detect provider change and reset session if needed
     let sessionSummary: string | undefined;
     try {
       const raw = await fs.readFile(providerStateFile, "utf-8");
@@ -409,111 +346,25 @@ export class OpenClawWorker implements WorkerExecutor {
         logger.info(
           `Provider changed from ${prevState.provider} to ${provider}, resetting session`
         );
-
-        // Read old session content for summary context
-        try {
-          const sessionContent = await fs.readFile(sessionFile, "utf-8");
-          const lineCount = sessionContent.split("\n").filter(Boolean).length;
-          if (lineCount > 0) {
-            // Provide a brief context note instead of a full summary
-            // to avoid an expensive API call to the new model
-            sessionSummary = `[System note: The AI provider was just changed from ${prevState.provider} to ${provider}. Previous conversation history (${lineCount} turns) has been cleared. Continue helping the user from this point forward.]`;
-          }
-        } catch {
-          // No existing session file
-        }
-
-        // Delete old session file to start fresh
-        try {
-          await fs.unlink(sessionFile);
-        } catch {
-          // File may not exist
-        }
+        sessionSummary = `[System note: The AI provider was just changed from ${prevState.provider} to ${provider}. Previous conversation history has been cleared.]`;
+        await clearOpenClawSession(workspaceDir);
       }
     } catch {
-      // No previous provider state file - first run
+      // No previous provider state — first run
     }
 
     // Persist current provider state
+    await fs.mkdir(path.join(workspaceDir, ".openclaw"), { recursive: true });
     await fs.writeFile(
       providerStateFile,
       JSON.stringify({ provider, modelId }),
       "utf-8"
     );
 
-    const sessionManager = await openOrCreateSessionManager(
-      sessionFile,
-      workspaceDir
-    );
-    const settingsManager = SettingsManager.inMemory();
-
-    const toolsPolicy = buildToolPolicy({
-      toolsConfig: rawOptions.toolsConfig as ToolsConfig | undefined,
-      allowedTools: rawOptions.allowedTools as string | string[] | undefined,
-      disallowedTools: rawOptions.disallowedTools as
-        | string
-        | string[]
-        | undefined,
-    });
-
-    let tools = createOpenClawTools(workspaceDir).filter((tool) =>
-      isToolAllowedByPolicy(tool.name, toolsPolicy)
-    );
-
-    if (
-      toolsPolicy.bashPolicy.allowPrefixes.length > 0 ||
-      toolsPolicy.bashPolicy.denyPrefixes.length > 0
-    ) {
-      tools = tools.map((tool) => {
-        if (tool.name !== "bash") {
-          return tool;
-        }
-        return {
-          ...tool,
-          execute: async (toolCallId, params, signal, onUpdate) => {
-            const command =
-              params && typeof params === "object" && "command" in params
-                ? String((params as { command?: unknown }).command ?? "")
-                : "";
-            enforceBashCommandPolicy(command, toolsPolicy.bashPolicy);
-            return tool.execute(toolCallId, params as any, signal, onUpdate);
-          },
-        };
-      });
-    }
-
-    const gatewayUrl = process.env.DISPATCHER_URL ?? "";
-    const workerToken = process.env.WORKER_TOKEN ?? "";
-
-    // Credential injection — must happen AFTER session context applies
-    // CREDENTIAL_ENV_VAR_NAME to process.env (above).
-    const authStorage = new AuthStorage();
-    const credEnvVar = process.env.CREDENTIAL_ENV_VAR_NAME || null;
-    if (credEnvVar && process.env[credEnvVar]) {
-      authStorage.setRuntimeApiKey(provider, process.env[credEnvVar]!);
-      logger.info(`Set runtime API key for ${provider} from ${credEnvVar}`);
-    } else {
-      const fallbackEnvVar = getApiKeyEnvVarForProvider(provider);
-      if (process.env[fallbackEnvVar]) {
-        authStorage.setRuntimeApiKey(provider, process.env[fallbackEnvVar]!);
-        logger.info(
-          `Set runtime API key for ${provider} from fallback ${fallbackEnvVar}`
-        );
-      }
-    }
-
-    // Re-resolve provider base URL after session context may have updated mappings
-    if (!providerBaseUrl) {
-      const baseUrlEnvVar = DEFAULT_PROVIDER_BASE_URL_ENV[rawProvider];
-      if (baseUrlEnvVar && process.env[baseUrlEnvVar]) {
-        providerBaseUrl = process.env[baseUrlEnvVar];
-      }
-    }
-
     // Merge gateway instructions into custom instructions
     const instructionParts = [context.gatewayInstructions, customInstructions];
 
-    // Prefer CLI backends from dynamic session context, fall back to env var
+    // CLI backends
     const cliBackends = pc.cliBackends?.length
       ? pc.cliBackends
       : process.env.CLI_BACKENDS
@@ -555,119 +406,110 @@ Use it when the user references past discussions or you need context.`);
 
     const finalInstructions = instructionParts.filter(Boolean).join("\n\n");
 
-    const customTools = createOpenClawCustomTools({
-      gatewayUrl,
-      workerToken,
-      channelId: this.config.channelId,
-      conversationId: this.config.conversationId,
-      platform: this.config.platform,
+    // Write OpenClaw config files (SOUL.md, skills, agents config)
+    await writeOpenClawConfig({
+      workspaceDir,
+      gatewayInstructions: context.gatewayInstructions,
+      customInstructions: finalInstructions,
+      providerConfig: pc,
+      cliBackends: pc.cliBackends,
     });
 
-    // Load OpenClaw plugins
-    const pluginsConfig = rawOptions.pluginsConfig as PluginsConfig | undefined;
-    const loadedPlugins = await loadPlugins(pluginsConfig);
-    const pluginTools = loadedPlugins.flatMap((p) => p.tools);
+    // Credential injection — set env vars for OpenClaw gateway to use
+    const gatewayUrl = process.env.DISPATCHER_URL ?? "";
+    const workerToken = process.env.WORKER_TOKEN ?? "";
+    const credEnvVar = process.env.CREDENTIAL_ENV_VAR_NAME || null;
+    const apiKeyEnvVar = credEnvVar && process.env[credEnvVar]
+      ? credEnvVar
+      : getApiKeyEnvVarForProvider(provider);
 
-    if (pluginTools.length > 0) {
-      customTools.push(...pluginTools);
-      logger.info(
-        `Loaded ${pluginTools.length} tool(s) from ${loadedPlugins.length} plugin(s)`
-      );
+    if (credEnvVar && process.env[credEnvVar]) {
+      process.env.ANTHROPIC_API_KEY = process.env[credEnvVar]!;
+    } else if (process.env[apiKeyEnvVar]) {
+      process.env.ANTHROPIC_API_KEY = process.env[apiKeyEnvVar]!;
     }
 
-    // Apply plugin provider registrations to ModelRegistry
-    const modelRegistry = new ModelRegistry(authStorage);
-    const allProviders = loadedPlugins.flatMap((p) => p.providers);
-    for (const reg of allProviders) {
-      try {
-        modelRegistry.registerProvider(reg.name, reg.config as any);
-        logger.info(`Registered provider "${reg.name}" from plugin`);
-      } catch (err) {
-        logger.error(
-          `Failed to register provider "${reg.name}": ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
+    // Set MCP server env vars so OpenClaw passes them to the peon-gateway MCP subprocess
+    process.env.CHANNEL_ID = this.config.channelId;
+    process.env.CONVERSATION_ID = this.config.conversationId;
+
+    // Consume config change notifications
+    const { consumePendingConfigNotifications } = await import(
+      "../gateway/sse-client"
+    );
+    const configNotifications = consumePendingConfigNotifications();
+
+    let configNotice = "";
+    if (configNotifications.length > 0) {
+      const lines = configNotifications.map((n) => {
+        let line = `- ${n.summary}`;
+        if (n.details?.length) {
+          line += `: ${n.details.join("; ")}`;
+        }
+        return line;
+      });
+      configNotice = `[System notice: Your configuration was updated since the last message]\n${lines.join("\n")}\n\n`;
     }
+
+    const effectivePrompt = `${configNotice}${sessionSummary ? `${sessionSummary}\n\n` : ""}${userPrompt}`;
 
     logger.info(
-      `Starting OpenClaw session: provider=${provider}, model=${modelId}, tools=${tools.length}, customTools=${customTools.length}`
+      `Starting OpenClaw session: provider=${provider}, model=${modelId}`
     );
 
-    // Heartbeat timer to keep connection alive during long API calls
+    // Ensure OpenClaw gateway is running
+    const openclawProcess = getOpenClawProcess();
+    await openclawProcess.ensureRunning();
+
+    // Connect to OpenClaw via WebSocket
+    const authToken = process.env.OPENCLAW_AUTH_TOKEN || "";
+    if (!authToken) {
+      logger.warn("No OPENCLAW_AUTH_TOKEN set — WebSocket auth may fail");
+    }
+
+    const wsUrl = openclawProcess.getWebSocketUrl();
+    this.wsClient = new OpenClawWsClient({ url: wsUrl, authToken });
+
+    // Heartbeat timer
     const HEARTBEAT_INTERVAL_MS = 20000;
-    let heartbeatTimer: Timer | null = null;
-    let deltaTimer: Timer | null = null;
+    let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Delta batching
+    let pendingDelta = "";
+    let deltaTimer: ReturnType<typeof setTimeout> | null = null;
+    const DELTA_BATCH_INTERVAL_MS = 150;
+
+    const flushDelta = async () => {
+      if (pendingDelta) {
+        const toSend = pendingDelta;
+        pendingDelta = "";
+        await onProgress({
+          type: "output",
+          data: toSend,
+          timestamp: Date.now(),
+        });
+      }
+      if (deltaTimer) {
+        clearTimeout(deltaTimer);
+        deltaTimer = null;
+      }
+    };
+
+    const scheduleDeltaFlush = () => {
+      if (!deltaTimer) {
+        deltaTimer = setTimeout(() => {
+          flushDelta().catch((err) => {
+            logger.error("Failed to flush delta:", err);
+          });
+        }, DELTA_BATCH_INTERVAL_MS);
+      }
+    };
 
     try {
-      const { session } = await createAgentSession({
-        cwd: workspaceDir,
-        model,
-        tools,
-        customTools,
-        sessionManager,
-        settingsManager,
-        authStorage,
-        modelRegistry,
-      });
+      await this.wsClient.connect();
+      logger.info(`Connected to OpenClaw gateway at ${wsUrl}`);
 
-      const basePrompt = session.systemPrompt;
-      session.agent.setSystemPrompt(`${basePrompt}\n\n${finalInstructions}`);
-
-      let doneResolve: (() => void) | undefined;
-      const done = new Promise<void>((resolve) => {
-        doneResolve = resolve;
-      });
-
-      // Wire events through progress processor with delta batching
-      let pendingDelta = "";
-      const DELTA_BATCH_INTERVAL_MS = 150;
-
-      const flushDelta = async () => {
-        if (pendingDelta) {
-          const toSend = pendingDelta;
-          pendingDelta = "";
-          await onProgress({
-            type: "output",
-            data: toSend,
-            timestamp: Date.now(),
-          });
-        }
-        if (deltaTimer) {
-          clearTimeout(deltaTimer);
-          deltaTimer = null;
-        }
-      };
-
-      const scheduleDeltaFlush = () => {
-        if (!deltaTimer) {
-          deltaTimer = setTimeout(() => {
-            flushDelta().catch((err) => {
-              logger.error("Failed to flush delta:", err);
-            });
-          }, DELTA_BATCH_INTERVAL_MS);
-        }
-      };
-
-      session.subscribe((event) => {
-        const hasUpdate = this.progressProcessor.processEvent(event);
-        if (hasUpdate) {
-          const delta = this.progressProcessor.getDelta();
-          if (delta) {
-            pendingDelta += delta;
-            scheduleDeltaFlush();
-          }
-        }
-
-        if (event.type === "agent_end") {
-          flushDelta()
-            .then(() => doneResolve?.())
-            .catch((err) => {
-              logger.error("Failed to flush final delta:", err);
-              doneResolve?.();
-            });
-        }
-      });
-
+      // Set up heartbeat
       let elapsedTime = 0;
       let lastHeartbeatTime = Date.now();
 
@@ -676,10 +518,6 @@ Use it when the user references past discussions or you need context.`);
         elapsedTime += now - lastHeartbeatTime;
         lastHeartbeatTime = now;
         const seconds = Math.floor(elapsedTime / 1000);
-
-        logger.warn(
-          `⏳ Still running after ${seconds}s - no response from API yet`
-        );
 
         await onProgress({
           type: "status_update",
@@ -697,33 +535,32 @@ Use it when the user references past discussions or you need context.`);
         });
       }, HEARTBEAT_INTERVAL_MS);
 
-      // Consume any pending config change notifications from SSE events
-      const { consumePendingConfigNotifications } = await import(
-        "../gateway/sse-client"
-      );
-      const configNotifications = consumePendingConfigNotifications();
+      // Send message to OpenClaw and process streaming events
+      const sessionKey = `agent:main:peon:${this.config.conversationId}`;
+      const events = this.wsClient.sendMessage({
+        message: effectivePrompt,
+        sessionKey,
+        thinking: "high",
+        model: `${provider}/${modelId}`,
+      });
 
-      let configNotice = "";
-      if (configNotifications.length > 0) {
-        const lines = configNotifications.map((n) => {
-          let line = `- ${n.summary}`;
-          if (n.details?.length) {
-            line += `: ${n.details.join("; ")}`;
-          }
-          return line;
+      let errorMessage: string | null = null;
+
+      for await (const event of events) {
+        this.processOpenClawEvent(event, (delta) => {
+          pendingDelta += delta;
+          scheduleDeltaFlush();
+        }, (err) => {
+          errorMessage = err;
         });
-        configNotice = `[System notice: Your configuration was updated since the last message]\n${lines.join("\n")}\n\n`;
       }
 
-      const effectivePrompt = `${configNotice}${sessionSummary ? `${sessionSummary}\n\n` : ""}${userPrompt}`;
-      await session.prompt(effectivePrompt);
-      await done;
-      session.dispose();
+      // Flush any remaining delta
+      await flushDelta();
 
-      const sessionError = this.progressProcessor.consumeFatalErrorMessage();
-      if (sessionError) {
+      if (errorMessage) {
         const errorWithHint = await this.maybeBuildAuthHintMessage(
-          sessionError,
+          errorMessage,
           provider,
           modelId,
           gatewayUrl,
@@ -745,6 +582,7 @@ Use it when the user references past discussions or you need context.`);
         sessionKey: this.config.sessionKey,
       };
     } catch (error) {
+      await flushDelta();
       const errorMsg = error instanceof Error ? error.message : String(error);
       const errorWithHint = await this.maybeBuildAuthHintMessage(
         errorMsg,
@@ -765,13 +603,51 @@ Use it when the user references past discussions or you need context.`);
       if (heartbeatTimer) {
         clearInterval(heartbeatTimer);
         heartbeatTimer = null;
-        logger.debug("Heartbeat timer cleared");
       }
       if (deltaTimer) {
         clearTimeout(deltaTimer);
         deltaTimer = null;
-        logger.debug("Delta batch timer cleared");
       }
+      this.wsClient?.disconnect();
+      this.wsClient = null;
+    }
+  }
+
+  /**
+   * Process a single OpenClaw WebSocket event.
+   */
+  private processOpenClawEvent(
+    event: OpenClawEvent,
+    onDelta: (delta: string) => void,
+    onError: (message: string) => void
+  ): void {
+    switch (event.type) {
+      case "text_delta":
+        onDelta(event.delta);
+        break;
+
+      case "thinking":
+        // Thinking events — could stream if verbose mode
+        logger.debug(`[openclaw:thinking] ${event.delta.substring(0, 100)}...`);
+        break;
+
+      case "tool_start":
+        logger.info(`[openclaw:tool] Starting: ${event.name}`);
+        onDelta(`\n> Running ${event.name}...\n`);
+        break;
+
+      case "tool_end":
+        logger.info(`[openclaw:tool] Completed: ${event.name}`);
+        break;
+
+      case "turn_end":
+        logger.info("OpenClaw turn completed");
+        break;
+
+      case "error":
+        logger.error(`OpenClaw error: ${event.message}`);
+        onError(event.message);
+        break;
     }
   }
 

@@ -1,10 +1,12 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { Toaster } from "sonner"
 import { AuthCtx, useAuthProvider } from "@/hooks/use-auth"
 import { useAuth } from "@/hooks/use-auth"
 import { LoginPage } from "@/pages/LoginPage"
 import { OnboardingPage } from "@/pages/OnboardingPage"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { ProjectPage } from "@/pages/ProjectPage"
+import { SettingsPage } from "@/pages/SettingsPage"
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -24,8 +26,10 @@ export default function App() {
           <Route path="/onboarding" element={<AuthGuard><OnboardingPage /></AuthGuard>} />
           <Route path="/dashboard" element={<AuthGuard><DashboardPage /></AuthGuard>} />
           <Route path="/project/:id" element={<AuthGuard><ProjectPage /></AuthGuard>} />
+          <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
         </Routes>
       </BrowserRouter>
+      <Toaster theme="dark" position="bottom-right" richColors />
     </AuthCtx.Provider>
   )
 }

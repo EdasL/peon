@@ -101,7 +101,7 @@ export function createAudioRoutes(
       }
 
       // Return audio as binary response
-      return new Response(result.audioBuffer, {
+      return new Response(new Uint8Array(result.audioBuffer), {
         headers: {
           "Content-Type": result.mimeType,
           "Content-Length": result.audioBuffer.length.toString(),

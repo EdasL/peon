@@ -7,13 +7,19 @@ echo "🚀 Starting Lobu Worker..."
 # Function to handle cleanup on exit
 cleanup() {
     echo "📦 Container shutting down, performing cleanup..."
-    
-    # Kill any background processes
+
+    # Kill OpenClaw gateway if running
+    if [ -n "${OPENCLAW_PID:-}" ] && kill -0 "$OPENCLAW_PID" 2>/dev/null; then
+        echo "  Stopping OpenClaw gateway (PID: $OPENCLAW_PID)..."
+        kill "$OPENCLAW_PID" 2>/dev/null || true
+    fi
+
+    # Kill any other background processes
     jobs -p | xargs -r kill || true
-    
+
     # Give processes time to exit gracefully
     sleep 2
-    
+
     echo "✅ Cleanup completed"
     exit 0
 }
@@ -172,6 +178,71 @@ activate_nix_env() {
     exec $cmd
 }
 
+# Start the OpenClaw gateway as a background subprocess
+echo "🚀 Starting OpenClaw gateway..."
+OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
+
+# Generate bootstrap OpenClaw config BEFORE starting the gateway
+echo "📝 Generating OpenClaw bootstrap config..."
+cd /app/packages/worker
+OPENCLAW_AUTH_TOKEN=$(bun -e "
+import { writeBootstrapConfig } from './src/openclaw/bootstrap-config.ts';
+const r = await writeBootstrapConfig({ port: ${OPENCLAW_PORT} });
+process.stdout.write(r.authToken);
+")
+if [ -z "$OPENCLAW_AUTH_TOKEN" ] || echo "$OPENCLAW_AUTH_TOKEN" | grep -qi "^usage"; then
+    echo "⚠️  Bootstrap config generation failed, generating fallback config..."
+    OPENCLAW_AUTH_TOKEN=$(openssl rand -hex 32)
+    mkdir -p "$WORKSPACE_DIR/.openclaw"
+    cat > "$WORKSPACE_DIR/.openclaw/openclaw.json" << CFGEOF
+{
+  "gateway": {
+    "mode": "local",
+    "port": ${OPENCLAW_PORT},
+    "bind": "loopback",
+    "auth": { "mode": "token", "token": "${OPENCLAW_AUTH_TOKEN}" }
+  }
+}
+CFGEOF
+    echo "  Fallback config written to $WORKSPACE_DIR/.openclaw/openclaw.json"
+fi
+export OPENCLAW_AUTH_TOKEN
+echo "  Auth token generated: ${OPENCLAW_AUTH_TOKEN:0:8}..."
+cd "$WORKSPACE_DIR"
+
+openclaw gateway --port "$OPENCLAW_PORT" --bind loopback &
+OPENCLAW_PID=$!
+echo "  OpenClaw gateway PID: $OPENCLAW_PID"
+
+# Wait for OpenClaw gateway to be ready (health check via HTTP)
+OPENCLAW_READY=false
+OPENCLAW_MAX_RETRIES=30
+OPENCLAW_RETRY=0
+while [ "$OPENCLAW_READY" = "false" ] && [ "$OPENCLAW_RETRY" -lt "$OPENCLAW_MAX_RETRIES" ]; do
+    OPENCLAW_RETRY=$((OPENCLAW_RETRY + 1))
+    if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${OPENCLAW_PORT}/health" 2>/dev/null | grep -q "200"; then
+        OPENCLAW_READY=true
+        echo "✅ OpenClaw gateway is ready on port $OPENCLAW_PORT"
+    else
+        # Also check if process is still alive
+        if ! kill -0 "$OPENCLAW_PID" 2>/dev/null; then
+            echo "❌ OpenClaw gateway process died unexpectedly"
+            # Try starting it again
+            openclaw gateway --port "$OPENCLAW_PORT" --bind loopback &
+            OPENCLAW_PID=$!
+            echo "  Restarted OpenClaw gateway PID: $OPENCLAW_PID"
+        fi
+        sleep 1
+    fi
+done
+
+if [ "$OPENCLAW_READY" = "false" ]; then
+    echo "⚠️  OpenClaw gateway did not become ready after ${OPENCLAW_MAX_RETRIES}s, proceeding anyway..."
+fi
+
+export OPENCLAW_PORT
+export OPENCLAW_PID
+
 # Start the worker process
 echo "🚀 Executing Worker..."
 # Check if we're already in the worker directory
@@ -180,5 +251,5 @@ if [ "$(pwd)" != "/app/packages/worker" ]; then
 fi
 
 # Always run from source — Bun handles TypeScript natively and this avoids
-# CJS/ESM interop issues with ESM-only dependencies (e.g. pi-coding-agent).
+# CJS/ESM interop issues with ESM-only dependencies.
 activate_nix_env "bun run src/index.ts"

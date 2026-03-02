@@ -27,6 +27,14 @@ export function getProjectTasks(projectId: string): WorkerTask[] {
   return Array.from(tasks.values())
 }
 
+export function deleteProjectTask(projectId: string, taskId: string) {
+  const tasks = projectTasks.get(projectId)
+  if (tasks) {
+    tasks.delete(taskId)
+    broadcastToProject(projectId, "task_delete", { id: taskId })
+  }
+}
+
 export function clearProjectTasks(projectId: string) {
   projectTasks.delete(projectId)
 }

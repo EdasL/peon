@@ -1,7 +1,7 @@
 import { db } from "../db/connection.js"
 import { users } from "../db/schema.js"
 import { eq } from "drizzle-orm"
-import { encrypt, decrypt } from "../services/encryption.js"
+import { encrypt } from "../services/encryption.js"
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID!
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET!
@@ -48,7 +48,18 @@ export async function handleGithubCallback(
   })
   const profile = (await profileRes.json()) as { id: number; login: string }
 
-  // Store GitHub connection on user (encrypted)
+  // Check if this GitHub account is already linked to a different user
+  const existingLink = await db.query.users.findFirst({
+    where: eq(users.githubId, String(profile.id)),
+    columns: { id: true },
+  })
+  if (existingLink && existingLink.id !== userId) {
+    const err = new Error("This GitHub account is already linked to another user")
+    ;(err as any).code = "GITHUB_ALREADY_LINKED"
+    throw err
+  }
+
+  // Store GitHub connection on current user (encrypted)
   await db.update(users).set({
     githubId: String(profile.id),
     githubAccessToken: encrypt(tokenData.access_token),

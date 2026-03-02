@@ -1,4 +1,4 @@
-name: femrun
+name: peon
 
 services:
   # Redis for queue and state management
@@ -33,9 +33,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: femrun
-      POSTGRES_PASSWORD: femrun_dev
-      POSTGRES_DB: femrun
+      POSTGRES_USER: peon
+      POSTGRES_PASSWORD: peon_dev
+      POSTGRES_DB: peon
     ports:
       - "5432:5432"
     volumes:
@@ -44,7 +44,7 @@ services:
       - lobu-public
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U femrun"]
+      test: ["CMD-SHELL", "pg_isready -U peon"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -58,8 +58,10 @@ services:
       # Docker context overrides (gateway loads mounted .env file via dotenv)
       NODE_ENV: development
       DEPLOYMENT_MODE: docker
+      COMPOSE_PROJECT_NAME: peon
+      PORT: 8080
       QUEUE_URL: redis://redis:6379
-      DATABASE_URL: postgresql://femrun:femrun_dev@postgres:5432/femrun
+      DATABASE_URL: postgresql://peon:peon_dev@postgres:5432/peon
       LOBU_MCP_SERVERS_URL: ${LOBU_MCP_SERVERS_URL:-examples/mcp/oauth.json}
       # Host project path for worker bind mounts (Docker-in-Docker)
       LOBU_DEV_PROJECT_PATH: ${PWD}
@@ -73,6 +75,8 @@ services:
       # Mount source for hot reload (bun --watch detects changes)
       - ../packages/core/src:/app/packages/core/src
       - ../packages/gateway/src:/app/packages/gateway/src
+      # Mount drizzle migrations for auto-migrate on startup
+      - ../packages/gateway/drizzle:/app/packages/gateway/drizzle
       # Mount worker source so spawned worker containers get latest code
       - ../packages/worker/src:/app/packages/worker/src
       - ../packages/worker/scripts:/app/packages/worker/scripts

@@ -1,12 +1,46 @@
+/**
+ * OpenClaw progress processor.
+ *
+ * Processes OpenClaw/Claude Code streaming events and extracts user-friendly content.
+ * Adapted from the pi-agent processor to work with OpenClaw's event format.
+ *
+ * OpenClaw events arrive as JSON lines from the Claude Code CLI `--output-format stream-json`.
+ */
+
 import { createLogger } from "@lobu/core";
-import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 import { formatToolExecution } from "../shared/processor-utils";
 
 const logger = createLogger("openclaw-processor");
 
 /**
- * Processes Pi agent streaming events and extracts user-friendly content.
- * Implements chronological display with tool progress and mixed text/tool output.
+ * Claude Code stream-json event types.
+ */
+export interface ClaudeCodeEvent {
+  type: string;
+  subtype?: string;
+  // text events
+  content_block_delta?: {
+    type: string;
+    delta?: { type: string; text?: string };
+  };
+  // assistant message
+  message?: {
+    role?: string;
+    content?: Array<{ type: string; text?: string }>;
+    stop_reason?: string;
+  };
+  // tool use
+  tool_name?: string;
+  tool_input?: Record<string, unknown>;
+  // result
+  result?: string;
+  error?: string;
+  // system
+  session_id?: string;
+}
+
+/**
+ * Processes OpenClaw / Claude Code streaming events and extracts user-friendly content.
  */
 export class OpenClawProgressProcessor {
   private chronologicalOutput = "";
@@ -23,97 +57,66 @@ export class OpenClawProgressProcessor {
   }
 
   /**
-   * Process a Pi agent session event and append to chronological output.
+   * Process a Claude Code stream-json event.
    * Returns true if new content was appended.
    */
-  processEvent(event: AgentSessionEvent): boolean {
+  processEvent(event: ClaudeCodeEvent): boolean {
     switch (event.type) {
-      case "message_update": {
-        if (event.message.role !== "assistant") {
-          return false;
-        }
-        const assistantEvent = event.assistantMessageEvent;
-
-        if (assistantEvent.type === "text_delta") {
-          this.hasStreamedText = true;
-          this.chronologicalOutput += assistantEvent.delta;
-          return true;
-        }
-
-        if (assistantEvent.type === "thinking_delta") {
-          this.currentThinking += assistantEvent.delta;
-          if (this.verboseLogging) {
-            this.chronologicalOutput += assistantEvent.delta;
+      case "assistant": {
+        if (event.subtype === "text") {
+          // Streaming text delta
+          const text =
+            event.content_block_delta?.delta?.text ??
+            (typeof (event as any).text === "string"
+              ? (event as any).text
+              : undefined);
+          if (text) {
+            this.hasStreamedText = true;
+            this.chronologicalOutput += text;
             return true;
           }
-          return false;
         }
-
-        if (assistantEvent.type === "thinking_start" && this.verboseLogging) {
-          this.chronologicalOutput += "\n💭 *Reasoning:*\n";
-          return true;
-        }
-
-        if (assistantEvent.type === "thinking_end" && this.verboseLogging) {
-          this.chronologicalOutput += "\n\n";
-          return true;
-        }
-
-        return false;
-      }
-
-      case "message_end": {
-        if (event.message.role !== "assistant") {
-          return false;
-        }
-        const assistantMessage = event.message as {
-          stopReason?: string;
-          errorMessage?: string;
-        };
-        if (
-          assistantMessage.stopReason === "error" &&
-          typeof assistantMessage.errorMessage === "string" &&
-          assistantMessage.errorMessage.trim()
-        ) {
-          this.fatalErrorMessage = assistantMessage.errorMessage.trim();
-          return false;
-        }
-        // If text was already streamed via deltas, skip extraction
-        if (this.hasStreamedText) {
-          return false;
-        }
-        // Fallback: extract text from final message content
-        const content = event.message.content;
-        if (!Array.isArray(content)) {
-          return false;
-        }
-        let extracted = false;
-        for (const block of content) {
-          if (
-            block &&
-            typeof block === "object" &&
-            "type" in block &&
-            (block as { type: string }).type === "text" &&
-            "text" in block &&
-            typeof (block as { text: unknown }).text === "string"
-          ) {
-            const text = (block as { text: string }).text;
-            if (text.trim()) {
+        if (event.subtype === "thinking") {
+          const text =
+            event.content_block_delta?.delta?.text ??
+            (typeof (event as any).text === "string"
+              ? (event as any).text
+              : undefined);
+          if (text) {
+            this.currentThinking += text;
+            if (this.verboseLogging) {
               this.chronologicalOutput += text;
-              extracted = true;
+              return true;
             }
           }
         }
-        return extracted;
+        return false;
       }
 
-      case "tool_execution_start": {
+      case "content_block_delta": {
+        const delta = event.content_block_delta?.delta;
+        if (delta?.type === "text_delta" && delta.text) {
+          this.hasStreamedText = true;
+          this.chronologicalOutput += delta.text;
+          return true;
+        }
+        if (delta?.type === "thinking_delta" && delta.text) {
+          this.currentThinking += delta.text;
+          if (this.verboseLogging) {
+            this.chronologicalOutput += delta.text;
+            return true;
+          }
+        }
+        return false;
+      }
+
+      case "tool_use": {
         const params =
-          event.args && typeof event.args === "object"
-            ? (event.args as Record<string, unknown>)
+          event.tool_input && typeof event.tool_input === "object"
+            ? event.tool_input
             : {};
         const formatted = formatToolExecution(
-          event.toolName,
+          event.tool_name || "unknown",
           params,
           this.verboseLogging
         );
@@ -124,30 +127,30 @@ export class OpenClawProgressProcessor {
         return false;
       }
 
-      case "auto_compaction_start": {
-        this.chronologicalOutput += "🗜️ *Compacting context...*\n";
-        return true;
-      }
-
-      case "auto_compaction_end": {
-        if (event.aborted) {
-          this.chronologicalOutput += "🗜️ *Compaction aborted*\n";
-        } else if (event.result) {
-          this.chronologicalOutput += "🗜️ *Context compacted*\n";
+      case "result": {
+        if (event.error) {
+          this.fatalErrorMessage = event.error;
+          return false;
         }
-        return true;
-      }
-
-      case "auto_retry_start": {
-        this.chronologicalOutput += `🔄 *Retrying (attempt ${event.attempt}/${event.maxAttempts})...*\n`;
-        return true;
-      }
-
-      case "auto_retry_end": {
-        if (!event.success && event.finalError) {
-          this.chronologicalOutput += `🔄 *Retry failed: ${event.finalError}*\n`;
+        if (event.result && !this.hasStreamedText) {
+          this.chronologicalOutput += event.result;
           return true;
         }
+        return false;
+      }
+
+      case "error": {
+        const errorMsg =
+          event.error ||
+          (typeof (event as any).message === "string"
+            ? (event as any).message
+            : "Unknown error");
+        this.fatalErrorMessage = errorMsg;
+        return false;
+      }
+
+      case "system": {
+        // System events (session_id, etc.) — no user-facing output
         return false;
       }
 

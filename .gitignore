@@ -6,3 +6,5 @@ dist
 .playwright-mcp/
 server/db.json
 bun.lock
+workspaces/
+*.tsbuildinfo

@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "lobu_agent_id" text;

@@ -5,6 +5,7 @@ import * as api from "@/lib/api"
 export function useChat(projectId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
+  const [streamingContent, setStreamingContent] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
@@ -12,13 +13,26 @@ export function useChat(projectId: string) {
     api.getChatHistory(projectId).then((d) => setMessages(d.messages))
 
     // Connect SSE
-    const es = new EventSource(`/api/projects/${projectId}/chat/stream`)
+    const es = new EventSource(`/api/projects/${projectId}/chat/stream`, { withCredentials: true })
     es.addEventListener("message", (e) => {
       const msg = JSON.parse(e.data) as ChatMessage
+      if (msg.role === "assistant") {
+        setStreamingContent(null)
+      }
       setMessages((prev) => {
         if (prev.some((m) => m.id === msg.id)) return prev
         return [...prev, msg]
       })
+    })
+    es.addEventListener("chat_delta", (e) => {
+      const { accumulated } = JSON.parse(e.data)
+      setStreamingContent(accumulated)
+    })
+    es.addEventListener("chat_status", (e) => {
+      const { state } = JSON.parse(e.data)
+      if (state === "thinking") {
+        setStreamingContent("Thinking...")
+      }
     })
     eventSourceRef.current = es
     return () => es.close()
@@ -33,5 +47,5 @@ export function useChat(projectId: string) {
     }
   }, [projectId])
 
-  return { messages, send, sending }
+  return { messages, send, sending, streamingContent }
 }

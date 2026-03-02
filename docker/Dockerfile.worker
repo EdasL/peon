@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && DOCKER_ARCH=$(case "$(dpkg --print-architecture)" in amd64) echo x86_64;; arm64) echo aarch64;; *) echo x86_64;; esac) \
@@ -35,7 +35,9 @@ RUN apt-get update && apt-get install -y \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install matplotlib \
-    && ln -sf /bin/bash /bin/sh
+    && ln -sf /bin/bash /bin/sh \
+    && npm install -g --ignore-scripts openclaw@latest \
+    && npm install -g @anthropic-ai/claude-code@latest
 
 # Create a non-root user with home directory (no sudo - use Nix for system packages)
 RUN addgroup --gid 1001 worker && \
@@ -118,10 +120,9 @@ RUN mkdir -p /home/worker/bin && \
     chown -R worker:worker /home/worker && \
     echo 'export PATH="/home/worker/bin:$PATH"' >> /home/worker/.bashrc
 
-# Copy the entrypoint script and make it executable
-COPY packages/worker/scripts/worker-entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh && \
-    chown worker:worker /app/entrypoint.sh
+# Make entrypoint script executable (in dev mode, volume mount overlays this path
+# so entrypoint changes don't require a rebuild)
+RUN chmod +x /app/packages/worker/scripts/worker-entrypoint.sh
 
 # Switch to non-root user
 USER worker
@@ -137,4 +138,4 @@ ENV NODE_ENV=${NODE_ENV}
 ENV HOME=/workspace
 ENV USER=worker
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/packages/worker/scripts/worker-entrypoint.sh"]

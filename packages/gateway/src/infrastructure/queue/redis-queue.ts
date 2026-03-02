@@ -104,7 +104,7 @@ export class RedisQueue implements IMessageQueue {
 
       // Pass the shared Redis client to BullMQ
       const queue = new Queue(queueName, {
-        connection: this.redisClient,
+        connection: this.redisClient as any,
       });
 
       this.queues.set(queueName, queue);
@@ -203,7 +203,7 @@ export class RedisQueue implements IMessageQueue {
           await handler(queueJob);
         },
         {
-          connection: this.redisClient,
+          connection: this.redisClient as any,
           concurrency: 1, // Process one job at a time per worker
           ...(startPaused ? { autorun: false } : {}),
         }

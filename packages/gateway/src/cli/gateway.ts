@@ -18,6 +18,7 @@ import type { WhatsAppConfig } from "../whatsapp/config";
 import { authRoutes } from "../routes/public/auth.js";
 import { projectsRouter } from "../routes/api/projects.js";
 import { keysRouter } from "../routes/api/keys.js";
+import { userRouter } from "../routes/api/user.js";
 import { chatRouter } from "../web/chat-routes.js";
 
 const logger = createLogger("gateway-startup");
@@ -104,6 +105,7 @@ function setupServer(
   // Femrun project and API key management
   app.route("/api/projects", projectsRouter);
   app.route("/api/keys", keysRouter);
+  app.route("/api/user", userRouter);
 
   // Femrun web chat (SSE streaming, chat history, message sending)
   app.route("/api/projects", chatRouter);
@@ -703,7 +705,7 @@ Agents can be configured with custom MCP (Model Context Protocol) servers:
   logger.info("API docs enabled at :8080/api/docs");
 
   // Start the server — single port for everything
-  const port = 8080;
+  const port = Number(process.env.PORT) || 3000;
   const honoListener = getRequestListener(app.fetch);
 
   httpServer = createServer((incoming, outgoing) => {
@@ -935,6 +937,10 @@ export async function startGateway(
 ): Promise<void> {
   logger.info("Starting Lobu Gateway");
 
+  // Run database migrations
+  const { runMigrations } = await import("../db/migrate.js");
+  await runMigrations();
+
   // Start filtering proxy for worker network isolation (if enabled)
   const { startFilteringProxy } = await import("../proxy/proxy-manager");
   await startFilteringProxy();
@@ -1023,6 +1029,13 @@ export async function startGateway(
   const apiPlatform = new ApiPlatform();
   gateway.registerPlatform(apiPlatform);
   logger.info("API platform registered");
+
+  // Register Peon platform (peon.work chat → Lobu orchestration)
+  const { PeonPlatform, setPeonPlatform } = await import("../peon/platform.js");
+  const peonPlatform = new PeonPlatform();
+  gateway.registerPlatform(peonPlatform);
+  setPeonPlatform(peonPlatform);
+  logger.info("Peon platform registered");
 
   // Start gateway
   await gateway.start();

@@ -38,7 +38,7 @@ async function withTimeout<T>(
   timeoutMs: number,
   operationName: string
 ): Promise<T> {
-  let timeoutId: Timer;
+  let timeoutId: ReturnType<typeof setTimeout>;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
       reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));

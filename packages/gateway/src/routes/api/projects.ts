@@ -1,9 +1,10 @@
 import { Hono } from "hono"
 import { requireAuth, getSession } from "../../auth/middleware.js"
 import { db } from "../../db/connection.js"
-import { projects } from "../../db/schema.js"
+import { projects, apiKeys } from "../../db/schema.js"
 import { eq, and } from "drizzle-orm"
-import { launchProject, getProjectApiKey } from "../../web/project-launcher.js"
+import { ensureUserContainer, initProjectWorkspace } from "../../web/project-launcher.js"
+import { getPeonPlatform } from "../../peon/platform.js"
 
 const projectsRouter = new Hono()
 projectsRouter.use("*", requireAuth)
@@ -28,6 +29,14 @@ projectsRouter.post("/", async (c) => {
     templateId: string
   }>()
 
+  // Require API key before creating project
+  const hasApiKey = await db.query.apiKeys.findFirst({
+    where: and(eq(apiKeys.userId, session.userId), eq(apiKeys.provider, "anthropic")),
+  })
+  if (!hasApiKey) {
+    return c.json({ error: "Add an Anthropic API key in settings before creating a project" }, 400)
+  }
+
   const result = await db.insert(projects).values({
     userId: session.userId,
     name: body.name,
@@ -39,20 +48,26 @@ projectsRouter.post("/", async (c) => {
   const project = result[0]
   if (!project) return c.json({ error: "Failed to create project" }, 500)
 
-  // Launch container in background
-  const apiKey = await getProjectApiKey(session.userId)
-  if (apiKey) {
-    launchProject({
-      projectId: project.id,
-      userId: session.userId,
-      repoUrl: body.repoUrl ?? null,
-      templateId: body.templateId,
-      apiKey,
-    }).catch(async (err) => {
-      console.error(`Failed to launch project ${project.id}:`, err)
+  // Ensure user has a container (idempotent) + init project workspace
+  const services = getPeonPlatform().getServices()
+  ensureUserContainer(session.userId, services).then(async (result) => {
+    if (result.error === "no-api-key") {
       await db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))
-    })
-  }
+      return
+    }
+    await initProjectWorkspace(
+      session.userId,
+      result.lobuAgentId,
+      project.id,
+      body.templateId,
+      body.repoUrl ?? null,
+      services
+    )
+    await db.update(projects).set({ status: "creating" }).where(eq(projects.id, project.id))
+  }).catch(async (err) => {
+    console.error(`Failed to launch project ${project.id}:`, err)
+    await db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))
+  })
 
   return c.json({ project }, 201)
 })

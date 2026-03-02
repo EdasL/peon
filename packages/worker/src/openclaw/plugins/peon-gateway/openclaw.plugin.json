@@ -1,0 +1,11 @@
+{
+  "id": "peon-gateway",
+  "name": "Peon Gateway Tools",
+  "description": "Gateway integration tools for file upload, reminders, questions, and Claude Code team delegation",
+  "version": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

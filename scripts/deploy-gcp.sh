@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploy femrun platform to GCP Compute Engine
+# Deploy peon.work platform to GCP Compute Engine
 # Prerequisites: gcloud CLI authenticated, project selected
 
-INSTANCE_NAME="${1:-femrun-platform}"
+INSTANCE_NAME="${1:-peon-platform}"
 ZONE="${2:-us-central1-a}"
 MACHINE_TYPE="${3:-e2-standard-4}"
 
@@ -26,11 +26,11 @@ gcloud compute instances create "$INSTANCE_NAME" \
   '
 
 echo "Instance created. SSH in and run:"
-echo "  git clone <repo-url> femrun && cd femrun"
+echo "  git clone <repo-url> peon && cd peon"
 echo "  cp .env.example .env  # fill in secrets"
 echo "  docker compose -f docker/docker-compose.prod.yml up -d"
 
 # Open firewall for HTTP/HTTPS
-gcloud compute firewall-rules create allow-femrun-http \
+gcloud compute firewall-rules create allow-peon-http \
   --allow=tcp:80,tcp:443,tcp:3000 \
   --target-tags=http-server 2>/dev/null || true

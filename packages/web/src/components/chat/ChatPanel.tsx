@@ -3,16 +3,16 @@ import { useChat } from "@/hooks/use-chat"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send } from "lucide-react"
+import { MessageSquare, Send } from "lucide-react"
 
 export function ChatPanel({ projectId }: { projectId: string }) {
-  const { messages, send, sending } = useChat(projectId)
+  const { messages, send, sending, streamingContent } = useChat(projectId)
   const [input, setInput] = useState("")
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+  }, [messages, streamingContent])
 
   const handleSend = () => {
     if (!input.trim()) return
@@ -27,6 +27,14 @@ export function ChatPanel({ projectId }: { projectId: string }) {
       </div>
       <ScrollArea className="flex-1 p-4">
         <div className="space-y-3">
+          {messages.length === 0 && !streamingContent && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <MessageSquare className="h-8 w-8 text-muted-foreground/50 mb-3" />
+              <p className="text-sm text-muted-foreground">
+                Send a message to start working with your team
+              </p>
+            </div>
+          )}
           {messages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
@@ -38,6 +46,14 @@ export function ChatPanel({ projectId }: { projectId: string }) {
               </div>
             </div>
           ))}
+          {streamingContent && (
+            <div className="flex justify-start">
+              <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-muted">
+                {streamingContent}
+                <span className="animate-pulse">|</span>
+              </div>
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
       </ScrollArea>

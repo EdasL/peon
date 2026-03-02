@@ -1,12 +1,10 @@
 /**
- * Model resolution and session management helpers.
- * Extracted from worker.ts for clarity.
+ * Model resolution helpers.
+ * Resolves provider/model references from agent options and environment.
+ * No longer depends on pi-coding-agent — OpenClaw handles session management.
  */
 
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import { createLogger } from "@lobu/core";
-import { SessionManager } from "@mariozechner/pi-coding-agent";
 
 const logger = createLogger("model-resolver");
 
@@ -87,21 +85,4 @@ export function resolveModelRef(rawModelRef: string): {
   }
 
   return { provider: defaultProvider, modelId: modelRef };
-}
-
-export async function openOrCreateSessionManager(
-  sessionFile: string,
-  workspaceDir: string
-): Promise<SessionManager> {
-  try {
-    await fs.stat(sessionFile);
-    return SessionManager.open(sessionFile);
-  } catch {
-    const sessionManager = SessionManager.create(
-      workspaceDir,
-      path.dirname(sessionFile)
-    );
-    sessionManager.setSessionFile(sessionFile);
-    return sessionManager;
-  }
 }

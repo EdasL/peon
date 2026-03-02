@@ -6,7 +6,7 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background">
       <Card className="w-[400px]">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">femrun</CardTitle>
+          <CardTitle className="text-2xl">peon.work</CardTitle>
           <CardDescription>
             Launch AI agent teams for your projects
           </CardDescription>

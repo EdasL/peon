@@ -23,7 +23,7 @@ const EXPIRY_BUFFER_MS = 5 * 60 * 1000; // Refresh tokens expiring within 5 minu
  * TODO: Generalize to all OAuth providers when more providers support refresh tokens.
  */
 export class TokenRefreshJob {
-  private timer: Timer | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private oauthClient: ClaudeOAuthClient;
   private refreshLocks = new Map<string, Promise<void>>();
 

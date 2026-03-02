@@ -76,14 +76,27 @@ auth.get("/github/callback", requireAuth, async (c) => {
   if (!code) return c.json({ error: "Missing code" }, 400)
 
   const session = getSession(c)
+  const frontendUrl = process.env.PUBLIC_FRONTEND_URL ?? "http://localhost:5173"
   try {
     const { login } = await handleGithubCallback(code, session.userId)
-    const frontendUrl = process.env.PUBLIC_FRONTEND_URL ?? "http://localhost:5173"
     return c.redirect(`${frontendUrl}/onboarding?github=connected&login=${login}`)
-  } catch (err) {
+  } catch (err: any) {
     console.error("GitHub OAuth error:", err)
-    return c.json({ error: "GitHub connection failed" }, 500)
+    const message = err?.code === "GITHUB_ALREADY_LINKED"
+      ? "This GitHub account is already linked to another user"
+      : "GitHub connection failed"
+    return c.redirect(`${frontendUrl}/onboarding?github=error&message=${encodeURIComponent(message)}`)
   }
+})
+
+// DELETE /api/auth/github — disconnect GitHub
+auth.delete("/github", requireAuth, async (c) => {
+  const session = getSession(c)
+  await db
+    .update(users)
+    .set({ githubId: null, githubAccessToken: null, updatedAt: new Date() })
+    .where(eq(users.id, session.userId))
+  return c.json({ ok: true })
 })
 
 // GET /api/auth/github/repos — list user's repos

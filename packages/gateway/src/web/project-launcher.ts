@@ -1,71 +1,144 @@
+import { randomUUID } from "node:crypto"
 import { db } from "../db/connection.js"
-import { projects, apiKeys } from "../db/schema.js"
+import { apiKeys } from "../db/schema.js"
 import { eq } from "drizzle-orm"
 import { decrypt } from "../services/encryption.js"
+import { ensureLobuAgent, bridgeCredentials } from "../peon/agent-helper.js"
+import type { CoreServices } from "../platform.js"
 
-// This function integrates with Lobu's existing orchestration layer.
-// It calls the deployment manager to create a Docker container for the project.
+/**
+ * Ensures the user has a running container (idempotent).
+ * On first call: generates lobuAgentId, bridges credentials, creates session,
+ * enqueues bootstrap message to trigger container creation.
+ * On subsequent calls: re-bridges credentials (in case key changed), returns existing agentId.
+ */
+export async function ensureUserContainer(
+  userId: string,
+  services: CoreServices
+): Promise<{ lobuAgentId: string; created: boolean; error?: string }> {
+  const lobuAgentId = await ensureLobuAgent(userId)
 
-interface LaunchConfig {
-  projectId: string
-  userId: string
-  repoUrl: string | null
-  templateId: string
-  apiKey: { provider: string; key: string }
+  // Bridge credentials (idempotent — checks if already bridged)
+  const hasCreds = await bridgeCredentials(userId, lobuAgentId, services)
+  if (!hasCreds) {
+    return { lobuAgentId, created: false, error: "no-api-key" }
+  }
+
+  // Check if session already exists (container already provisioned)
+  const sessionManager = services.getSessionManager()
+  const existingSession = await sessionManager.getSession(lobuAgentId)
+  if (existingSession) {
+    return { lobuAgentId, created: false }
+  }
+
+  // First time — create session and enqueue bootstrap message
+  await sessionManager.setSession({
+    conversationId: lobuAgentId,
+    channelId: lobuAgentId,
+    userId,
+    threadCreator: userId,
+    lastActivity: Date.now(),
+    createdAt: Date.now(),
+    status: "created",
+    provider: "claude",
+  })
+
+  const queueProducer = services.getQueueProducer()
+  await queueProducer.enqueueMessage({
+    userId,
+    conversationId: lobuAgentId,
+    messageId: randomUUID(),
+    channelId: lobuAgentId,
+    teamId: "peon",
+    agentId: lobuAgentId,
+    botId: "peon-agent",
+    platform: "peon",
+    messageText: "[system] User container initialized. Ready for project workspaces.",
+    platformMetadata: { userId },
+    agentOptions: { provider: "claude" },
+  })
+
+  return { lobuAgentId, created: true }
 }
 
-export async function launchProject(config: LaunchConfig) {
-  // Generate a unique deployment name
-  const deploymentName = `femrun-${config.projectId.slice(0, 8)}`
+/** Map template IDs to Claude Code team lead system prompts */
+const TEMPLATE_TEAM_PROMPTS: Record<string, string> = {
+  fullstack:
+    "You are leading a full-stack development team. You have teammates for frontend, backend, and QA.",
+  "backend-only":
+    "You are leading a backend development team. Focus on APIs, databases, and server-side logic.",
+  "frontend-only":
+    "You are leading a frontend development team. Focus on UI components, styling, and user experience.",
+  data: "You are leading a data engineering team. Focus on data pipelines, analysis, and visualization.",
+  default:
+    "You are leading a development team. Adapt your approach based on the project requirements.",
+}
 
-  // Build environment variables for the worker container
-  const envVars: Record<string, string> = {
-    PROJECT_ID: config.projectId,
-    USER_ID: config.userId,
-    TEMPLATE_ID: config.templateId,
-    DEPLOYMENT_NAME: deploymentName,
-  }
+/**
+ * Initializes a project workspace inside the user's existing container.
+ * Creates the workspace directory structure and sends a system message
+ * so the agent knows about the new project and its team configuration.
+ */
+export async function initProjectWorkspace(
+  userId: string,
+  lobuAgentId: string,
+  projectId: string,
+  templateId: string,
+  repoUrl: string | null,
+  services: CoreServices
+): Promise<void> {
+  const teamPrompt =
+    TEMPLATE_TEAM_PROMPTS[templateId] || TEMPLATE_TEAM_PROMPTS.default
 
-  if (config.repoUrl) {
-    envVars.REPO_URL = config.repoUrl
-  }
+  // Build the workspace initialization command that the agent will execute
+  const workspaceDirs = [
+    `/workspace/projects/${projectId}`,
+    `/workspace/projects/${projectId}/.claude`,
+    `/workspace/projects/${projectId}/src`,
+  ]
 
-  // Inject the user's API key
-  if (config.apiKey.provider === "anthropic") {
-    envVars.ANTHROPIC_API_KEY = config.apiKey.key
-  } else if (config.apiKey.provider === "openai") {
-    envVars.OPENAI_API_KEY = config.apiKey.key
-  }
+  const claudeMdContent = `# Project: ${projectId}
 
-  // TODO: Call Lobu's orchestrator.createWorkerDeployment()
-  // This requires adapting Lobu's Orchestrator class to accept our project config.
-  // The exact integration depends on how much we refactor Lobu's Gateway class.
-  //
-  // For the MVP, we can use Dockerode directly:
-  //
-  // import Dockerode from "dockerode"
-  // const docker = new Dockerode()
-  // const container = await docker.createContainer({
-  //   Image: "lobu-worker:latest",
-  //   name: deploymentName,
-  //   Env: Object.entries(envVars).map(([k, v]) => `${k}=${v}`),
-  //   HostConfig: {
-  //     NetworkMode: "lobu-internal",
-  //     Memory: 512 * 1024 * 1024, // 512MB
-  //     CpuQuota: 100000, // 1 CPU
-  //   },
-  // })
-  // await container.start()
+## Team Configuration
+${teamPrompt}
 
-  // Update project with deployment name — keep status as "creating" until container is actually running
-  // TODO: Set to "running" only after confirming Docker container is up
-  await db.update(projects).set({
-    deploymentName,
-    status: "creating",
-    updatedAt: new Date(),
-  }).where(eq(projects.id, config.projectId))
+## Template
+${templateId}
+${repoUrl ? `\n## Repository\n${repoUrl}` : ""}
+`
 
-  return { deploymentName }
+  const queueProducer = services.getQueueProducer()
+  await queueProducer.enqueueMessage({
+    userId,
+    conversationId: lobuAgentId,
+    messageId: randomUUID(),
+    channelId: lobuAgentId,
+    teamId: "peon",
+    agentId: lobuAgentId,
+    botId: "peon-agent",
+    platform: "peon",
+    messageText: `[system] Initialize project workspace for ${projectId}.
+
+Create the following directory structure:
+${workspaceDirs.map((d) => `- ${d}`).join("\n")}
+
+Write this to /workspace/projects/${projectId}/.claude/CLAUDE.md:
+\`\`\`
+${claudeMdContent}
+\`\`\`
+${repoUrl ? `\nClone the repository: git clone ${repoUrl} /workspace/projects/${projectId}` : ""}
+
+Template: ${templateId}. Team prompt: ${teamPrompt}
+
+Ready for user instructions.`,
+    platformMetadata: {
+      projectId,
+      userId,
+      templateId,
+      teamPrompt,
+    },
+    agentOptions: { provider: "claude" },
+  })
 }
 
 export async function getProjectApiKey(userId: string): Promise<{ provider: string; key: string } | null> {
