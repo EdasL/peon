@@ -1,17 +1,25 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useAgentActivity } from "@/hooks/use-agent-activity"
 import { AgentStatusCards } from "./AgentStatusCards"
 import { ActivityFeed } from "./ActivityFeed"
 import { Button } from "@/components/ui/button"
 import { LayoutGrid } from "lucide-react"
+import { getTemplate } from "@/lib/templates"
 
 interface AgentDashboardProps {
   projectId: string
+  templateId?: string
   onSwitchToBoard: () => void
 }
 
-export function AgentDashboard({ projectId, onSwitchToBoard }: AgentDashboardProps) {
-  const { agents, feed, loading, connected, currentToolAction } = useAgentActivity(projectId)
+export function AgentDashboard({ projectId, templateId, onSwitchToBoard }: AgentDashboardProps) {
+  const templateAgentNames = useMemo(() => {
+    if (!templateId) return undefined
+    const tmpl = getTemplate(templateId)
+    return tmpl?.agents.map((a) => a.role.toLowerCase())
+  }, [templateId])
+
+  const { agents, feed, loading, connected, currentToolAction } = useAgentActivity(projectId, templateAgentNames)
   const [view, setView] = useState<"dashboard" | "feed">("dashboard")
 
   const workingCount = agents.filter((a) => a.status === "working").length

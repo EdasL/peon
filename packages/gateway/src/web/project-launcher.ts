@@ -61,17 +61,53 @@ export async function ensureUserContainer(
   return { lobuAgentId, created: true }
 }
 
-/** Map template IDs to Claude Code team lead system prompts */
+/** Map template IDs to substantive CLAUDE.md team configuration content.
+ * These configure how Claude Code organizes its work for the project. */
 const TEMPLATE_TEAM_PROMPTS: Record<string, string> = {
-  fullstack:
-    "You are leading a full-stack development team. You have teammates for frontend, backend, and QA.",
-  "backend-only":
-    "You are leading a backend development team. Focus on APIs, databases, and server-side logic.",
-  "frontend-only":
-    "You are leading a frontend development team. Focus on UI components, styling, and user experience.",
-  data: "You are leading a data engineering team. Focus on data pipelines, analysis, and visualization.",
-  default:
-    "You are leading a development team. Adapt your approach based on the project requirements.",
+  fullstack: `You are the lead of a full-stack development team.
+
+### Agents
+- **frontend** — UI components, pages, hooks, styling. Owns: \`src/components/\`, \`src/pages/\`, \`src/hooks/\`, \`*.css\`, \`*.tsx\`
+- **backend** — API endpoints, database, server logic. Owns: \`src/api/\`, \`src/server/\`, \`src/db/\`, \`src/routes/\`
+- **qa** — Runs tests after each task group, catches regressions, validates changes
+
+### Workflow
+1. Break incoming requests into frontend + backend sub-tasks
+2. Assign sub-tasks to the appropriate agent by setting task owner
+3. After implementation, assign QA to verify with tests
+4. Review and integrate the final result`,
+
+  backend: `You are the lead of a backend development team.
+
+### Agents
+- **backend** — API endpoints, database models, server-side logic, authentication, data validation
+- **qa** — Runs tests, checks API contracts, validates database migrations
+
+### Workflow
+1. Break incoming requests into implementation sub-tasks
+2. Assign to backend agent for implementation
+3. After each batch, assign QA to run tests and validate
+4. Review API contracts and error handling before marking complete`,
+
+  mobile: `You are the lead of a mobile development team.
+
+### Agents
+- **designer** — UI/UX design, component layout, screen flows, styling
+- **mobile** — Native/cross-platform implementation, platform APIs, navigation
+- **qa** — Device testing, compatibility checks, UI regression testing
+
+### Workflow
+1. Break incoming requests into design + implementation sub-tasks
+2. Designer creates UI specs and component designs first
+3. Mobile agent implements the designs
+4. QA validates on target platforms`,
+
+  default: `You are the lead of a development team. Adapt your approach based on the project requirements.
+
+### Workflow
+1. Analyze incoming requests and break into sub-tasks
+2. Implement changes systematically
+3. Test and validate before marking complete`,
 }
 
 /**
@@ -97,14 +133,12 @@ export async function initProjectWorkspace(
     `/workspace/projects/${projectId}/src`,
   ]
 
-  const claudeMdContent = `# Project: ${projectId}
+  const claudeMdContent = `# Project Configuration
 
+## Template: ${templateId}
+${repoUrl ? `\n## Repository\n${repoUrl}\n` : ""}
 ## Team Configuration
 ${teamPrompt}
-
-## Template
-${templateId}
-${repoUrl ? `\n## Repository\n${repoUrl}` : ""}
 `
 
   const queueProducer = services.getQueueProducer()

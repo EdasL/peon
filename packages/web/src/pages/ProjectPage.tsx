@@ -8,6 +8,7 @@ import { AgentDashboard } from "@/components/project/AgentDashboard"
 import { ProvisioningOverlay } from "@/components/project/ProvisioningOverlay"
 import type { Project } from "@/lib/api"
 import * as api from "@/lib/api"
+import { getTemplate } from "@/lib/templates"
 import { ArrowLeft, AlertCircle, Activity, LayoutGrid, Power } from "lucide-react"
 
 function ProjectSkeleton() {
@@ -128,6 +129,22 @@ export function ProjectPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="font-semibold">{project?.name ?? "Project"}</h1>
+        {(() => {
+          const tmpl = project?.templateId ? getTemplate(project.templateId) : null
+          if (!tmpl) return null
+          return (
+            <div className="flex items-center gap-1.5 ml-2">
+              {tmpl.agents.map((a) => (
+                <span
+                  key={a.role}
+                  className={`size-2 rounded-full ${a.color}`}
+                  title={a.role}
+                />
+              ))}
+              <span className="text-xs text-muted-foreground">{tmpl.name}</span>
+            </div>
+          )
+        })()}
 
         <div className="ml-auto flex items-center gap-1">
           <Button
@@ -155,6 +172,7 @@ export function ProjectPage() {
           {mainView === "agents" ? (
             <AgentDashboard
               projectId={id}
+              templateId={project?.templateId}
               onSwitchToBoard={() => setMainView("board")}
             />
           ) : (

@@ -92,7 +92,7 @@ function extractAgents(tasks: ClaudeTask[]): string[] {
   return Array.from(names)
 }
 
-export function useAgentActivity(projectId: string) {
+export function useAgentActivity(projectId: string, templateAgentNames?: string[]) {
   const [tasks, setTasks] = useState<ClaudeTask[]>([])
   const [agents, setAgents] = useState<AgentState[]>([])
   const [feed, setFeed] = useState<ActivityEvent[]>([])
@@ -168,8 +168,18 @@ export function useAgentActivity(projectId: string) {
       const hasLeadWork = incoming.some((t) => !t.owner && t.status === "in_progress")
       if (hasLeadWork && !agentNames.includes("team-lead")) agentNames.unshift("team-lead")
 
-      const agentStates = agentNames.map((name) => deriveAgentStatus(incoming, name))
-      setAgents(agentStates)
+      // If no task-derived agents yet but we have template agents, show them as idle
+      if (agentNames.length === 0 && templateAgentNames && templateAgentNames.length > 0) {
+        setAgents(templateAgentNames.map((name) => ({
+          name,
+          status: "idle" as const,
+          currentTask: null,
+          activeForm: null,
+        })))
+      } else {
+        const agentStates = agentNames.map((name) => deriveAgentStatus(incoming, name))
+        setAgents(agentStates)
+      }
     },
     [addFeedEvent]
   )

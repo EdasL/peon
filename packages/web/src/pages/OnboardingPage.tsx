@@ -7,43 +7,7 @@ import { Label } from "@/components/ui/label"
 import { AuthLayout } from "@/components/layout/AuthLayout"
 import { Loader2, Check, Github, ExternalLink, Users } from "lucide-react"
 import * as api from "@/lib/api"
-
-type Step = "apikey" | "repo-template" | "launch"
-
-const TEMPLATES = [
-  {
-    id: "fullstack",
-    name: "Full Stack",
-    desc: "A complete team for web applications",
-    agents: [
-      { role: "Lead", color: "bg-blue-500" },
-      { role: "Frontend", color: "bg-emerald-500" },
-      { role: "Backend", color: "bg-violet-500" },
-      { role: "QA", color: "bg-amber-500" },
-    ],
-  },
-  {
-    id: "backend",
-    name: "Backend Only",
-    desc: "Focused on server-side development",
-    agents: [
-      { role: "Lead", color: "bg-blue-500" },
-      { role: "Backend", color: "bg-violet-500" },
-      { role: "QA", color: "bg-amber-500" },
-    ],
-  },
-  {
-    id: "mobile",
-    name: "Mobile",
-    desc: "Native and cross-platform mobile apps",
-    agents: [
-      { role: "Lead", color: "bg-blue-500" },
-      { role: "Designer", color: "bg-pink-500" },
-      { role: "Mobile", color: "bg-cyan-500" },
-      { role: "QA", color: "bg-amber-500" },
-    ],
-  },
-]
+import { TEMPLATES } from "@/lib/templates"
 
 function ProgressDots({ steps, current }: { steps: Step[]; current: Step }) {
   const currentIndex = steps.indexOf(current)

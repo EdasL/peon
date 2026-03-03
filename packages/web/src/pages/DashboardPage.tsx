@@ -18,6 +18,7 @@ import { Trash2, Loader2, X, MessageSquare, FolderOpen, Pencil } from "lucide-re
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { Input } from "@/components/ui/input"
 import * as api from "@/lib/api"
+import { getTemplate } from "@/lib/templates"
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -186,7 +187,25 @@ export function DashboardPage() {
                             </span>
                           )}
                         </div>
-                        <p className="mt-2 text-xs text-muted-foreground">
+                        {(() => {
+                          const tmpl = getTemplate(p.templateId)
+                          if (!tmpl) return null
+                          return (
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="text-xs text-muted-foreground">{tmpl.name}</span>
+                              <div className="flex items-center gap-1">
+                                {tmpl.agents.map((a) => (
+                                  <span
+                                    key={a.role}
+                                    className={`size-1.5 rounded-full ${a.color}`}
+                                    title={a.role}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })()}
+                        <p className="mt-1.5 text-xs text-muted-foreground">
                           Last active {timeAgo(p.updatedAt)}
                         </p>
                       </CardContent>
