@@ -226,32 +226,39 @@ projectsRouter.post("/:id/restart", async (c) => {
   const restarted = await restartContainer(project.deploymentName)
   if (!restarted) {
     // Container doesn't exist — need to re-provision
-    const services = getPeonPlatform().getServices()
-    const { ensureUserContainer, initProjectWorkspace, waitForContainerReady } = await import("../../web/project-launcher.js")
+    try {
+      const services = getPeonPlatform().getServices()
+      const { ensureUserContainer, initProjectWorkspace, waitForContainerReady } = await import("../../web/project-launcher.js")
 
-    const containerResult = await ensureUserContainer(session.userId, services)
-    if (containerResult.error) {
-      const message = containerResult.error === "no-api-key"
-        ? "No API key found — add an Anthropic key in settings"
-        : containerResult.error
+      const containerResult = await ensureUserContainer(session.userId, services)
+      if (containerResult.error) {
+        const message = containerResult.error === "no-api-key"
+          ? "No API key found — add an Anthropic key in settings"
+          : containerResult.error
+        await db.update(projects).set({ status: "error", updatedAt: new Date() }).where(eq(projects.id, project.id))
+        broadcastToProject(project.id, "project_status", { status: "error", message })
+        return c.json({ error: message }, 400)
+      }
+
+      const deploymentName = getPeonDeploymentName(session.userId, containerResult.lobuAgentId)
+      await db.update(projects).set({ deploymentName, status: "creating" }).where(eq(projects.id, project.id))
+
+      await initProjectWorkspace(session.userId, containerResult.lobuAgentId, project.id, project.templateId, project.repoUrl, services)
+      waitForContainerReady(project.id, deploymentName)
+
+      return c.json({ status: "creating" })
+    } catch (err) {
+      console.error(`Re-provision failed for project ${project.id}:`, err)
       await db.update(projects).set({ status: "error", updatedAt: new Date() }).where(eq(projects.id, project.id))
-      broadcastToProject(project.id, "project_status", { status: "error", message })
-      return c.json({ error: message }, 400)
+      broadcastToProject(project.id, "project_status", { status: "error", message: "Failed to re-provision container" })
+      return c.json({ error: "Re-provision failed" }, 500)
     }
-
-    const deploymentName = getPeonDeploymentName(session.userId, containerResult.lobuAgentId)
-    await db.update(projects).set({ deploymentName, status: "creating" }).where(eq(projects.id, project.id))
-
-    await initProjectWorkspace(session.userId, containerResult.lobuAgentId, project.id, project.templateId, project.repoUrl, services)
-    waitForContainerReady(project.id, deploymentName)
-
-    return c.json({ status: "creating" })
   }
 
-  // Container restarted successfully
-  await db.update(projects).set({ status: "running", updatedAt: new Date() }).where(eq(projects.id, project.id))
-  broadcastToProject(project.id, "project_status", { status: "running" })
-  return c.json({ status: "running" })
+  // Container restart issued — poll for readiness (it takes a moment to become "running")
+  const { waitForContainerReady } = await import("../../web/project-launcher.js")
+  waitForContainerReady(project.id, project.deploymentName)
+  return c.json({ status: "creating" })
 })
 
 // PATCH /api/projects/:id — update project name

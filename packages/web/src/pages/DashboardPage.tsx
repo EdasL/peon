@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Trash2, Loader2, X, MessageSquare, FolderOpen, Pencil } from "lucide-react"
+import { Trash2, Loader2, X, MessageSquare, FolderOpen, Pencil, RotateCcw } from "lucide-react"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { Input } from "@/components/ui/input"
 import * as api from "@/lib/api"
@@ -73,6 +73,7 @@ export function DashboardPage() {
   const [chatProjectId, setChatProjectId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
+  const [restartingId, setRestartingId] = useState<string | null>(null)
 
   useEffect(() => {
     api.getProjects()
@@ -82,7 +83,11 @@ export function DashboardPage() {
     // Poll for status changes every 10s (container creation, stops, etc.)
     const interval = setInterval(() => {
       api.getProjects()
-        .then((d) => setProjects(d.projects))
+        .then((d) => setProjects((prev) => {
+          // Preserve optimistic "creating" status for projects being restarted
+          const restarting = new Set(prev.filter((p) => p.status === "creating").map((p) => p.id))
+          return d.projects.map((p) => restarting.has(p.id) && p.status !== "creating" && p.status !== "running" ? { ...p, status: "creating" as const } : p)
+        }))
         .catch(() => {})
     }, 10_000)
 
@@ -122,6 +127,20 @@ export function DashboardPage() {
       // toast shown by api layer
     }
     setRenamingId(null)
+  }
+
+  const handleRestart = async (id: string) => {
+    setRestartingId(id)
+    setProjects((prev) => prev.map((p) => p.id === id ? { ...p, status: "creating" as const } : p))
+    try {
+      await api.restartProject(id)
+      // Navigate to project page so ProvisioningOverlay handles the rest
+      navigate(`/project/${id}`)
+    } catch {
+      setProjects((prev) => prev.map((p) => p.id === id ? { ...p, status: "error" as const } : p))
+    } finally {
+      setRestartingId(null)
+    }
   }
 
   const deletingProject = projects.find((p) => p.id === deletingId)
@@ -224,6 +243,24 @@ export function DashboardPage() {
                           Last active {timeAgo(p.updatedAt)}
                         </p>
                       </CardContent>
+                      {/* Restart button (stopped / error only) */}
+                      {(p.status === "stopped" || p.status === "error") && (
+                        <button
+                          type="button"
+                          className="absolute top-3 right-[3.75rem] opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-amber-500/10 text-muted-foreground hover:text-amber-400"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleRestart(p.id)
+                          }}
+                          disabled={restartingId === p.id}
+                          title="Restart project"
+                        >
+                          {restartingId === p.id
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <RotateCcw className="h-3.5 w-3.5" />
+                          }
+                        </button>
+                      )}
                       {/* Rename + delete buttons */}
                       <button
                         className="absolute top-3 right-9 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"

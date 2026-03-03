@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react"
 import { useChat } from "@/hooks/use-chat"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, MessageSquare, Send, X } from "lucide-react"
+import { Loader2, MessageSquare, Send, X, RefreshCw } from "lucide-react"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { cn } from "@/lib/utils"
 
@@ -19,6 +19,11 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   const { messages, send, sending, streamingContent, loading, error, connected } =
     useChat(projectId)
   const [input, setInput] = useState("")
+  const [hasConnectedOnce, setHasConnectedOnce] = useState(false)
+
+  useEffect(() => {
+    if (connected) setHasConnectedOnce(true)
+  }, [connected])
   const [dismissedError, setDismissedError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -51,7 +56,6 @@ export function ChatPanel({ projectId }: { projectId: string }) {
           ) : (
             <span className="flex items-center gap-1.5 text-[10px] text-amber-600">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-              reconnecting
             </span>
           )}
         </div>
@@ -68,6 +72,14 @@ export function ChatPanel({ projectId }: { projectId: string }) {
           >
             <X className="h-3.5 w-3.5" />
           </button>
+        </div>
+      )}
+
+      {/* Reconnection banner (only after first successful connection) */}
+      {hasConnectedOnce && !connected && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-3 py-1.5 text-xs text-amber-400">
+          <RefreshCw className="h-3 w-3 animate-spin" />
+          <span>Reconnecting to server...</span>
         </div>
       )}
 
@@ -168,7 +180,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
                   handleSend()
                 }
               }}
-              placeholder={connected ? "Message team lead..." : "Reconnecting..."}
+              placeholder="Message team lead..."
               disabled={sending}
               rows={1}
               className={cn(
@@ -182,7 +194,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
           <Button
             size="icon"
             onClick={handleSend}
-            disabled={sending || !input.trim() || !connected}
+            disabled={sending || !input.trim()}
             className="h-9 w-9 flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-800 disabled:text-zinc-600"
           >
             {sending ? (
