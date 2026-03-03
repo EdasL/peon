@@ -15,6 +15,7 @@ import { COLUMNS } from "@/lib/state-machine"
 import { Column } from "./Column"
 import { DragOverlayCard } from "./DragOverlayCard"
 import { TeamSidebar } from "./TeamSidebar"
+import { AlertCircle } from "lucide-react"
 
 interface BoardProps {
   teamName: string
@@ -63,6 +64,12 @@ export function Board({ teamName }: BoardProps) {
 
   return (
     <div className="flex h-full flex-col">
+      {error && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-red-950/30 border-b border-red-800/30 text-red-400 text-xs">
+          <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
       <div className="flex flex-1 overflow-hidden">
         <DndContext
           sensors={sensors}

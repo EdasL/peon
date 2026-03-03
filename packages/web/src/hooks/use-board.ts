@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react"
+import { toast } from "sonner"
 import type { ClaudeTask, BoardColumn, BoardTask } from "../../server/types"
 import { fetchTasks, createTask, updateTask, deleteTask } from "@/lib/api"
 import { toBoardTasks } from "@/lib/state-machine"
@@ -115,6 +116,7 @@ export function useBoard(teamName: string) {
         await updateTask(teamName, taskId, { ...updates, boardColumn: toColumn })
         // SSE will deliver the confirmed update
       } catch {
+        toast.error("Failed to move task")
         // Roll back optimistic columnMap override before reloading
         setColumnMap((prev) => {
           const next = { ...prev }
@@ -140,6 +142,7 @@ export function useBoard(teamName: string) {
         await deleteTask(teamName, taskId)
         // SSE will confirm the delete
       } catch {
+        toast.error("Failed to delete task")
         // Reload on failure
         const raw = await fetchTasks(teamName)
         const boardTasks = toBoardTasks(raw, columnMapRef.current)

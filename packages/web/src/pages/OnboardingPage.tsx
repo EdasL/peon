@@ -57,6 +57,7 @@ export function OnboardingPage() {
   const [apiProvider] = useState<"anthropic">("anthropic")
   const [savingKey, setSavingKey] = useState(false)
   const [launching, setLaunching] = useState(false)
+  const [launchError, setLaunchError] = useState<string | null>(null)
 
   // Animation
   const [visible, setVisible] = useState(false)
@@ -148,6 +149,7 @@ export function OnboardingPage() {
 
   const launch = async () => {
     setLaunching(true)
+    setLaunchError(null)
     try {
       const resolvedRepoUrl = selectedRepo?.htmlUrl || (repoUrl.trim() || undefined)
       const { project } = await api.createProject({
@@ -156,8 +158,9 @@ export function OnboardingPage() {
         templateId: selectedTemplate,
       })
       navigate(`/project/${project.id}`)
-    } catch {
-      // Error toast shown by api.ts layer
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to create project"
+      setLaunchError(msg)
     } finally {
       setLaunching(false)
     }
@@ -452,12 +455,19 @@ export function OnboardingPage() {
               </div>
 
               <div className="space-y-2">
+                {launchError && (
+                  <div className="text-sm text-destructive bg-destructive/10 rounded-lg p-3">
+                    {launchError}
+                  </div>
+                )}
                 <Button onClick={launch} className="w-full" disabled={launching}>
                   {launching ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Launching...
                     </>
+                  ) : launchError ? (
+                    "Retry"
                   ) : (
                     "Launch project"
                   )}

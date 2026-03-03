@@ -126,12 +126,12 @@ export function ChatPanel({ projectId }: { projectId: string }) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
           placeholder="Describe a feature or bug..."
-          disabled={sending || loading}
+          disabled={sending}
         />
         <Button
           size="icon"
           onClick={handleSend}
-          disabled={sending || loading || !input.trim()}
+          disabled={sending || !input.trim()}
         >
           {sending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
