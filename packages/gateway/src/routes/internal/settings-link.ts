@@ -232,11 +232,12 @@ export function createSettingsLinkRoutes(
 
         return c.json({
           type: "settings_link",
+          url,
+          expiresAt,
           message: "Settings link sent as a button to the user.",
         });
       }
 
-      // Fallback: no interaction service (shouldn't happen in practice)
       return c.json({
         url,
         expiresAt,

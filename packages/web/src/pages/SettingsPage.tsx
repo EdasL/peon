@@ -18,35 +18,30 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Github, Key, Loader2, Trash2, User, CheckCircle2 } from "lucide-react"
+import { ExternalLink, Github, Loader2, LogIn, Trash2, User, CheckCircle2 } from "lucide-react"
 import * as api from "@/lib/api"
 
 type Section = "profile" | "api-keys" | "github" | "danger"
 
 const NAV_ITEMS: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: "profile", label: "Profile", icon: <User className="h-4 w-4" /> },
-  { id: "api-keys", label: "API Keys", icon: <Key className="h-4 w-4" /> },
+  { id: "api-keys", label: "Claude", icon: <LogIn className="h-4 w-4" /> },
   { id: "github", label: "GitHub", icon: <Github className="h-4 w-4" /> },
   { id: "danger", label: "Danger Zone", icon: <Trash2 className="h-4 w-4" /> },
 ]
 
-const PROVIDERS = ["anthropic", "openai"] as const
-type Provider = (typeof PROVIDERS)[number]
-
 export function SettingsPage() {
   const { user, refreshUser } = useAuth()
   const [section, setSection] = useState<Section>("profile")
-  const [keys, setKeys] = useState<api.ApiKeyInfo[]>([])
+  const [oauthConnections, setOauthConnections] = useState<api.OAuthConnection[]>([])
   const [keysLoading, setKeysLoading] = useState(true)
 
-  // Add key form
-  const [addingProvider, setAddingProvider] = useState<Provider | null>(null)
-  const [newKey, setNewKey] = useState("")
-  const [addingKey, setAddingKey] = useState(false)
-
-  // Delete key dialog
-  const [deletingKeyId, setDeletingKeyId] = useState<string | null>(null)
-  const [deleteKeyLoading, setDeleteKeyLoading] = useState(false)
+  // Claude OAuth dialog
+  const [oauthDialogOpen, setOauthDialogOpen] = useState(false)
+  const [oauthAuthUrl, setOauthAuthUrl] = useState<string | null>(null)
+  const [oauthCode, setOauthCode] = useState("")
+  const [oauthLoading, setOauthLoading] = useState(false)
+  const [oauthExchanging, setOauthExchanging] = useState(false)
 
   // GitHub
   const [disconnecting, setDisconnecting] = useState(false)
@@ -57,45 +52,61 @@ export function SettingsPage() {
   const [deleteAccountLoading, setDeleteAccountLoading] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState("")
 
+  const refreshKeys = () => {
+    api.getApiKeys().then((d) => {
+      setOauthConnections(d.oauthConnections || [])
+    })
+  }
+
   useEffect(() => {
     api.getApiKeys()
-      .then((d) => setKeys(d.keys))
+      .then((d) => {
+        setOauthConnections(d.oauthConnections || [])
+      })
       .finally(() => setKeysLoading(false))
   }, [])
 
-  const keyForProvider = (provider: string) => keys.find((k) => k.provider === provider)
+  const oauthForProvider = (provider: string) => oauthConnections.find((o) => o.provider === provider)
 
-  const handleAddKey = async () => {
-    if (!newKey.trim() || !addingProvider) return
-    setAddingKey(true)
+  const handleStartOAuth = async () => {
+    setOauthLoading(true)
+    setOauthAuthUrl(null)
+    setOauthCode("")
     try {
-      const { key } = await api.addApiKey({
-        provider: addingProvider,
-        key: newKey.trim(),
-      })
-      setKeys((prev) => [...prev, key])
-      setNewKey("")
-      setAddingProvider(null)
-      toast.success(`${addingProvider} key added`)
+      const { authUrl } = await api.initClaudeOAuth()
+      setOauthAuthUrl(authUrl)
+      window.open(authUrl, "_blank", "noopener")
     } catch {
       // toast shown by api layer
     } finally {
-      setAddingKey(false)
+      setOauthLoading(false)
     }
   }
 
-  const handleDeleteKey = async () => {
-    if (!deletingKeyId) return
-    setDeleteKeyLoading(true)
+  const handleExchangeOAuth = async () => {
+    if (!oauthCode.trim()) return
+    setOauthExchanging(true)
     try {
-      await api.deleteApiKey(deletingKeyId)
-      setKeys((prev) => prev.filter((k) => k.id !== deletingKeyId))
-      setDeletingKeyId(null)
-      toast.success("API key removed")
+      await api.exchangeClaudeOAuth(oauthCode.trim())
+      toast.success("Claude subscription connected!")
+      setOauthDialogOpen(false)
+      setOauthAuthUrl(null)
+      setOauthCode("")
+      refreshKeys()
     } catch {
       // toast shown by api layer
     } finally {
-      setDeleteKeyLoading(false)
+      setOauthExchanging(false)
+    }
+  }
+
+  const handleDisconnectOAuth = async (provider: string) => {
+    try {
+      await api.disconnectOAuth(provider)
+      setOauthConnections((prev) => prev.filter((o) => o.provider !== provider))
+      toast.success("Claude disconnected")
+    } catch {
+      // toast shown by api layer
     }
   }
 
@@ -181,144 +192,137 @@ export function SettingsPage() {
           {section === "api-keys" && (
             <Card>
               <CardHeader>
-                <CardTitle>API Keys</CardTitle>
+                <CardTitle>Claude Connection</CardTitle>
                 <CardDescription>
-                  Manage the API keys your agents use. Keys are never shown in full.
+                  Connect your Claude subscription to power your agents.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent>
                 {keysLoading ? (
-                  <div className="space-y-3">
-                    <Skeleton className="h-14 w-full" />
-                    <Skeleton className="h-14 w-full" />
-                  </div>
+                  <Skeleton className="h-14 w-full" />
                 ) : (
-                  <div className="space-y-3">
-                    {PROVIDERS.map((provider) => {
-                      const existing = keyForProvider(provider)
-                      const providerLabel =
-                        provider === "anthropic" ? "Anthropic" : "OpenAI"
-                      return (
-                        <div key={provider} className="rounded-lg border p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <span className="font-medium text-sm">{providerLabel}</span>
-                              {existing ? (
-                                <Badge
-                                  variant="secondary"
-                                  className="flex items-center gap-1 text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400"
-                                >
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  Connected
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-muted-foreground">
-                                  Not connected
-                                </Badge>
-                              )}
-                            </div>
-                            {existing ? (
-                              <Dialog
-                                open={deletingKeyId === existing.id}
-                                onOpenChange={(open) =>
-                                  setDeletingKeyId(open ? existing.id : null)
-                                }
-                              >
-                                <DialogTrigger asChild>
-                                  <Button variant="ghost" size="sm" className="text-xs">
-                                    Remove
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                  <DialogHeader>
-                                    <DialogTitle>Remove {providerLabel} key?</DialogTitle>
-                                    <DialogDescription>
-                                      Agents will no longer be able to use this key. You can add a
-                                      new one at any time.
-                                    </DialogDescription>
-                                  </DialogHeader>
-                                  <DialogFooter>
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => setDeletingKeyId(null)}
-                                    >
-                                      Cancel
-                                    </Button>
-                                    <Button
-                                      variant="destructive"
-                                      onClick={handleDeleteKey}
-                                      disabled={deleteKeyLoading}
-                                    >
-                                      {deleteKeyLoading && (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      )}
-                                      Remove
-                                    </Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-xs"
-                                onClick={() => {
-                                  setAddingProvider(provider)
-                                  setNewKey("")
-                                }}
-                              >
-                                Add key
-                              </Button>
-                            )}
-                          </div>
-
-                          {/* Inline add form */}
-                          {addingProvider === provider && !existing && (
-                            <div className="space-y-2 pt-1 border-t">
-                              <Label htmlFor={`key-${provider}`} className="text-xs">
-                                {providerLabel} API Key
-                              </Label>
-                              <div className="flex gap-2">
-                                <Input
-                                  id={`key-${provider}`}
-                                  type="password"
-                                  placeholder={
-                                    provider === "anthropic" ? "sk-ant-..." : "sk-..."
-                                  }
-                                  value={newKey}
-                                  onChange={(e) => setNewKey(e.target.value)}
-                                  onKeyDown={(e) => e.key === "Enter" && handleAddKey()}
-                                  className="text-sm"
-                                />
-                                <Button
-                                  size="sm"
-                                  onClick={handleAddKey}
-                                  disabled={!newKey.trim() || addingKey}
-                                >
-                                  {addingKey ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    "Save"
-                                  )}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setAddingProvider(null)}
-                                >
-                                  Cancel
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                  <div className="rounded-lg border p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="font-medium text-sm">Anthropic</span>
+                        {oauthForProvider("anthropic") ? (
+                          <Badge
+                            variant="secondary"
+                            className="flex items-center gap-1 text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400"
+                          >
+                            <CheckCircle2 className="h-3 w-3" />
+                            Claude subscription
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Not connected
+                          </Badge>
+                        )}
+                      </div>
+                      {oauthForProvider("anthropic") ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs"
+                          onClick={() => handleDisconnectOAuth("anthropic")}
+                        >
+                          Disconnect
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="flex items-center gap-1.5"
+                          onClick={() => {
+                            setOauthDialogOpen(true)
+                            handleStartOAuth()
+                          }}
+                        >
+                          <LogIn className="h-3.5 w-3.5" />
+                          Login with Claude
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )}
               </CardContent>
             </Card>
           )}
+
+          {/* Claude OAuth dialog */}
+          <Dialog open={oauthDialogOpen} onOpenChange={(open) => {
+            setOauthDialogOpen(open)
+            if (!open) {
+              setOauthAuthUrl(null)
+              setOauthCode("")
+            }
+          }}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Login with Claude</DialogTitle>
+                <DialogDescription>
+                  Authorize with your Claude subscription, then paste the code below.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                {oauthLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : oauthAuthUrl ? (
+                  <>
+                    <div className="space-y-2">
+                      <p className="text-sm">
+                        <strong>Step 1:</strong> A new tab should have opened. If not, click below:
+                      </p>
+                      <Button variant="outline" size="sm" asChild className="w-full">
+                        <a href={oauthAuthUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Open Claude authorization
+                        </a>
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-sm">
+                        <strong>Step 2:</strong> After authorizing, copy the code shown and paste it here:
+                      </p>
+                      <Input
+                        placeholder="Paste the code here (CODE#STATE)"
+                        value={oauthCode}
+                        onChange={(e) => setOauthCode(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && oauthCode.trim()) handleExchangeOAuth()
+                        }}
+                        className="font-mono text-sm"
+                        autoFocus
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Failed to initialize. Close this dialog and try again.
+                  </p>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOauthDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleExchangeOAuth}
+                  disabled={!oauthCode.trim() || oauthExchanging}
+                >
+                  {oauthExchanging ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Connecting...
+                    </>
+                  ) : (
+                    "Connect"
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {section === "github" && (
             <Card>

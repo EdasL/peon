@@ -47,10 +47,10 @@ chatRouter.get("/:id/chat/stream", async (c) => {
     // Subscribe to project broadcasts via Redis pub/sub
     const unsubscribe = subscribeClient(projectId, send)
 
-    // Send heartbeat
+    // Send heartbeat every 15s to keep connection alive and let client detect stale connections
     const heartbeat = setInterval(() => {
-      stream.writeSSE({ event: "ping", data: "" })
-    }, 30_000)
+      stream.writeSSE({ event: "ping", data: JSON.stringify({ ts: Date.now() }) })
+    }, 15_000)
 
     // Cleanup on disconnect
     let aborted = false

@@ -2,6 +2,10 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { fetchTasks } from "@/lib/api"
 import type { ClaudeTask } from "../../server/types"
 
+const STALE_THRESHOLD_MS = 30_000
+const BACKOFF_INITIAL_MS = 1_000
+const BACKOFF_MAX_MS = 30_000
+
 export type AgentStatus = "idle" | "working" | "error"
 
 export interface AgentState {
@@ -22,6 +26,10 @@ export interface ActivityEvent {
   tool?: string
   /** For tool_use events: whether this is a start or end marker */
   toolPhase?: "start" | "end"
+  /** File path associated with the tool call (Read, Write, Edit, Grep, Glob) */
+  filePath?: string
+  /** Shell command (Bash tool) */
+  command?: string
 }
 
 /** Shape of SSE agent_activity event data from the backend */
@@ -29,6 +37,10 @@ interface AgentActivityEvent {
   type: "tool_start" | "tool_end" | "thinking" | "turn_end" | "error"
   tool?: string
   text?: string
+  /** File path associated with the tool call */
+  filePath?: string
+  /** Shell command (Bash tool) */
+  command?: string
   message?: string
   agentName?: string
   timestamp: number
@@ -40,28 +52,56 @@ const MAX_FEED_EVENTS = 100
 const TOOL_ACTION_TTL = 10_000
 
 /** Convert a raw tool name into a short human-readable verb phrase */
-function toolLabel(tool: string): string {
+function toolVerb(tool: string): string {
   switch (tool.toLowerCase()) {
     case "read":
-      return "Reading file"
+      return "Reading"
     case "write":
-      return "Writing file"
+      return "Creating"
     case "edit":
     case "multiedit":
-      return "Editing file"
+      return "Editing"
     case "bash":
-      return "Running command"
+      return "Running"
     case "grep":
-      return "Searching codebase"
+      return "Searching"
     case "glob":
-      return "Scanning files"
+      return "Finding files"
     case "webbrowser":
     case "webfetch":
-      return "Fetching URL"
+      return "Fetching"
     case "websearch":
       return "Searching web"
     default:
       return `Using ${tool}`
+  }
+}
+
+/**
+ * Build a human-readable label for a tool call.
+ * Uses enriched fields (filePath, command) when available, falls back to text or generic verb.
+ */
+function toolLabel(tool: string, opts?: { filePath?: string; command?: string; text?: string }): string {
+  const verb = toolVerb(tool)
+  if (opts?.filePath) return `${verb} \`${opts.filePath}\``
+  if (opts?.command) {
+    const cmd = opts.command.length > 80 ? `${opts.command.slice(0, 80)}...` : opts.command
+    return `${verb} \`${cmd}\``
+  }
+  if (opts?.text) return `${verb} — ${opts.text}`
+  // Fallback: generic label
+  switch (tool.toLowerCase()) {
+    case "read": return "Reading file"
+    case "write": return "Creating file"
+    case "edit":
+    case "multiedit": return "Editing file"
+    case "bash": return "Running command"
+    case "grep": return "Searching codebase"
+    case "glob": return "Scanning files"
+    case "webbrowser":
+    case "webfetch": return "Fetching URL"
+    case "websearch": return "Searching web"
+    default: return `Using ${tool}`
   }
 }
 
@@ -205,94 +245,169 @@ export function useAgentActivity(projectId: string, templateAgentNames?: string[
 
   // SSE for immediate task_update and agent_activity events
   useEffect(() => {
-    const es = new EventSource(`/api/projects/${projectId}/chat/stream`, {
-      withCredentials: true,
-    })
+    let cancelled = false
+    const lastEventTimeRef = { current: 0 }
+    const backoffRef = { current: BACKOFF_INITIAL_MS }
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let staleCheckInterval: ReturnType<typeof setInterval> | null = null
+    let currentEs: EventSource | null = null
 
-    es.onopen = () => setConnected(true)
-    es.onerror = () => setConnected(false)
+    const clearReconnect = () => {
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
+    }
 
-    es.addEventListener("task_update", () => {
-      // Trigger a refresh to get the latest state
-      refresh()
-    })
+    const connectSSE = (isReconnect: boolean) => {
+      if (cancelled) return
 
-    es.addEventListener("task_delete", () => {
-      refresh()
-    })
-
-    es.addEventListener("agent_activity", (e: MessageEvent) => {
-      let data: AgentActivityEvent
-      try {
-        data = JSON.parse(e.data) as AgentActivityEvent
-      } catch {
-        return
+      if (currentEs) {
+        currentEs.close()
+        currentEs = null
       }
 
-      const ts = data.timestamp ?? Date.now()
-      const agentName = data.agentName ?? "agent"
+      const es = new EventSource(`/api/projects/${projectId}/chat/stream`, {
+        withCredentials: true,
+      })
+      currentEs = es
 
-      if (data.type === "tool_start" && data.tool) {
-        const label = data.text
-          ? `${toolLabel(data.tool)} — ${data.text}`
-          : toolLabel(data.tool)
-        // Ensure at least one agent exists when a tool fires before tasks load
-        setAgents((prev) => {
-          if (prev.length === 0)
-            return [{ name: agentName, status: "working", currentTask: null, activeForm: label }]
-          // Update the matching agent or the first one if no match
-          const idx = prev.findIndex((a) => a.name === agentName)
-          if (idx >= 0) {
-            const updated = [...prev]
-            updated[idx] = { ...updated[idx], status: "working", activeForm: label }
-            return updated
-          }
-          return prev.map((a) => ({ ...a, status: "working" as const, activeForm: label }))
-        })
-        // Use local clock for TTL, not server timestamp
-        setLastToolAction({ text: label, at: Date.now() })
-        addFeedEvent({
-          timestamp: ts,
-          agentName,
-          type: "tool_use",
-          taskSubject: data.tool,
-          detail: label,
-          tool: data.tool,
-          toolPhase: "start",
-        })
-      } else if (data.type === "tool_end" && data.tool) {
-        addFeedEvent({
-          timestamp: ts,
-          agentName,
-          type: "tool_use",
-          taskSubject: data.tool,
-          detail: `Done: ${data.tool}`,
-          tool: data.tool,
-          toolPhase: "end",
-        })
-      } else if (data.type === "thinking") {
-        // Intentionally skipped — too noisy for the feed.
-        // The agent is working; no state update needed.
-      } else if (data.type === "turn_end") {
-        // Clear tool action when turn finishes
-        setLastToolAction(null)
-      } else if (data.type === "error" && data.message) {
-        setAgents((prev) => {
-          if (prev.length === 0)
-            return [{ name: agentName, status: "error", currentTask: null, activeForm: data.message ?? null }]
-          return prev.map((a) => ({ ...a, status: "error" as const, activeForm: data.message ?? a.activeForm }))
-        })
-        addFeedEvent({
-          timestamp: ts,
-          agentName,
-          type: "status_change",
-          taskSubject: "error",
-          detail: data.message,
-        })
+      es.onopen = () => {
+        if (cancelled) return
+        backoffRef.current = BACKOFF_INITIAL_MS
+        lastEventTimeRef.current = Date.now()
+        setConnected(true)
+        if (isReconnect) refresh()
       }
-    })
 
-    return () => es.close()
+      es.onerror = () => {
+        if (cancelled) return
+        setConnected(false)
+        es.close()
+        if (currentEs === es) currentEs = null
+
+        clearReconnect()
+        const delay = backoffRef.current
+        backoffRef.current = Math.min(backoffRef.current * 2, BACKOFF_MAX_MS)
+        reconnectTimer = setTimeout(() => {
+          if (!cancelled) connectSSE(true)
+        }, delay)
+      }
+
+      const markEvent = () => {
+        lastEventTimeRef.current = Date.now()
+        setConnected(true)
+      }
+
+      es.addEventListener("ping", markEvent)
+
+      es.addEventListener("task_update", () => {
+        markEvent()
+        refresh()
+      })
+
+      es.addEventListener("task_delete", () => {
+        markEvent()
+        refresh()
+      })
+
+      es.addEventListener("agent_activity", (e: MessageEvent) => {
+        markEvent()
+        let data: AgentActivityEvent
+        try {
+          data = JSON.parse(e.data) as AgentActivityEvent
+        } catch {
+          return
+        }
+
+        const ts = data.timestamp ?? Date.now()
+        const agentName = data.agentName ?? "agent"
+
+        if (data.type === "tool_start" && data.tool) {
+          const label = toolLabel(data.tool, {
+            filePath: data.filePath,
+            command: data.command,
+            text: data.text,
+          })
+          setAgents((prev) => {
+            if (prev.length === 0)
+              return [{ name: agentName, status: "working", currentTask: null, activeForm: label }]
+            const idx = prev.findIndex((a) => a.name === agentName)
+            if (idx >= 0) {
+              const updated = [...prev]
+              updated[idx] = { ...updated[idx], status: "working", activeForm: label }
+              return updated
+            }
+            return prev.map((a) => ({ ...a, status: "working" as const, activeForm: label }))
+          })
+          setLastToolAction({ text: label, at: Date.now() })
+          addFeedEvent({
+            timestamp: ts,
+            agentName,
+            type: "tool_use",
+            taskSubject: data.tool,
+            detail: label,
+            tool: data.tool,
+            toolPhase: "start",
+            filePath: data.filePath,
+            command: data.command,
+          })
+        } else if (data.type === "tool_end" && data.tool) {
+          addFeedEvent({
+            timestamp: ts,
+            agentName,
+            type: "tool_use",
+            taskSubject: data.tool,
+            detail: `Done: ${data.tool}`,
+            tool: data.tool,
+            toolPhase: "end",
+          })
+        } else if (data.type === "thinking") {
+          // Intentionally skipped — too noisy for the feed.
+        } else if (data.type === "turn_end") {
+          setLastToolAction(null)
+        } else if (data.type === "error" && data.message) {
+          setAgents((prev) => {
+            if (prev.length === 0)
+              return [{ name: agentName, status: "error", currentTask: null, activeForm: data.message ?? null }]
+            return prev.map((a) => ({ ...a, status: "error" as const, activeForm: data.message ?? a.activeForm }))
+          })
+          addFeedEvent({
+            timestamp: ts,
+            agentName,
+            type: "status_change",
+            taskSubject: "error",
+            detail: data.message,
+          })
+        }
+      })
+    }
+
+    connectSSE(false)
+
+    // Stale-connection detector: if no event in 30s, reconnect
+    staleCheckInterval = setInterval(() => {
+      if (cancelled) return
+      const elapsed = Date.now() - lastEventTimeRef.current
+      if (elapsed > STALE_THRESHOLD_MS && currentEs) {
+        setConnected(false)
+        currentEs.close()
+        currentEs = null
+        clearReconnect()
+        const delay = backoffRef.current
+        backoffRef.current = Math.min(backoffRef.current * 2, BACKOFF_MAX_MS)
+        reconnectTimer = setTimeout(() => {
+          if (!cancelled) connectSSE(true)
+        }, delay)
+      }
+    }, STALE_THRESHOLD_MS)
+
+    return () => {
+      cancelled = true
+      clearReconnect()
+      if (staleCheckInterval !== null) clearInterval(staleCheckInterval)
+      if (currentEs) currentEs.close()
+    }
   }, [projectId, refresh, addFeedEvent])
 
   // Auto-clear stale tool action after TTL expires

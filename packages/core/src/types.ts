@@ -48,6 +48,8 @@ export interface AuthProfile {
     expiresAt?: number;
     refreshToken?: string;
     accountId?: string;
+    scopes?: string[];
+    clientId?: string;
   };
   createdAt: number;
 }
@@ -320,6 +322,9 @@ export interface ThreadResponsePayload {
     elapsedSeconds: number;
     state: string; // e.g., "is running" or "is scheduling"
   };
+
+  /** Platform-specific metadata forwarded from the original message */
+  platformMetadata?: Record<string, unknown>;
 
   // Exec-specific response fields (for jobType === "exec")
   execId?: string; // Exec job ID for response routing

@@ -48,11 +48,23 @@ export const disconnectGithub = () =>
   request<{ ok: boolean }>("/api/auth/github", { method: "DELETE" })
 
 // API Keys
-export const getApiKeys = () => request<{ keys: ApiKeyInfo[] }>("/api/keys")
+export const getApiKeys = () =>
+  request<{ keys: ApiKeyInfo[]; oauthConnections: OAuthConnection[] }>("/api/keys")
 export const addApiKey = (data: { provider: string; key: string; label?: string }) =>
   request<{ key: ApiKeyInfo }>("/api/keys", { method: "POST", body: JSON.stringify(data) })
 export const deleteApiKey = (id: string) =>
   request<{ ok: boolean }>(`/api/keys/${id}`, { method: "DELETE" })
+
+// OAuth
+export const initClaudeOAuth = () =>
+  request<{ authUrl: string }>("/api/auth/claude-oauth/web-init", { method: "POST" })
+export const exchangeClaudeOAuth = (authCode: string) =>
+  request<{ ok: boolean }>("/api/auth/claude-oauth/web-exchange", {
+    method: "POST",
+    body: JSON.stringify({ authCode }),
+  })
+export const disconnectOAuth = (provider: string) =>
+  request<{ ok: boolean }>(`/api/keys/oauth/${provider}`, { method: "DELETE" })
 
 // Account
 export const deleteAccount = () =>
@@ -159,6 +171,13 @@ export interface ApiKeyInfo {
   provider: string
   label: string
   createdAt: string
+}
+
+export interface OAuthConnection {
+  provider: string
+  authType: string
+  label: string
+  connectedAt?: string
 }
 
 export interface ChatMessage {

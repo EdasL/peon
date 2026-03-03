@@ -16,66 +16,101 @@ function formatTime(ts: number): string {
   return `${h}:${m}:${s}`
 }
 
-function EventIcon({ type, toolPhase }: { type: ActivityEvent["type"]; toolPhase?: "start" | "end" }) {
-  const base = "text-xs font-mono leading-none select-none"
-  switch (type) {
-    case "started":
-      return <span className={cn(base, "text-blue-400")}>→</span>
-    case "completed":
-      return <span className={cn(base, "text-emerald-400")}>✓</span>
-    case "task_update":
-      return <span className={cn(base, "text-yellow-400")}>~</span>
-    case "status_change":
-      return <span className={cn(base, "text-zinc-400")}>·</span>
-    case "tool_use":
-      return (
-        <span className={cn(base, toolPhase === "end" ? "text-cyan-600" : "text-cyan-400")}>
-          {toolPhase === "end" ? "✓" : "⚡"}
-        </span>
-      )
-    default:
-      return <span className={cn(base, "text-zinc-500")}>·</span>
+const EVENT_COLORS: Record<string, string> = {
+  started: "text-blue-400",
+  completed: "text-emerald-400",
+  task_update: "text-yellow-400",
+  status_change: "text-zinc-500",
+  tool_use: "text-cyan-400",
+}
+
+const EVENT_ICONS: Record<string, string> = {
+  started: "→",
+  completed: "✓",
+  task_update: "~",
+  status_change: "·",
+  tool_use: "⚡",
+}
+
+/**
+ * Render a label that may contain a backtick-wrapped path/command.
+ * e.g. "Reading `src/App.tsx`" → "Reading " + <mono>src/App.tsx</mono>
+ */
+function RichLabel({ text, className }: { text: string; className?: string }) {
+  const backtickRe = /`([^`]+)`/
+  const match = backtickRe.exec(text)
+  if (!match) {
+    return <span className={className}>{text}</span>
   }
+  const before = text.slice(0, match.index)
+  const inner = match[1]
+  const after = text.slice(match.index + match[0].length)
+  return (
+    <span className={className}>
+      {before}
+      <code className="font-mono text-[10px] text-cyan-300 bg-cyan-950/40 px-0.5 rounded">
+        {inner}
+      </code>
+      {after}
+    </span>
+  )
 }
 
 function FeedRow({ event }: { event: ActivityEvent }) {
-  const isToolUse = event.type === "tool_use"
+  const isToolEnd = event.type === "tool_use" && event.toolPhase === "end"
+  const iconColor = isToolEnd ? "text-cyan-700" : (EVENT_COLORS[event.type] ?? "text-zinc-500")
+  const icon = isToolEnd ? "✓" : (EVENT_ICONS[event.type] ?? "·")
 
   return (
-    <div className="flex items-start gap-2.5 px-3 py-1.5 hover:bg-white/[0.02] transition-colors">
-      {/* Timestamp */}
-      <span className="mt-px flex-shrink-0 font-mono text-[10px] text-zinc-600 tabular-nums">
+    <div className="group flex items-start gap-2 px-3 py-1 hover:bg-white/[0.02] transition-colors">
+      {/* Time */}
+      <span className="mt-px flex-shrink-0 font-mono text-[10px] text-zinc-700 tabular-nums w-[54px]">
         {formatTime(event.timestamp)}
       </span>
 
       {/* Icon */}
-      <span className="mt-px flex-shrink-0 w-3 text-center">
-        <EventIcon type={event.type} toolPhase={event.toolPhase} />
-      </span>
+      <div className="flex flex-col items-center flex-shrink-0">
+        <span className={cn("text-[11px] font-mono leading-none mt-px", iconColor)}>
+          {icon}
+        </span>
+      </div>
 
-      {/* Agent name */}
-      <span className={cn("flex-shrink-0 text-[11px] font-medium", isToolUse ? "text-cyan-600" : "text-zinc-400")}>
-        {event.agentName}
-      </span>
+      {/* Content */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-1.5 flex-wrap">
+          {/* Agent tag */}
+          <span
+            className={cn(
+              "text-[10px] font-semibold flex-shrink-0",
+              event.type === "tool_use" ? "text-cyan-700" : "text-zinc-500"
+            )}
+          >
+            {event.agentName}
+          </span>
 
-      {/* Message */}
-      <span className="min-w-0 text-[11px] text-zinc-300 truncate">
-        {event.type === "started" && "started"}
-        {event.type === "completed" && "completed"}
-        {event.type === "task_update" && (event.detail ?? "updated")}
-        {event.type === "status_change" && (event.detail ?? "status changed")}
-        {event.type === "tool_use" && (
-          <span className={event.toolPhase === "end" ? "text-cyan-700" : "text-cyan-300"}>
-            {event.taskSubject}
-            {event.detail && event.detail !== event.taskSubject && (
-              <span className="text-zinc-500"> — {event.detail}</span>
+          {/* Message */}
+          <span className="text-[11px] text-zinc-400 leading-snug break-all min-w-0">
+            {event.type === "started" && (
+              <>started <span className="font-mono text-zinc-300">{event.taskSubject}</span></>
+            )}
+            {event.type === "completed" && (
+              <>completed <span className="font-mono text-zinc-300">{event.taskSubject}</span></>
+            )}
+            {event.type === "task_update" && (
+              <span className="text-zinc-500">{event.detail ?? event.taskSubject}</span>
+            )}
+            {event.type === "status_change" && (
+              <span className="text-zinc-600">{event.detail ?? "status changed"}</span>
+            )}
+            {event.type === "tool_use" && (
+              <RichLabel
+                text={event.detail ?? event.taskSubject}
+                className={isToolEnd ? "text-zinc-600" : "text-cyan-400"}
+              />
             )}
           </span>
-        )}
-        {event.type !== "tool_use" && (
-          <>{" "}<span className="text-zinc-500 italic">{event.taskSubject}</span></>
-        )}
-      </span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -86,15 +121,12 @@ export function ActivityFeed({ events, maxEvents = 100 }: ActivityFeedProps) {
   const [userScrolled, setUserScrolled] = useState(false)
   const prevCountRef = useRef(events.length)
 
-  // Track whether user has scrolled away from top
   const handleScroll = useCallback(() => {
     const viewport = scrollAreaRef.current?.querySelector("[data-slot='scroll-area-viewport']")
     if (!viewport) return
-    // If scrolled more than 200px from top, user is reading older events
     setUserScrolled(viewport.scrollTop > 200)
   }, [])
 
-  // Auto-scroll to top only when new events arrive AND user hasn't scrolled away
   useEffect(() => {
     if (events.length > prevCountRef.current && !userScrolled) {
       topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -103,19 +135,24 @@ export function ActivityFeed({ events, maxEvents = 100 }: ActivityFeedProps) {
   }, [events.length, userScrolled])
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border/40">
-        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+    <aside className="flex h-full w-[280px] flex-shrink-0 flex-col border-l border-border/40 bg-zinc-950">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/40">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
           Activity
         </span>
-        <span className="text-[10px] text-zinc-600">{events.length} events</span>
+        {events.length > 0 && (
+          <span className="text-[10px] text-zinc-700 tabular-nums">
+            {events.length}
+          </span>
+        )}
       </div>
 
       <ScrollArea className="flex-1" ref={scrollAreaRef} onScrollCapture={handleScroll}>
         {events.length === 0 ? (
-          <div className="flex items-center justify-center py-10 px-3">
-            <p className="text-xs text-zinc-600 text-center">
-              Waiting for agent activity...
+          <div className="flex items-center justify-center py-10 px-4">
+            <p className="text-[11px] text-zinc-700 text-center leading-relaxed">
+              Tool calls, file changes, and task transitions will appear here
             </p>
           </div>
         ) : (
@@ -126,7 +163,7 @@ export function ActivityFeed({ events, maxEvents = 100 }: ActivityFeedProps) {
             ))}
             {events.length >= maxEvents && (
               <div className="px-3 py-2 text-center border-t border-border/20">
-                <span className="text-[10px] text-zinc-600">
+                <span className="text-[10px] text-zinc-700">
                   Showing latest {maxEvents} events
                 </span>
               </div>
@@ -134,6 +171,6 @@ export function ActivityFeed({ events, maxEvents = 100 }: ActivityFeedProps) {
           </div>
         )}
       </ScrollArea>
-    </div>
+    </aside>
   )
 }

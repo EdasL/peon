@@ -8,7 +8,6 @@
  * AFTER the gateway is running and a session context is fetched.
  */
 
-import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -47,7 +46,6 @@ export async function writeBootstrapConfig(
   options?: BootstrapOptions
 ): Promise<BootstrapResult> {
   const port = options?.port ?? (Number(process.env.OPENCLAW_PORT) || DEFAULT_PORT);
-  const authToken = crypto.randomUUID();
 
   const configDir = getConfigDir();
   const workspaceDir = path.join(configDir, "workspace");
@@ -60,10 +58,11 @@ export async function writeBootstrapConfig(
       mode: "local",
       port,
       bind: "loopback",
-      auth: {
-        mode: "token",
-        token: authToken,
-      },
+      // Both OpenClaw and the worker run inside the same container on
+      // loopback — no external access is possible, so auth is unnecessary.
+      // Post-ClawJacked patch (2026.2.25) device pairing rejects fresh
+      // key pairs, making token+device auth unworkable without pre-registration.
+      auth: { mode: "none" },
     },
     agents: {
       defaults: {
@@ -95,19 +94,15 @@ export async function writeBootstrapConfig(
   ]);
 
   logger.info(`Bootstrap config written to ${getConfigPath()} (port=${port})`);
-  return { authToken };
+  // authToken kept in interface for backwards compatibility with entrypoint script
+  return { authToken: "unused" };
 }
 
 /**
  * Read the auth token from an existing bootstrap config file.
- * Returns null if the file doesn't exist or the token can't be parsed.
+ * With auth.mode=none, no token is needed — always returns null.
+ * Kept for backwards compatibility.
  */
 export function getBootstrapAuthToken(): string | null {
-  try {
-    const raw = require("node:fs").readFileSync(getConfigPath(), "utf-8");
-    const config = JSON.parse(raw);
-    return config?.gateway?.auth?.token ?? null;
-  } catch {
-    return null;
-  }
+  return null;
 }

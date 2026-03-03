@@ -4,10 +4,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import {
-  createLogger,
-  type WorkerTransport,
-} from "@lobu/core";
+import { createLogger, type WorkerTransport } from "@lobu/core";
 import * as Sentry from "@sentry/node";
 import { handleExecutionError } from "../core/error-handler";
 import { listAppDirectories } from "../core/project-scanner";
@@ -25,11 +22,9 @@ import {
   getProviderAuthHintFromError,
 } from "../shared/provider-auth-hints";
 import { writeOpenClawConfig, clearOpenClawSession } from "./config-bridge";
+import { buildToolActivityText } from "./tool-activity";
 import { OpenClawCoreInstructionProvider } from "./instructions";
-import {
-  PROVIDER_REGISTRY_ALIASES,
-  resolveModelRef,
-} from "./model-resolver";
+import { PROVIDER_REGISTRY_ALIASES, resolveModelRef } from "./model-resolver";
 import { OpenClawWsClient, type OpenClawEvent } from "./openclaw-ws-client";
 import { getOpenClawProcess } from "./openclaw-process";
 import { getOpenClawSessionContext } from "./session-context";
@@ -52,7 +47,7 @@ export class OpenClawWorker implements WorkerExecutor {
 
     if (!gatewayUrl || !workerToken) {
       throw new Error(
-        "DISPATCHER_URL and WORKER_TOKEN environment variables are required"
+        "DISPATCHER_URL and WORKER_TOKEN environment variables are required",
       );
     }
 
@@ -72,6 +67,7 @@ export class OpenClawWorker implements WorkerExecutor {
       botResponseTs: config.botResponseId,
       teamId: config.teamId,
       platform: config.platform,
+      platformMetadata: config.platformMetadata as Record<string, unknown>,
     });
   }
 
@@ -83,15 +79,15 @@ export class OpenClawWorker implements WorkerExecutor {
 
     try {
       logger.info(
-        `🚀 Starting OpenClaw worker for session: ${this.config.sessionKey}`
+        `🚀 Starting OpenClaw worker for session: ${this.config.sessionKey}`,
       );
       logger.info(
-        `[TIMING] Worker execute() started at: ${new Date(executeStartTime).toISOString()}`
+        `[TIMING] Worker execute() started at: ${new Date(executeStartTime).toISOString()}`,
       );
 
       // Decode user prompt
       const userPrompt = Buffer.from(this.config.userPrompt, "base64").toString(
-        "utf-8"
+        "utf-8",
       );
       logger.info(`User prompt: ${userPrompt.substring(0, 100)}...`);
 
@@ -110,7 +106,7 @@ export class OpenClawWorker implements WorkerExecutor {
         async () => {
           await this.workspaceManager.setupWorkspace(
             this.config.userId,
-            this.config.sessionKey
+            this.config.sessionKey,
           );
 
           const { initModuleWorkspace } = await import("../modules/lifecycle");
@@ -119,7 +115,7 @@ export class OpenClawWorker implements WorkerExecutor {
             username: this.config.userId,
             sessionKey: this.config.sessionKey,
           });
-        }
+        },
       );
 
       // Setup I/O directories for file handling
@@ -137,9 +133,9 @@ export class OpenClawWorker implements WorkerExecutor {
           sessionKey: this.config.sessionKey,
           workingDirectory: this.workspaceManager.getCurrentWorkingDirectory(),
           availableProjects: listAppDirectories(
-            this.workspaceManager.getCurrentWorkingDirectory()
+            this.workspaceManager.getCurrentWorkingDirectory(),
           ),
-        }
+        },
       );
 
       // Call module onSessionStart hooks to allow modules to modify system prompt
@@ -166,11 +162,11 @@ export class OpenClawWorker implements WorkerExecutor {
 
       // Execute AI session
       logger.info(
-        `[TIMING] Starting OpenClaw session at: ${new Date().toISOString()}`
+        `[TIMING] Starting OpenClaw session at: ${new Date().toISOString()}`,
       );
       const aiStartTime = Date.now();
       logger.info(
-        `[TIMING] Total worker startup time: ${aiStartTime - executeStartTime}ms`
+        `[TIMING] Total worker startup time: ${aiStartTime - executeStartTime}ms`,
       );
 
       let firstOutputLogged = false;
@@ -193,7 +189,7 @@ export class OpenClawWorker implements WorkerExecutor {
             async (update) => {
               if (!firstOutputLogged && update.type === "output") {
                 logger.info(
-                  `[TIMING] First OpenClaw output at: ${new Date().toISOString()} (${Date.now() - aiStartTime}ms after start)`
+                  `[TIMING] First OpenClaw output at: ${new Date().toISOString()} (${Date.now() - aiStartTime}ms after start)`,
                 );
                 firstOutputLogged = true;
               }
@@ -207,12 +203,12 @@ export class OpenClawWorker implements WorkerExecutor {
               } else if (update.type === "status_update") {
                 await this.workerTransport.sendStatusUpdate(
                   update.data.elapsedSeconds,
-                  update.data.state
+                  update.data.state,
                 );
               }
-            }
+            },
           );
-        }
+        },
       );
 
       // Collect module data before sending final response
@@ -226,7 +222,9 @@ export class OpenClawWorker implements WorkerExecutor {
 
       // Handle result
       if (result.success) {
-        logger.info("Session completed successfully - all content already streamed via WebSocket");
+        logger.info(
+          "Session completed successfully - all content already streamed via WebSocket",
+        );
         await this.workerTransport.signalDone();
       } else {
         const errorMsg = result.error || "Unknown error";
@@ -234,21 +232,21 @@ export class OpenClawWorker implements WorkerExecutor {
 
         if (isTimeout) {
           logger.info(
-            `Session timed out (exit code 124) - will be retried automatically, not showing error to user`
+            `Session timed out (exit code 124) - will be retried automatically, not showing error to user`,
           );
           throw new Error("SESSION_TIMEOUT");
         } else {
           await this.workerTransport.sendStreamDelta(
             `❌ Session failed: ${errorMsg}`,
             true,
-            true
+            true,
           );
           await this.workerTransport.signalError(new Error(errorMsg));
         }
       }
 
       logger.info(
-        `Worker completed with ${result.success ? "success" : "failure"}`
+        `Worker completed with ${result.success ? "success" : "failure"}`,
       );
     } catch (error) {
       await handleExecutionError(error, this.workerTransport);
@@ -283,7 +281,7 @@ export class OpenClawWorker implements WorkerExecutor {
   private async runAISession(
     userPrompt: string,
     customInstructions: string,
-    onProgress: (update: ProgressUpdate) => Promise<void>
+    onProgress: (update: ProgressUpdate) => Promise<void>,
   ): Promise<SessionExecutionResult> {
     const rawOptions = JSON.parse(this.config.agentOptions) as Record<
       string,
@@ -293,38 +291,17 @@ export class OpenClawWorker implements WorkerExecutor {
     // Fetch session context for provider config and gateway instructions
     const context = await getOpenClawSessionContext();
     const pc = context.providerConfig;
-    if (pc.credentialEnvVarName) {
-      process.env.CREDENTIAL_ENV_VAR_NAME = pc.credentialEnvVarName;
-    }
     if (pc.defaultProvider) {
       process.env.AGENT_DEFAULT_PROVIDER = pc.defaultProvider;
     }
     if (pc.defaultModel) {
       process.env.AGENT_DEFAULT_MODEL = pc.defaultModel;
     }
-    if (pc.providerBaseUrlMappings) {
-      for (const [envVar, url] of Object.entries(pc.providerBaseUrlMappings)) {
-        process.env[envVar] = url;
-      }
-    }
-
     const modelRef =
       typeof rawOptions.model === "string" ? rawOptions.model : "";
 
     const { provider: rawProvider, modelId } = resolveModelRef(modelRef);
     const provider = PROVIDER_REGISTRY_ALIASES[rawProvider] || rawProvider;
-
-    // Dynamic provider base URL
-    const dynamicMappings = rawOptions.providerBaseUrlMappings as
-      | Record<string, string>
-      | undefined;
-    if (dynamicMappings && typeof dynamicMappings === "object") {
-      for (const [envVar, url] of Object.entries(dynamicMappings)) {
-        if (!process.env[envVar]) {
-          process.env[envVar] = url;
-        }
-      }
-    }
 
     const workspaceDir = this.getWorkingDirectory();
 
@@ -332,7 +309,7 @@ export class OpenClawWorker implements WorkerExecutor {
     const providerStateFile = path.join(
       workspaceDir,
       ".openclaw",
-      "provider.json"
+      "provider.json",
     );
     let sessionSummary: string | undefined;
     try {
@@ -343,7 +320,7 @@ export class OpenClawWorker implements WorkerExecutor {
       };
       if (prevState.provider && prevState.provider !== provider) {
         logger.info(
-          `Provider changed from ${prevState.provider} to ${provider}, resetting session`
+          `Provider changed from ${prevState.provider} to ${provider}, resetting session`,
         );
         sessionSummary = `[System note: The AI provider was just changed from ${prevState.provider} to ${provider}. Previous conversation history has been cleared.]`;
         await clearOpenClawSession(workspaceDir);
@@ -357,7 +334,7 @@ export class OpenClawWorker implements WorkerExecutor {
     await fs.writeFile(
       providerStateFile,
       JSON.stringify({ provider, modelId }),
-      "utf-8"
+      "utf-8",
     );
 
     // Merge gateway instructions into custom instructions
@@ -378,7 +355,7 @@ export class OpenClawWorker implements WorkerExecutor {
         .map((b) => {
           const cmd = `${b.command} ${(b.args || []).join(" ")}`;
           const aliases = [b.name, (b as any).providerId].filter(
-            (v, i, a) => v && a.indexOf(v) === i
+            (v, i, a) => v && a.indexOf(v) === i,
           );
           return `### ${aliases.join(" / ")}
 Run via Bash exactly as shown (do NOT modify the command):
@@ -394,7 +371,7 @@ You have access to the following AI coding agents. When the user mentions any of
 
 ${agentList}
 
-Replace "YOUR_PROMPT_HERE" with the user's request. These agents can read/write files, install packages, and run commands in the working directory.`
+Replace "YOUR_PROMPT_HERE" with the user's request. These agents can read/write files, install packages, and run commands in the working directory.`,
       );
     }
 
@@ -414,39 +391,37 @@ Use it when the user references past discussions or you need context.`);
       cliBackends: pc.cliBackends,
     });
 
-    // Credential injection — set env vars for OpenClaw gateway to use.
-    //
-    // In the proxy pattern the real API key never reaches the worker.
-    // The gateway sets ANTHROPIC_BASE_URL to its proxy endpoint and the
-    // proxy resolves the real credential at request time using the agentId
-    // from the URL path.  The worker only needs *some* non-empty value in
-    // ANTHROPIC_API_KEY so that OpenClaw accepts the provider as configured.
+    // Credential injection — the real API key or OAuth token is passed via env vars.
     const gatewayUrl = process.env.DISPATCHER_URL ?? "";
     const workerToken = process.env.WORKER_TOKEN ?? "";
-    const credEnvVar = process.env.CREDENTIAL_ENV_VAR_NAME || null;
-    const apiKeyEnvVar = credEnvVar && process.env[credEnvVar]
-      ? credEnvVar
-      : getApiKeyEnvVarForProvider(provider);
+    const apiKeyEnvVar = getApiKeyEnvVarForProvider(provider);
 
-    if (credEnvVar && process.env[credEnvVar]) {
-      process.env.ANTHROPIC_API_KEY = process.env[credEnvVar]!;
+    if (process.env.ANTHROPIC_API_KEY) {
+      logger.info("Credential injection: ANTHROPIC_API_KEY present in env");
+    } else if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+      logger.info("Credential injection: CLAUDE_CODE_OAUTH_TOKEN present (OAuth subscription)");
     } else if (process.env[apiKeyEnvVar]) {
       process.env.ANTHROPIC_API_KEY = process.env[apiKeyEnvVar]!;
-    } else if (process.env.ANTHROPIC_BASE_URL) {
-      // Proxy is configured but no credential env var was set (user
-      // credentials live in the gateway DB, resolved by the proxy).
-      // Provide a placeholder so OpenClaw doesn't reject the provider.
-      process.env.ANTHROPIC_API_KEY = "lobu-proxy";
+      logger.info(
+        `Credential injection: copied ${apiKeyEnvVar} to ANTHROPIC_API_KEY`,
+      );
+    } else {
+      logger.warn(
+        `Credential injection: NO credential found — ${apiKeyEnvVar}, CLAUDE_CODE_OAUTH_TOKEN, and ANTHROPIC_API_KEY are all unset`,
+      );
     }
+
+    // Ensure ANTHROPIC_BASE_URL is not set to a proxy — let the SDK
+    // use the default https://api.anthropic.com endpoint.
+    delete process.env.ANTHROPIC_BASE_URL;
 
     // Set MCP server env vars so OpenClaw passes them to the peon-gateway MCP subprocess
     process.env.CHANNEL_ID = this.config.channelId;
     process.env.CONVERSATION_ID = this.config.conversationId;
 
     // Consume config change notifications
-    const { consumePendingConfigNotifications } = await import(
-      "../gateway/sse-client"
-    );
+    const { consumePendingConfigNotifications } =
+      await import("../gateway/sse-client");
     const configNotifications = consumePendingConfigNotifications();
 
     let configNotice = "";
@@ -464,21 +439,16 @@ Use it when the user references past discussions or you need context.`);
     const effectivePrompt = `${configNotice}${sessionSummary ? `${sessionSummary}\n\n` : ""}${userPrompt}`;
 
     logger.info(
-      `Starting OpenClaw session: provider=${provider}, model=${modelId}`
+      `Starting OpenClaw session: provider=${provider}, model=${modelId}`,
     );
 
     // Ensure OpenClaw gateway is running
     const openclawProcess = getOpenClawProcess();
     await openclawProcess.ensureRunning();
 
-    // Connect to OpenClaw via WebSocket
-    const authToken = process.env.OPENCLAW_AUTH_TOKEN || "";
-    if (!authToken) {
-      logger.warn("No OPENCLAW_AUTH_TOKEN set — WebSocket auth may fail");
-    }
-
+    // Connect to OpenClaw via WebSocket (auth.mode=none, no token needed)
     const wsUrl = openclawProcess.getWebSocketUrl();
-    this.wsClient = new OpenClawWsClient({ url: wsUrl, authToken });
+    this.wsClient = new OpenClawWsClient({ url: wsUrl });
 
     // Heartbeat timer
     const HEARTBEAT_INTERVAL_MS = 20000;
@@ -551,18 +521,21 @@ Use it when the user references past discussions or you need context.`);
         message: effectivePrompt,
         sessionKey,
         thinking: "high",
-        model: `${provider}/${modelId}`,
       });
 
       let errorMessage: string | null = null;
 
       for await (const event of events) {
-        this.processOpenClawEvent(event, (delta) => {
-          pendingDelta += delta;
-          scheduleDeltaFlush();
-        }, (err) => {
-          errorMessage = err;
-        });
+        this.processOpenClawEvent(
+          event,
+          (delta) => {
+            pendingDelta += delta;
+            scheduleDeltaFlush();
+          },
+          (err) => {
+            errorMessage = err;
+          },
+        );
       }
 
       // Flush any remaining delta
@@ -574,7 +547,7 @@ Use it when the user references past discussions or you need context.`);
           provider,
           modelId,
           gatewayUrl,
-          workerToken
+          workerToken,
         );
         return {
           success: false,
@@ -599,7 +572,7 @@ Use it when the user references past discussions or you need context.`);
         provider,
         modelId,
         gatewayUrl,
-        workerToken
+        workerToken,
       );
 
       return {
@@ -629,7 +602,7 @@ Use it when the user references past discussions or you need context.`);
   private processOpenClawEvent(
     event: OpenClawEvent,
     onDelta: (delta: string) => void,
-    onError: (message: string) => void
+    onError: (message: string) => void,
   ): void {
     switch (event.type) {
       case "text_delta":
@@ -645,15 +618,12 @@ Use it when the user references past discussions or you need context.`);
       case "tool_start": {
         logger.info(`[openclaw:tool] Starting: ${event.name}`);
         onDelta(`\n> Running ${event.name}...\n`);
-        // Extract short context from tool input for richer activity display
-        const input = event.input ?? {};
-        let context: string | undefined;
-        if (input.file_path) context = String(input.file_path).split("/").slice(-2).join("/");
-        else if (input.path) context = String(input.path).split("/").slice(-2).join("/");
-        else if (input.command) context = String(input.command).slice(0, 60);
-        else if (input.pattern) context = String(input.pattern).slice(0, 40);
-        else if (input.query) context = String(input.query).slice(0, 40);
-        this.postAgentActivity({ type: "tool_start", tool: event.name, ...(context && { text: context }) });
+        const activityText = buildToolActivityText(event.name, event.input ?? {});
+        this.postAgentActivity({
+          type: "tool_start",
+          tool: event.name,
+          ...(activityText && { text: activityText }),
+        });
         break;
       }
 
@@ -679,9 +649,12 @@ Use it when the user references past discussions or you need context.`);
    * fan it out to SSE clients watching the project in real time.
    * Never throws — failures are logged but never propagate to the caller.
    */
-  private postAgentActivity(
-    event: { type: string; tool?: string; text?: string; message?: string }
-  ): void {
+  private postAgentActivity(event: {
+    type: string;
+    tool?: string;
+    text?: string;
+    message?: string;
+  }): void {
     const gatewayUrl = process.env.DISPATCHER_URL;
     const workerToken = process.env.WORKER_TOKEN;
     if (!gatewayUrl || !workerToken) return;
@@ -692,10 +665,16 @@ Use it when the user references past discussions or you need context.`);
         "Content-Type": "application/json",
         Authorization: `Bearer ${workerToken}`,
       },
-      body: JSON.stringify({ ...event, agentName: this.config.agentId ?? "agent", timestamp: Date.now() }),
+      body: JSON.stringify({
+        ...event,
+        agentName: this.config.agentId ?? "agent",
+        timestamp: Date.now(),
+      }),
       signal: AbortSignal.timeout(3000),
     }).catch((err) => {
-      logger.debug(`Failed to post agent activity (${event.type}): ${err instanceof Error ? err.message : String(err)}`);
+      logger.debug(
+        `Failed to post agent activity (${event.type}): ${err instanceof Error ? err.message : String(err)}`,
+      );
     });
   }
 
@@ -750,12 +729,12 @@ Use it when the user references past discussions or you need context.`);
               Authorization: `Bearer ${workerToken}`,
             },
             signal: AbortSignal.timeout(60_000),
-          }
+          },
         );
 
         if (!response.ok) {
           logger.error(
-            `Failed to download file ${file.name}: ${response.statusText}`
+            `Failed to download file ${file.name}: ${response.statusText}`,
           );
           continue;
         }
@@ -763,7 +742,7 @@ Use it when the user references past discussions or you need context.`);
         const destPath = path.join(inputDir, file.name);
         const fileStream = Readable.fromWeb(response.body as any);
         const writeStream = (await import("node:fs")).createWriteStream(
-          destPath
+          destPath,
         );
 
         await pipeline(fileStream, writeStream);
@@ -808,7 +787,7 @@ Create and show files for any output that helps answer the user's request by usi
     provider: string,
     modelId: string,
     gatewayUrl: string,
-    workerToken: string
+    workerToken: string,
   ): Promise<string> {
     const authHint = getProviderAuthHintFromError(errorMessage, provider);
     if (!authHint) {
@@ -829,13 +808,22 @@ Create and show files for any output that helps answer the user's request by usi
       });
 
       if (resp.ok) {
-        const { url } = (await resp.json()) as { url: string };
-        return `To use ${modelId}, you need to connect your ${authHint.providerName} account.\n\nOpen settings to add your API key: ${url}`;
+        const data = (await resp.json()) as {
+          url?: string;
+          type?: string;
+          message?: string;
+        };
+        if (data.url) {
+          return `To use ${modelId}, you need to connect your ${authHint.providerName} account.\n\nOpen settings to add your API key: ${data.url}`;
+        }
+        if (data.type === "settings_link" || data.type === "inline_grant") {
+          return `To use ${modelId}, you need to connect your ${authHint.providerName} account.\n\nA settings link has been sent to your chat.`;
+        }
       }
     } catch (linkError) {
       logger.error(
         "Failed to generate settings link for missing API key",
-        linkError
+        linkError,
       );
     }
 

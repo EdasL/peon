@@ -84,6 +84,14 @@ git config --global init.defaultBranch main
 git config --global pull.rebase false
 git config --global safe.directory '*'
 
+# Configure GitHub access if GH_TOKEN is available
+if [ -n "${GH_TOKEN:-}" ]; then
+    echo "🔐 Setting up GitHub authentication..."
+    # Rewrite HTTPS github URLs to embed the token for git push/clone/fetch
+    git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+    # gh CLI picks up GH_TOKEN from the environment automatically
+fi
+
 # In development mode, ensure core package can find its dependencies
 # The packages/ dir is mounted as a volume which may contain node_modules from host
 if [ "${NODE_ENV}" = "development" ]; then
@@ -178,6 +186,71 @@ activate_nix_env() {
     exec $cmd
 }
 
+# Write credential files if OAuth or API key env vars are set.
+if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+    echo "🔐 Writing OAuth credentials..."
+
+    # Claude Code CLI credentials
+    CLAUDE_CONFIG_DIR="${HOME:-/workspace}/.claude"
+    mkdir -p "$CLAUDE_CONFIG_DIR"
+    cat > "$CLAUDE_CONFIG_DIR/.credentials.json" << CREDEOF
+{
+  "claudeAiOauth": {
+    "accessToken": "${CLAUDE_CODE_OAUTH_TOKEN}",
+    "refreshToken": "${CLAUDE_CODE_OAUTH_REFRESH_TOKEN:-}",
+    "expiresAt": "9999999999999",
+    "scopes": "${CLAUDE_CODE_OAUTH_SCOPES:-user:inference}"
+  }
+}
+CREDEOF
+    chmod 600 "$CLAUDE_CONFIG_DIR/.credentials.json"
+    echo "  Claude CLI credentials written to $CLAUDE_CONFIG_DIR/.credentials.json"
+
+    # OpenClaw agent auth store — the embedded agent reads credentials from here
+    OPENCLAW_AGENT_DIR="${HOME:-/workspace}/.openclaw/agents/main/agent"
+    mkdir -p "$OPENCLAW_AGENT_DIR"
+    cat > "$OPENCLAW_AGENT_DIR/auth-profiles.json" << AUTHEOF
+{
+  "version": 1,
+  "profiles": {
+    "anthropic:default": {
+      "type": "token",
+      "provider": "anthropic",
+      "token": "${CLAUDE_CODE_OAUTH_TOKEN}"
+    }
+  },
+  "lastGood": {
+    "anthropic": "anthropic:default"
+  }
+}
+AUTHEOF
+    chmod 600 "$OPENCLAW_AGENT_DIR/auth-profiles.json"
+    echo "  OpenClaw auth-profiles.json written to $OPENCLAW_AGENT_DIR/auth-profiles.json"
+
+elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "🔐 Writing API key credentials..."
+
+    OPENCLAW_AGENT_DIR="${HOME:-/workspace}/.openclaw/agents/main/agent"
+    mkdir -p "$OPENCLAW_AGENT_DIR"
+    cat > "$OPENCLAW_AGENT_DIR/auth-profiles.json" << AUTHEOF
+{
+  "version": 1,
+  "profiles": {
+    "anthropic:default": {
+      "type": "token",
+      "provider": "anthropic",
+      "token": "${ANTHROPIC_API_KEY}"
+    }
+  },
+  "lastGood": {
+    "anthropic": "anthropic:default"
+  }
+}
+AUTHEOF
+    chmod 600 "$OPENCLAW_AGENT_DIR/auth-profiles.json"
+    echo "  OpenClaw auth-profiles.json written"
+fi
+
 # Start the OpenClaw gateway as a background subprocess
 echo "🚀 Starting OpenClaw gateway..."
 OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
@@ -185,14 +258,13 @@ OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
 # Generate bootstrap OpenClaw config BEFORE starting the gateway
 echo "📝 Generating OpenClaw bootstrap config..."
 cd /app/packages/worker
-OPENCLAW_AUTH_TOKEN=$(bun -e "
+BOOTSTRAP_OK=$(bun -e "
 import { writeBootstrapConfig } from './src/openclaw/bootstrap-config.ts';
-const r = await writeBootstrapConfig({ port: ${OPENCLAW_PORT} });
-process.stdout.write(r.authToken);
+await writeBootstrapConfig({ port: ${OPENCLAW_PORT} });
+process.stdout.write('ok');
 ")
-if [ -z "$OPENCLAW_AUTH_TOKEN" ] || echo "$OPENCLAW_AUTH_TOKEN" | grep -qi "^usage"; then
+if [ "$BOOTSTRAP_OK" != "ok" ]; then
     echo "⚠️  Bootstrap config generation failed, generating fallback config..."
-    OPENCLAW_AUTH_TOKEN=$(openssl rand -hex 32)
     mkdir -p "$WORKSPACE_DIR/.openclaw"
     cat > "$WORKSPACE_DIR/.openclaw/openclaw.json" << CFGEOF
 {
@@ -200,17 +272,25 @@ if [ -z "$OPENCLAW_AUTH_TOKEN" ] || echo "$OPENCLAW_AUTH_TOKEN" | grep -qi "^usa
     "mode": "local",
     "port": ${OPENCLAW_PORT},
     "bind": "loopback",
-    "auth": { "mode": "token", "token": "${OPENCLAW_AUTH_TOKEN}" }
+    "auth": { "mode": "none" }
+  },
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-sonnet-4-20250514"
+    }
   }
 }
 CFGEOF
     echo "  Fallback config written to $WORKSPACE_DIR/.openclaw/openclaw.json"
 fi
-export OPENCLAW_AUTH_TOKEN
-echo "  Auth token generated: ${OPENCLAW_AUTH_TOKEN:0:8}..."
+echo "  Bootstrap config generated"
 cd "$WORKSPACE_DIR"
 
-openclaw gateway --port "$OPENCLAW_PORT" --bind loopback &
+# OpenClaw gateway makes direct HTTPS calls to LLM provider APIs
+# (api.anthropic.com). Unset the worker HTTP proxy env vars so it
+# connects directly instead of routing through the authenticated proxy.
+HTTP_PROXY= HTTPS_PROXY= http_proxy= https_proxy= \
+  openclaw gateway --port "$OPENCLAW_PORT" --bind loopback &
 OPENCLAW_PID=$!
 echo "  OpenClaw gateway PID: $OPENCLAW_PID"
 
@@ -228,7 +308,8 @@ while [ "$OPENCLAW_READY" = "false" ] && [ "$OPENCLAW_RETRY" -lt "$OPENCLAW_MAX_
         if ! kill -0 "$OPENCLAW_PID" 2>/dev/null; then
             echo "❌ OpenClaw gateway process died unexpectedly"
             # Try starting it again
-            openclaw gateway --port "$OPENCLAW_PORT" --bind loopback &
+            HTTP_PROXY= HTTPS_PROXY= http_proxy= https_proxy= \
+              openclaw gateway --port "$OPENCLAW_PORT" --bind loopback &
             OPENCLAW_PID=$!
             echo "  Restarted OpenClaw gateway PID: $OPENCLAW_PID"
         fi

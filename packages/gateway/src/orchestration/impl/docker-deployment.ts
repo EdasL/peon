@@ -522,19 +522,20 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
         throw startError;
       }
 
-      // In host mode, also connect the worker to the public network so it can
-      // reach the host gateway via host.docker.internal (internal network blocks host access)
-      if (!this.isRunningInContainer()) {
-        try {
-          const publicNetwork = this.docker.getNetwork(
-            `${composeProjectName}_lobu-public`
-          );
-          await publicNetwork.connect({ Container: container.id });
-        } catch (netErr) {
-          logger.warn(
-            `Could not connect ${deploymentName} to public network: ${netErr instanceof Error ? netErr.message : String(netErr)}`
-          );
-        }
+      // Connect workers to the public network so the OpenClaw gateway inside
+      // the container can reach LLM provider APIs (api.anthropic.com, etc.).
+      // The internal network alone blocks all external traffic.
+      // The HTTP proxy (gateway:8118) still enforces domain allowlists for
+      // the worker process itself (Claude Code tool use, pip install, etc.).
+      try {
+        const publicNetwork = this.docker.getNetwork(
+          `${composeProjectName}_lobu-public`
+        );
+        await publicNetwork.connect({ Container: container.id });
+      } catch (netErr) {
+        logger.warn(
+          `Could not connect ${deploymentName} to public network: ${netErr instanceof Error ? netErr.message : String(netErr)}`
+        );
       }
 
       logger.info(`✅ Created and started Docker container: ${deploymentName}`);

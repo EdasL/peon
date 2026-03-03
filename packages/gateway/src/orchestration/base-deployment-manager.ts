@@ -6,8 +6,11 @@ import {
   generateWorkerToken,
   OrchestratorError,
 } from "@lobu/core";
+import { eq } from "drizzle-orm";
 import type Redis from "ioredis";
 import { mcpConfigStore } from "../auth/mcp/mcp-config-store";
+import { db } from "../db/connection.js";
+import { users } from "../db/schema.js";
 import type { MessagePayload } from "../infrastructure/queue/queue-producer";
 import type { ModelProviderModule } from "../modules/module-system";
 import type { GrantStore } from "../permissions/grant-store";
@@ -15,6 +18,7 @@ import {
   deleteSecretMappings,
   generatePlaceholder,
 } from "../proxy/secret-proxy";
+import { decrypt } from "../services/encryption.js";
 import { getScheduledWakeupService } from "./scheduled-wakeup";
 
 // Re-export MessagePayload for use by deployment implementations
@@ -543,10 +547,15 @@ export abstract class BaseDeploymentManager {
   ): Promise<Record<string, string>> {
     if (!this.redisClient) return envVars;
 
-    // Collect credential env var names from all providers
-    const providerCredentialVars = new Set<string>();
+    // Collect ALL secret env var names from providers (not just credentialEnvVarName).
+    // The credential may land in a different env var depending on authType
+    // (e.g., API key → ANTHROPIC_API_KEY, OAuth → CLAUDE_CODE_OAUTH_TOKEN).
+    const providerSecretVars = new Set<string>();
     for (const provider of this.providerModules) {
-      providerCredentialVars.add(provider.getCredentialEnvVarName());
+      providerSecretVars.add(provider.getCredentialEnvVarName());
+      for (const name of provider.getSecretEnvVarNames()) {
+        providerSecretVars.add(name);
+      }
     }
 
     let hasSecrets = false;
@@ -554,13 +563,11 @@ export abstract class BaseDeploymentManager {
       if (!value || !isSecretEnvVar(key, this.providerModules)) continue;
       if (key === "WORKER_TOKEN") continue;
 
-      if (providerCredentialVars.has(key)) {
-        // Provider credentials use a proxy placeholder. The worker never
-        // sees real credentials. The proxy resolves the real credential
-        // using agentId from the URL path (/a/{agentId}) and the provider
-        // slug, then overrides the Authorization header before forwarding.
-        envVars[key] = "lobu-proxy";
-        hasSecrets = true;
+      if (providerSecretVars.has(key) || key === "GH_TOKEN") {
+        // Pass real credentials directly to the container.
+        // Provider credentials call AI APIs without a proxy; GH_TOKEN is
+        // used locally by git/gh CLI and can't go through the HTTP proxy.
+        continue;
       } else {
         // Use UUID placeholder for non-provider secrets (legacy path)
         try {
@@ -649,6 +656,19 @@ export abstract class BaseDeploymentManager {
       }
     }
 
+    // Inject the user's GitHub OAuth token so the container can push/PR
+    try {
+      const ghUser = await db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { githubAccessToken: true },
+      });
+      if (ghUser?.githubAccessToken) {
+        envVars.GH_TOKEN = decrypt(ghUser.githubAccessToken);
+      }
+    } catch (error) {
+      logger.warn("Failed to look up GitHub token for user:", error);
+    }
+
     // Add worker environment variables from configuration
     if (this.config.worker.env) {
       for (const [key, value] of Object.entries(this.config.worker.env)) {
@@ -688,6 +708,17 @@ export abstract class BaseDeploymentManager {
 
     for (const provider of effectiveProviders) {
       envVars = provider.injectSystemKeyFallback(envVars);
+    }
+
+    // If buildEnvVars didn't inject a credential (e.g., profile lookup failed)
+    // but the user does have credentials in the DB, log a warning.
+    for (const provider of effectiveProviders) {
+      const credVar = provider.getCredentialEnvVarName();
+      if (!envVars[credVar] && (await provider.hasCredentials(agentId))) {
+        logger.warn(
+          `Provider ${credVar} has stored credentials but buildEnvVars did not inject them for agent ${agentId}`
+        );
+      }
     }
 
     envVars = await this.injectSecretPlaceholders(
@@ -737,37 +768,16 @@ export abstract class BaseDeploymentManager {
         "Selected primary provider"
       );
 
-      const proxyBaseUrl = `${this.getDispatcherUrl()}/api/proxy`;
-      const mappings = primaryProvider.getProxyBaseUrlMappings(
-        proxyBaseUrl,
-        agentId
-      );
-      const providerBaseUrl = Object.values(mappings)[0];
-      if (providerBaseUrl) {
-        validated.agentOptions = {
-          ...validated.agentOptions,
-          providerBaseUrl,
-        };
-      }
+      // Provider base URL is no longer overridden to the proxy.
+      // The worker uses the real API key and the SDK's default endpoint.
 
       // CREDENTIAL_ENV_VAR_NAME and AGENT_DEFAULT_PROVIDER are now
       // delivered dynamically via session context endpoint. No longer
       // set as static container env vars.
     }
 
-    // Build full provider base URL mappings for all installed providers
-    const proxyBaseUrl = `${this.getDispatcherUrl()}/api/proxy`;
-    const providerBaseUrlMappings: Record<string, string> = {};
-    for (const provider of effectiveProviders) {
-      const mappings = provider.getProxyBaseUrlMappings(proxyBaseUrl, agentId);
-      Object.assign(providerBaseUrlMappings, mappings);
-    }
-    if (Object.keys(providerBaseUrlMappings).length > 0) {
-      validated.agentOptions = {
-        ...validated.agentOptions,
-        providerBaseUrlMappings,
-      };
-    }
+    // Provider base URL mappings are no longer injected. The worker
+    // calls AI provider APIs directly using the real credentials.
 
     // CLI_BACKENDS is now delivered dynamically via session context.
     // Still need to auto-add npm registry domains for npx at deploy time.

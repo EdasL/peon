@@ -29,6 +29,7 @@ export class HttpWorkerTransport implements WorkerTransport {
   private moduleData?: Record<string, unknown>;
   private teamId: string;
   private platform?: string;
+  private platformMetadata?: Record<string, unknown>;
   private accumulatedStreamContent: string[] = [];
   private lastStreamDelta: string = "";
 
@@ -42,6 +43,7 @@ export class HttpWorkerTransport implements WorkerTransport {
     this.botResponseTs = config.botResponseTs;
     this.teamId = config.teamId;
     this.platform = config.platform;
+    this.platformMetadata = config.platformMetadata;
     this.processedMessageIds = config.processedMessageIds || [];
   }
 
@@ -250,10 +252,14 @@ export class HttpWorkerTransport implements WorkerTransport {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         const responseUrl = `${this.gatewayUrl}/worker/response`;
-        const basePayload =
+        const withPlatform =
           this.platform && !data.platform
             ? { ...data, platform: this.platform }
             : data;
+        const basePayload =
+          this.platformMetadata && !withPlatform.platformMetadata
+            ? { ...withPlatform, platformMetadata: this.platformMetadata }
+            : withPlatform;
         const payload = this.jobId
           ? { jobId: this.jobId, ...basePayload }
           : basePayload;

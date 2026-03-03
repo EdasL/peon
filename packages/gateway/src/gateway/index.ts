@@ -436,16 +436,9 @@ export class WorkerGateway {
       }
     }
 
-    // Build proxy base URL mappings for all installed providers
-    // Use the request base URL (the worker's DISPATCHER_URL) for internal routing
-    const proxyBaseUrl = `${requestBaseUrl || this.publicGatewayUrl}/api/proxy`;
-    const providerBaseUrlMappings: Record<string, string> = {};
-    for (const provider of effectiveProviders) {
-      Object.assign(
-        providerBaseUrlMappings,
-        provider.getProxyBaseUrlMappings(proxyBaseUrl, agentId)
-      );
-    }
+    // Provider base URL mappings are no longer injected into session context.
+    // Workers call AI provider APIs directly using the real credentials
+    // passed as env vars at container creation time.
 
     // Build CLI backend configs
     const cliBackends: Array<{
@@ -469,7 +462,6 @@ export class WorkerGateway {
       defaultProvider?: string;
       defaultModel?: string;
       cliBackends?: typeof cliBackends;
-      providerBaseUrlMappings?: Record<string, string>;
     } = {};
 
     if (primaryProvider) {
@@ -482,10 +474,6 @@ export class WorkerGateway {
 
     if (agentModel) {
       result.defaultModel = agentModel;
-    }
-
-    if (Object.keys(providerBaseUrlMappings).length > 0) {
-      result.providerBaseUrlMappings = providerBaseUrlMappings;
     }
 
     if (cliBackends.length > 0) {

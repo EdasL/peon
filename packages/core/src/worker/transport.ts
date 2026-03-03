@@ -101,4 +101,7 @@ export interface WorkerTransportConfig {
 
   /** IDs of messages already processed (for deduplication) */
   processedMessageIds?: string[];
+
+  /** Platform-specific metadata to include in all responses */
+  platformMetadata?: Record<string, unknown>;
 }

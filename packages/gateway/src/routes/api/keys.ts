@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm"
 import { encrypt } from "../../services/encryption.js"
 import { ensureLobuAgent, bridgeCredentials } from "../../peon/agent-helper.js"
 import { getPeonPlatform } from "../../peon/platform.js"
+import { AuthProfilesManager } from "../../auth/settings/auth-profiles-manager.js"
 
 const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const
 type AllowedProvider = typeof ALLOWED_PROVIDERS[number]
@@ -20,7 +21,32 @@ keysRouter.get("/", async (c) => {
     where: eq(apiKeys.userId, session.userId),
     columns: { id: true, provider: true, label: true, createdAt: true },
   })
-  return c.json({ keys })
+
+  let oauthConnections: Array<{
+    provider: string
+    authType: string
+    label: string
+    connectedAt?: string
+  }> = []
+
+  try {
+    const agentId = await ensureLobuAgent(session.userId)
+    const agentSettingsStore = getPeonPlatform().getServices().getAgentSettingsStore()
+    const profilesManager = new AuthProfilesManager(agentSettingsStore)
+    const profile = await profilesManager.getBestProfile(agentId, "claude")
+
+    if (profile && profile.authType === "oauth") {
+      oauthConnections.push({
+        provider: "anthropic",
+        authType: "oauth",
+        label: profile.label || "Claude subscription",
+      })
+    }
+  } catch {
+    // Platform services may not be initialized yet — return empty array
+  }
+
+  return c.json({ keys, oauthConnections })
 })
 
 // POST /api/keys — add or update an API key (one per provider per user)
@@ -110,6 +136,22 @@ keysRouter.post("/", async (c) => {
 
   const statusCode = existing ? 200 : 201
   return c.json({ key }, statusCode)
+})
+
+// DELETE /api/keys/oauth/:provider — disconnect an OAuth provider
+keysRouter.delete("/oauth/:provider", async (c) => {
+  const provider = c.req.param("provider")
+  if (provider !== "anthropic") {
+    return c.json({ error: "Unsupported OAuth provider" }, 400)
+  }
+
+  const session = getSession(c)
+  const agentId = await ensureLobuAgent(session.userId)
+  const agentSettingsStore = getPeonPlatform().getServices().getAgentSettingsStore()
+  const profilesManager = new AuthProfilesManager(agentSettingsStore)
+  await profilesManager.deleteProviderProfiles(agentId, "claude")
+
+  return c.json({ ok: true })
 })
 
 // DELETE /api/keys/:id

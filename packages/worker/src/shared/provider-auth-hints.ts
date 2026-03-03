@@ -34,6 +34,14 @@ export function getProviderAuthHintFromError(
   errorMessage: string,
   defaultProvider?: string
 ): { providerName: string; envVar: string } | null {
+  // Exclude WebSocket/protocol handshake errors that contain "Authentication failed"
+  // but are not related to provider API key issues
+  if (
+    /handshake|connect\.challenge|protocol|websocket/i.test(errorMessage)
+  ) {
+    return null;
+  }
+
   const needsAuthSetup =
     /No API key found|Authentication failed|invalid x-api-key|invalid api[-\s]?key|authentication_error|incorrect api key/i.test(
       errorMessage

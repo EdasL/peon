@@ -1,11 +1,20 @@
 import { useState, useEffect, useCallback } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
+import { toast } from "sonner"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { AuthLayout } from "@/components/layout/AuthLayout"
-import { Loader2, Check, Github, ExternalLink, Users } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Loader2, Check, ExternalLink, Github, LogIn, Users } from "lucide-react"
 import * as api from "@/lib/api"
 import { TEMPLATES } from "@/lib/templates"
 
@@ -43,6 +52,13 @@ export function OnboardingPage() {
   const [existingKeys, setExistingKeys] = useState<api.ApiKeyInfo[]>([])
   const [keysLoaded, setKeysLoaded] = useState(false)
 
+  // Claude OAuth dialog
+  const [oauthDialogOpen, setOauthDialogOpen] = useState(false)
+  const [oauthAuthUrl, setOauthAuthUrl] = useState<string | null>(null)
+  const [oauthCode, setOauthCode] = useState("")
+  const [oauthLoading, setOauthLoading] = useState(false)
+  const [oauthExchanging, setOauthExchanging] = useState(false)
+
   // Repo state
   const [repos, setRepos] = useState<api.GithubRepo[]>([])
   const [reposLoading, setReposLoading] = useState(false)
@@ -54,9 +70,6 @@ export function OnboardingPage() {
   // Form state
   const [selectedTemplate, setSelectedTemplate] = useState("fullstack")
   const [projectName, setProjectName] = useState("")
-  const [apiKey, setApiKey] = useState("")
-  const [apiProvider] = useState<"anthropic">("anthropic")
-  const [savingKey, setSavingKey] = useState(false)
   const [launching, setLaunching] = useState(false)
   const [launchError, setLaunchError] = useState<string | null>(null)
 
@@ -66,7 +79,15 @@ export function OnboardingPage() {
   useEffect(() => {
     api
       .getApiKeys()
-      .then((d) => setExistingKeys(d.keys))
+      .then((d) => {
+        setExistingKeys(d.keys)
+        if (d.oauthConnections?.some((o) => o.provider === "anthropic")) {
+          setExistingKeys((prev) => {
+            if (prev.some((k) => k.provider === "anthropic")) return prev
+            return [...prev, { id: "oauth", provider: "anthropic", label: "Claude subscription", createdAt: "" }]
+          })
+        }
+      })
       .catch(() => {})
       .finally(() => setKeysLoaded(true))
   }, [])
@@ -122,20 +143,39 @@ export function OnboardingPage() {
     window.location.href = "/api/auth/github"
   }
 
-  const handleApiKeyContinue = async () => {
-    if (!apiKey.trim()) return
-    setSavingKey(true)
+  const handleStartOAuth = async () => {
+    setOauthLoading(true)
+    setOauthAuthUrl(null)
+    setOauthCode("")
     try {
-      await api.addApiKey({ provider: apiProvider, key: apiKey.trim() })
-      setExistingKeys((prev) => [
-        ...prev,
-        { id: "pending", provider: apiProvider, label: "", createdAt: "" },
-      ])
+      const { authUrl } = await api.initClaudeOAuth()
+      setOauthAuthUrl(authUrl)
+      window.open(authUrl, "_blank", "noopener")
+    } catch {
+      // toast shown by api layer
+    } finally {
+      setOauthLoading(false)
+    }
+  }
+
+  const handleExchangeOAuth = async () => {
+    if (!oauthCode.trim()) return
+    setOauthExchanging(true)
+    try {
+      await api.exchangeClaudeOAuth(oauthCode.trim())
+      toast.success("Claude subscription connected!")
+      setOauthDialogOpen(false)
+      setOauthAuthUrl(null)
+      setOauthCode("")
+      setExistingKeys((prev) => {
+        if (prev.some((k) => k.provider === "anthropic")) return prev
+        return [...prev, { id: "oauth", provider: "anthropic", label: "Claude subscription", createdAt: "" }]
+      })
       transitionTo("repo-template")
     } catch {
-      // error toasted by api.ts
+      // toast shown by api layer
     } finally {
-      setSavingKey(false)
+      setOauthExchanging(false)
     }
   }
 
@@ -190,68 +230,30 @@ export function OnboardingPage() {
         >
           <ProgressDots steps={steps} current={step} />
 
-          {/* API Key step — only for new users */}
+          {/* Login step — only for new users */}
           {step === "apikey" && (
             <div className="space-y-6">
               <div className="text-center space-y-1">
-                <h1 className="text-2xl font-semibold tracking-tight">Add your API key</h1>
+                <h1 className="text-2xl font-semibold tracking-tight">Connect to Claude</h1>
                 <p className="text-sm text-muted-foreground">
-                  Agents run on your key — you control the cost.{" "}
-                  <a
-                    href="https://console.anthropic.com/keys"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary inline-flex items-center gap-1 hover:underline"
-                  >
-                    Get one <ExternalLink className="h-3 w-3" />
-                  </a>
+                  Login with your Claude subscription to get started.
                 </p>
               </div>
 
               <div className="space-y-3">
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 text-sm">
-                  <span className="text-muted-foreground">Provider:</span>
-                  <span className="font-medium">Anthropic</span>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="apikey" className="text-sm font-medium">
-                    API Key
-                  </Label>
-                  <Input
-                    id="apikey"
-                    type="password"
-                    placeholder="sk-ant-..."
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && apiKey.trim()) handleApiKeyContinue()
-                    }}
-                    autoFocus
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Stored encrypted. Never logged or shared.
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
                 <Button
-                  onClick={handleApiKeyContinue}
                   className="w-full"
-                  disabled={!apiKey.trim() || savingKey}
+                  size="lg"
+                  onClick={() => {
+                    setOauthDialogOpen(true)
+                    handleStartOAuth()
+                  }}
                 >
-                  {savingKey ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    "Continue"
-                  )}
+                  <LogIn className="h-4 w-4" />
+                  Login with Claude
                 </Button>
                 <p className="text-center text-xs text-muted-foreground">
-                  Press Enter to continue
+                  Uses your Claude Pro, Max, or Teams subscription
                 </p>
               </div>
             </div>
@@ -492,6 +494,82 @@ export function OnboardingPage() {
           )}
         </div>
       </div>
+
+      {/* Claude OAuth dialog */}
+      <Dialog open={oauthDialogOpen} onOpenChange={(open) => {
+        setOauthDialogOpen(open)
+        if (!open) {
+          setOauthAuthUrl(null)
+          setOauthCode("")
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Login with Claude</DialogTitle>
+            <DialogDescription>
+              Authorize with your Claude subscription, then paste the code below.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {oauthLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : oauthAuthUrl ? (
+              <>
+                <div className="space-y-2">
+                  <p className="text-sm">
+                    <strong>Step 1:</strong> A new tab should have opened. If not, click below:
+                  </p>
+                  <Button variant="outline" size="sm" asChild className="w-full">
+                    <a href={oauthAuthUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Open Claude authorization
+                    </a>
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm">
+                    <strong>Step 2:</strong> After authorizing, copy the code shown and paste it here:
+                  </p>
+                  <Input
+                    placeholder="Paste the code here (CODE#STATE)"
+                    value={oauthCode}
+                    onChange={(e) => setOauthCode(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && oauthCode.trim()) handleExchangeOAuth()
+                    }}
+                    className="font-mono text-sm"
+                    autoFocus
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Failed to initialize. Close this dialog and try again.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOauthDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleExchangeOAuth}
+              disabled={!oauthCode.trim() || oauthExchanging}
+            >
+              {oauthExchanging ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                "Connect"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AuthLayout>
   )
 }

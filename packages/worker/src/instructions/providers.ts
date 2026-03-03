@@ -13,15 +13,14 @@ export class ProjectsInstructionProvider implements InstructionProvider {
 
   getInstructions(context: InstructionContext): string {
     if (!context.availableProjects || context.availableProjects.length === 0) {
-      return `**Available projects:**
-  - none`;
+      return "";
     }
 
     const projectList = context.availableProjects
       .map((project: string) => `  - ${project}`)
       .join("\n");
 
-    return `**Available projects:**
+    return `**Available projects (for DelegateToProject):**
 ${projectList}`;
   }
 }

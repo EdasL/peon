@@ -21,6 +21,7 @@ import { keysRouter } from "../routes/api/keys.js";
 import { userRouter } from "../routes/api/user.js";
 import { chatRouter } from "../web/chat-routes.js";
 import { initBroadcast } from "../web/redis-broadcast.js";
+import { claudeOAuthRouter } from "../routes/api/claude-oauth.js";
 
 const logger = createLogger("gateway-startup");
 
@@ -103,6 +104,9 @@ function setupServer(
 
   // Femrun auth routes (Google OAuth, GitHub OAuth, session management)
   app.route("/api/auth", authRoutes);
+
+  // Claude OAuth web flow (init + callback)
+  app.route("/api/auth/claude-oauth", claudeOAuthRouter);
 
   // Femrun project and API key management
   app.route("/api/projects", projectsRouter);
@@ -288,6 +292,15 @@ function setupServer(
     const agentActivityRouter = createAgentActivityRoutes();
     app.route("", agentActivityRouter);
     logger.info("Agent activity routes enabled at :8080/internal/agent-activity");
+  }
+
+  // Internal task sync routes — workers POST task create/update events
+  // intercepted from Claude Code's TaskCreate/TaskUpdate tool calls
+  {
+    const { createInternalTaskRoutes } = require("../routes/internal/tasks");
+    const internalTaskRouter = createInternalTaskRoutes();
+    app.route("", internalTaskRouter);
+    logger.info("Internal task routes enabled at :8080/internal/tasks");
   }
 
   // Messaging routes (already Hono)

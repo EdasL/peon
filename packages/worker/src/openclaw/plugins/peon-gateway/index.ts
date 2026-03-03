@@ -15,6 +15,7 @@ import { readFile, stat, writeFile, mkdir, unlink } from "node:fs/promises";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { spawn, type ChildProcess } from "node:child_process";
+import { buildToolActivityText } from "../../tool-activity.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -408,6 +409,119 @@ async function getChannelHistory(
 }
 
 // ---------------------------------------------------------------------------
+// Task sync helpers — forward Claude Code's TaskCreate/TaskUpdate/TaskList
+// tool calls to the gateway's internal task API so they appear in the board.
+// ---------------------------------------------------------------------------
+
+const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskUpdate", "TaskList"]);
+
+// Map Claude Code task status to our status enum
+function normalizeStatus(s?: string): "pending" | "in_progress" | "completed" {
+  if (s === "in_progress") return "in_progress";
+  if (s === "completed") return "completed";
+  return "pending";
+}
+
+// Map Claude Code activeForm / status fields to a boardColumn
+function deriveBoardColumn(status?: string): string {
+  if (status === "in_progress") return "in_progress";
+  if (status === "completed") return "done";
+  return "backlog";
+}
+
+async function syncTaskToGateway(toolName: string, input: Record<string, unknown>): Promise<void> {
+  if (toolName === "TaskList") return; // read-only, nothing to sync
+
+  const g = gw();
+  if (!g.gatewayUrl || !g.workerToken) return;
+
+  // TaskCreate: { subject, description, activeForm, metadata }
+  // TaskUpdate: { taskId, status, subject, description, owner, metadata, addBlocks, addBlockedBy }
+  // Both need to be upserted. We derive a stable id from the taskId field or generate one.
+  const taskId = (input.taskId ?? input.id) as string | undefined;
+  if (!taskId && toolName !== "TaskCreate") return;
+
+  const subject = (input.subject ?? "") as string;
+  if (!subject && toolName === "TaskCreate") return;
+
+  const status = normalizeStatus((input.status as string) ?? undefined);
+  const boardColumn = deriveBoardColumn((input.status as string) ?? undefined);
+  const owner = (input.owner as string | null) ?? null;
+
+  // Use taskId for updates, generate a deterministic id for creates
+  // Claude Code assigns a numeric/string id — we store it as-is
+  const id = taskId ?? `cc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const body = {
+    id,
+    subject: subject || `Task ${id}`,
+    description: (input.description as string) ?? "",
+    status,
+    owner,
+    boardColumn,
+    metadata: (input.metadata as Record<string, unknown>) ?? undefined,
+    updatedAt: Date.now(),
+    blocks: (input.addBlocks as string[]) ?? [],
+    blockedBy: (input.addBlockedBy as string[]) ?? [],
+  };
+
+  try {
+    await fetch(`${g.gatewayUrl}/internal/tasks`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${g.workerToken}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    // Fire-and-forget — never block the team
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Subagent activity posting — forwards tool_use/tool_result events from
+// the Claude Code subprocess to /internal/agent-activity so the activity
+// feed shows what delegated agents are doing in real time.
+// ---------------------------------------------------------------------------
+
+// Tools we never want to surface as activity (too noisy / internal)
+const SILENT_TOOLS = new Set(["TodoRead", "TodoWrite"]);
+
+async function postSubagentActivity(
+  agentName: string,
+  type: "tool_start" | "tool_end" | "turn_end",
+  tool?: string,
+  text?: string
+): Promise<void> {
+  const g = gw();
+  if (!g.gatewayUrl || !g.workerToken) return;
+
+  const body: Record<string, unknown> = {
+    type,
+    agentName,
+    timestamp: Date.now(),
+    ...(tool && { tool }),
+    ...(text && { text }),
+  };
+
+  try {
+    await fetch(`${g.gatewayUrl}/internal/agent-activity`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${g.workerToken}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch {
+    // Fire-and-forget
+  }
+}
+
+// ---------------------------------------------------------------------------
 // DelegateToProject (Claude Code team management)
 // ---------------------------------------------------------------------------
 
@@ -457,7 +571,46 @@ async function delegateToProject(
     const team: TeamProcess = { process: child, projectId: params.projectId, startedAt: Date.now(), output: "", completed: false, exitCode: null };
     activeTeams.set(params.projectId, team);
 
-    child.stdout?.on("data", (chunk: Buffer) => { team.output += chunk.toString(); });
+    // Use projectId as the agent name so the activity feed labels it clearly
+    const subagentName = `delegate:${params.projectId}`;
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      const lines = chunk.toString().split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        team.output += line + "\n";
+        try {
+          const ev = JSON.parse(trimmed) as Record<string, unknown>;
+
+          if (ev.type === "tool_use" && typeof ev.name === "string") {
+            const toolName = ev.name;
+            const toolInput = (ev.input && typeof ev.input === "object")
+              ? ev.input as Record<string, unknown>
+              : {};
+
+            // Sync task tools to the board
+            if (TASK_TOOL_NAMES.has(toolName)) {
+              syncTaskToGateway(toolName, toolInput).catch(() => {});
+            }
+
+            // Post activity event for non-silent tools
+            if (!SILENT_TOOLS.has(toolName)) {
+              const activityText = buildToolActivityText(toolName, toolInput);
+              postSubagentActivity(subagentName, "tool_start", toolName, activityText).catch(() => {});
+            }
+          } else if (ev.type === "tool_result") {
+            // tool_result follows tool_use — emit tool_end
+            const toolId = (ev.tool_use_id as string | undefined) ?? "";
+            if (toolId) {
+              postSubagentActivity(subagentName, "tool_end").catch(() => {});
+            }
+          } else if (ev.type === "message" && (ev as any).stop_reason === "end_turn") {
+            postSubagentActivity(subagentName, "turn_end").catch(() => {});
+          }
+        } catch { /* not JSON — ignore */ }
+      }
+    });
     child.stderr?.on("data", (_chunk: Buffer) => { /* stderr captured but not surfaced */ });
 
     child.on("exit", (code) => {

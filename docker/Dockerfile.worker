@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     htop \
     net-tools \
     iputils-ping \
+    tmux \
     gnupg \
     lsb-release \
     python3 \

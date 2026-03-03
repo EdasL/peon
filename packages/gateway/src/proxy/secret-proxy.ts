@@ -199,10 +199,25 @@ export class SecretProxy {
           providerId
         );
         if (profile?.credential) {
-          headers.authorization = `Bearer ${profile.credential}`;
+          const credPreview = profile.credential.length > 8
+            ? `${profile.credential.slice(0, 7)}...${profile.credential.slice(-4)}`
+            : "***";
+          logger.info(
+            `Proxy: resolved credential for agent ${urlAgentId}, provider ${providerId}, authType=${profile.authType}, key=${credPreview}`
+          );
+
+          delete headers["x-api-key"];
+          delete headers.authorization;
+          delete headers.Authorization;
+
+          if (profile.authType === "api-key") {
+            headers["x-api-key"] = profile.credential;
+          } else {
+            headers.authorization = `Bearer ${profile.credential}`;
+          }
         } else {
           logger.warn(
-            `No auth profile for agent ${urlAgentId}, provider ${providerId}`
+            `No auth profile for agent ${urlAgentId}, provider ${providerId} — credential will NOT be injected`
           );
         }
       } else {

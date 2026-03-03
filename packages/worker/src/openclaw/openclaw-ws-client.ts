@@ -1,15 +1,125 @@
 /**
  * OpenClaw WebSocket client.
  *
- * Connects to the local OpenClaw gateway via WebSocket, authenticates,
- * and provides an async iterable interface for streaming agent events.
+ * Connects to the local OpenClaw gateway via WebSocket using protocol 3
+ * (challenge → connect → hello-ok handshake), authenticates with device
+ * identity, and provides an async iterable interface for streaming agent events.
  */
 
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import { createLogger } from "@lobu/core";
 
 const logger = createLogger("openclaw-ws-client");
 
 const EVENT_TIMEOUT_MS = 120_000;
+const HANDSHAKE_TIMEOUT_MS = 15_000;
+const PROTOCOL_VERSION = 3;
+
+// ---------------------------------------------------------------------------
+// Device identity (mirrors OpenClaw's src/infra/device-identity.ts)
+// ---------------------------------------------------------------------------
+
+interface DeviceIdentity {
+  deviceId: string;
+  publicKeyPem: string;
+  privateKeyPem: string;
+}
+
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+function base64UrlEncode(buf: Buffer): string {
+  return buf.toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
+}
+
+function derivePublicKeyRaw(publicKeyPem: string): Buffer {
+  const key = crypto.createPublicKey(publicKeyPem);
+  const spki = key.export({ type: "spki", format: "der" });
+  const buf = Buffer.from(spki);
+  if (
+    buf.length === ED25519_SPKI_PREFIX.length + 32 &&
+    buf.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX)
+  ) {
+    return buf.subarray(ED25519_SPKI_PREFIX.length);
+  }
+  return buf;
+}
+
+function fingerprintPublicKey(publicKeyPem: string): string {
+  const raw = derivePublicKeyRaw(publicKeyPem);
+  return crypto.createHash("sha256").update(raw).digest("hex");
+}
+
+function loadOrCreateDeviceIdentity(): DeviceIdentity {
+  const identityPath = path.join(os.homedir(), ".openclaw", "identity", "device.json");
+  try {
+    if (fs.existsSync(identityPath)) {
+      const parsed = JSON.parse(fs.readFileSync(identityPath, "utf8"));
+      if (parsed?.version === 1 && parsed.publicKeyPem && parsed.privateKeyPem) {
+        const deviceId = fingerprintPublicKey(parsed.publicKeyPem);
+        return { deviceId, publicKeyPem: parsed.publicKeyPem, privateKeyPem: parsed.privateKeyPem };
+      }
+    }
+  } catch {
+    // fall through to generate
+  }
+
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const deviceId = fingerprintPublicKey(publicKeyPem);
+
+  fs.mkdirSync(path.dirname(identityPath), { recursive: true });
+  fs.writeFileSync(
+    identityPath,
+    JSON.stringify({ version: 1, deviceId, publicKeyPem, privateKeyPem, createdAtMs: Date.now() }, null, 2) + "\n",
+    { mode: 0o600 },
+  );
+  return { deviceId, publicKeyPem, privateKeyPem };
+}
+
+function signDevicePayload(privateKeyPem: string, payload: string): string {
+  const key = crypto.createPrivateKey(privateKeyPem);
+  const sig = crypto.sign(null, Buffer.from(payload, "utf8"), key);
+  return base64UrlEncode(sig);
+}
+
+function publicKeyRawBase64Url(publicKeyPem: string): string {
+  return base64UrlEncode(derivePublicKeyRaw(publicKeyPem));
+}
+
+function buildDeviceAuthPayloadV3(params: {
+  deviceId: string;
+  clientId: string;
+  clientMode: string;
+  role: string;
+  scopes: string[];
+  signedAtMs: number;
+  token: string | null;
+  nonce: string;
+  platform?: string;
+  deviceFamily?: string;
+}): string {
+  const scopes = params.scopes.join(",");
+  const token = params.token ?? "";
+  const platform = (params.platform ?? "").trim().toLowerCase();
+  const deviceFamily = (params.deviceFamily ?? "").trim().toLowerCase();
+  return [
+    "v3",
+    params.deviceId,
+    params.clientId,
+    params.clientMode,
+    params.role,
+    scopes,
+    String(params.signedAtMs),
+    token,
+    params.nonce,
+    platform,
+    deviceFamily,
+  ].join("|");
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,15 +133,17 @@ export type OpenClawEvent =
   | { type: "turn_end" }
   | { type: "error"; message: string };
 
-/** A frame received over the WebSocket. */
+/** A frame received over the WebSocket (protocol 3). */
 interface WsFrame {
   type: "req" | "res" | "event";
   id?: string;
   method?: string;
   event?: string;
+  ok?: boolean;
   params?: Record<string, unknown>;
   result?: unknown;
-  error?: { message: string } | string;
+  payload?: Record<string, unknown>;
+  error?: { message: string; details?: Record<string, unknown> } | string;
   data?: Record<string, unknown>;
 }
 
@@ -39,7 +151,6 @@ interface SendMessageParams {
   message: string;
   sessionKey: string;
   thinking?: string;
-  model?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,7 +159,6 @@ interface SendMessageParams {
 
 export class OpenClawWsClient {
   private url: string;
-  private authToken: string;
   private ws: WebSocket | null = null;
   private requestCounter = 0;
   private connected = false;
@@ -65,30 +175,41 @@ export class OpenClawWsClient {
     | ((event: OpenClawEvent, done: boolean) => void)
     | null = null;
 
-  constructor(opts: { url: string; authToken: string }) {
+  /** Tracks length of accumulated text in chat delta events for diffing. */
+  private chatAccumulatedLen = 0;
+
+  constructor(opts: { url: string; authToken?: string }) {
     this.url = opts.url;
-    this.authToken = opts.authToken;
   }
 
   // -------------------------------------------------------------------------
   // Connection
   // -------------------------------------------------------------------------
 
-  /**
-   * Open the WebSocket and authenticate. Resolves once the auth handshake
-   * completes successfully.
-   */
   async connect(): Promise<void> {
     if (this.ws && this.connected) return;
     await this.openAndAuth();
   }
 
+  /**
+   * Protocol 3 handshake:
+   *  1. Open WebSocket
+   *  2. Wait for `connect.challenge` event from gateway
+   *  3. Send `connect` request with device identity + signed nonce
+   *  4. Wait for `hello-ok` response
+   */
   private openAndAuth(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       logger.info(`Connecting to OpenClaw gateway at ${this.url}`);
 
       const ws = new WebSocket(this.url);
       this.ws = ws;
+
+      const handshakeTimeout = setTimeout(() => {
+        logger.error("Handshake timed out waiting for connect.challenge");
+        cleanup();
+        reject(new Error("Handshake timed out"));
+      }, HANDSHAKE_TIMEOUT_MS);
 
       const onError = (ev: Event) => {
         const msg =
@@ -100,77 +221,159 @@ export class OpenClawWsClient {
         reject(new Error(msg));
       };
 
-      const onClose = () => {
-        logger.warn("WebSocket closed before authentication completed");
+      const onClose = (ev: Event) => {
+        const closeEv = ev as { code?: number; reason?: string };
+        const reason = closeEv.reason || "unknown";
+        logger.warn(
+          `WebSocket closed during handshake: code=${closeEv.code} reason=${reason}`
+        );
         cleanup();
-        reject(new Error("WebSocket closed before authentication completed"));
+        reject(
+          new Error(`WebSocket closed during handshake: ${reason}`)
+        );
       };
 
-      const onOpen = () => {
-        logger.debug("WebSocket open, sending auth.connect");
-        const authId = this.nextId();
-        this.sendRaw({
-          type: "req",
-          id: authId,
-          method: "auth.connect",
-          params: { token: this.authToken, role: "operator" },
-        });
-
-        // Wait for the auth response
-        this.pendingRequests.set(authId, {
-          resolve: (frame) => {
-            if (frame.error) {
-              const errMsg =
-                typeof frame.error === "string"
-                  ? frame.error
-                  : frame.error.message;
-              logger.error("Authentication failed:", errMsg);
-              cleanup();
-              reject(new Error(`Authentication failed: ${errMsg}`));
-              return;
-            }
-            logger.info("Authenticated with OpenClaw gateway");
-            this.connected = true;
-            cleanup();
-            this.attachHandlers();
-            resolve();
-          },
-          reject: (err) => {
-            cleanup();
-            reject(err);
-          },
-        });
-      };
-
-      // Temporary message handler for auth phase
       const onMessage = (ev: MessageEvent) => {
+        let frame: WsFrame;
         try {
-          const frame = JSON.parse(
+          frame = JSON.parse(
             typeof ev.data === "string" ? ev.data : ev.data.toString()
           ) as WsFrame;
-          if (frame.type === "res" && frame.id) {
-            const pending = this.pendingRequests.get(frame.id);
-            if (pending) {
-              this.pendingRequests.delete(frame.id);
-              pending.resolve(frame);
-            }
-          }
         } catch (err) {
-          logger.warn("Failed to parse auth-phase message:", err);
+          logger.warn("Failed to parse handshake message:", err);
+          return;
+        }
+
+        // Step 2: receive connect.challenge → send connect request
+        if (frame.type === "event" && frame.event === "connect.challenge") {
+          const payload = frame.payload ?? frame.data ?? {};
+          const nonce = (payload.nonce as string) ?? "";
+          if (!nonce) {
+            logger.error("connect.challenge missing nonce");
+            cleanup();
+            reject(new Error("connect.challenge missing nonce"));
+            return;
+          }
+
+          logger.debug("Received connect.challenge, sending connect request");
+          this.sendConnectRequest(nonce);
+          return;
+        }
+
+        // Step 4: receive hello-ok response
+        if (frame.type === "res" && frame.id) {
+          const pending = this.pendingRequests.get(frame.id);
+          if (pending) {
+            this.pendingRequests.delete(frame.id);
+            pending.resolve(frame);
+          }
         }
       };
 
       const cleanup = () => {
+        clearTimeout(handshakeTimeout);
         ws.removeEventListener("error", onError);
         ws.removeEventListener("close", onClose);
-        ws.removeEventListener("open", onOpen);
         ws.removeEventListener("message", onMessage);
       };
 
       ws.addEventListener("error", onError);
       ws.addEventListener("close", onClose);
-      ws.addEventListener("open", onOpen);
       ws.addEventListener("message", onMessage);
+
+      // Step 1: WebSocket opens — now just wait for the challenge
+      ws.addEventListener(
+        "open",
+        () => {
+          logger.debug("WebSocket open, waiting for connect.challenge");
+        },
+        { once: true }
+      );
+
+      // Set up the connect response handler
+      const connectId = this.nextId();
+      this.pendingRequests.set(connectId, {
+        resolve: (frame) => {
+          if (frame.error) {
+            const errMsg =
+              typeof frame.error === "string"
+                ? frame.error
+                : frame.error.message;
+            logger.error("Connect handshake rejected:", errMsg);
+            cleanup();
+            reject(new Error(`Connect handshake rejected: ${errMsg}`));
+            return;
+          }
+          logger.info("Connected to OpenClaw gateway (protocol 3)");
+          this.connected = true;
+          cleanup();
+          this.attachHandlers();
+          resolve();
+        },
+        reject: (err) => {
+          cleanup();
+          reject(err);
+        },
+      });
+
+      // Store the pre-allocated connect request ID so sendConnectRequest can use it
+      (this as any)._pendingConnectId = connectId;
+    });
+  }
+
+  private sendConnectRequest(challengeNonce: string): void {
+    const connectId: string = (this as any)._pendingConnectId;
+
+    const identity = loadOrCreateDeviceIdentity();
+    const role = "operator";
+    const scopes = ["operator.read", "operator.write", "operator.admin"];
+    const signedAtMs = Date.now();
+    const platform = "linux";
+    const clientId = "gateway-client";
+    const clientMode = "backend";
+
+    const payload = buildDeviceAuthPayloadV3({
+      deviceId: identity.deviceId,
+      clientId,
+      clientMode,
+      role,
+      scopes,
+      signedAtMs,
+      token: null,
+      nonce: challengeNonce,
+      platform,
+    });
+    const signature = signDevicePayload(identity.privateKeyPem, payload);
+
+    this.sendRaw({
+      type: "req",
+      id: connectId,
+      method: "connect",
+      params: {
+        minProtocol: PROTOCOL_VERSION,
+        maxProtocol: PROTOCOL_VERSION,
+        client: {
+          id: clientId,
+          displayName: "lobu-worker",
+          version: "1.0.0",
+          platform,
+          mode: clientMode,
+        },
+        role,
+        scopes,
+        caps: ["tool-events"],
+        commands: [],
+        permissions: {},
+        locale: "en-US",
+        userAgent: "lobu-worker/1.0.0",
+        device: {
+          id: identity.deviceId,
+          publicKey: publicKeyRawBase64Url(identity.publicKeyPem),
+          signature,
+          signedAt: signedAtMs,
+          nonce: challengeNonce,
+        },
+      },
     });
   }
 
@@ -188,13 +391,11 @@ export class OpenClawWsClient {
       logger.warn("WebSocket connection closed");
       this.connected = false;
 
-      // Reject any pending requests
       this.pendingRequests.forEach((pending) => {
         pending.reject(new Error("WebSocket closed"));
       });
       this.pendingRequests.clear();
 
-      // Notify active event listener of the disconnect
       if (this.eventListener) {
         this.eventListener(
           { type: "error", message: "WebSocket connection lost" },
@@ -244,51 +445,122 @@ export class OpenClawWsClient {
   }
 
   private parseEvent(frame: WsFrame): OpenClawEvent | null {
-    const data = frame.data ?? {};
-    switch (frame.event) {
-      case "agent.text_delta":
-        return {
-          type: "text_delta",
-          delta: (data.delta as string) ?? "",
-        };
-      case "agent.thinking":
-        return {
-          type: "thinking",
-          delta: (data.delta as string) ?? "",
-        };
-      case "agent.tool_start":
+    const data = frame.data ?? frame.payload ?? {};
+
+    if (frame.event === "chat") {
+      return this.parseChatEvent(data);
+    }
+
+    if (frame.event === "agent") {
+      return this.parseAgentEvent(data);
+    }
+
+    logger.debug(`Unhandled event type: ${frame.event}`);
+    return null;
+  }
+
+  /**
+   * Parse a "chat" event (ChatEventSchema).
+   * Fields: runId, sessionKey, seq, state (delta|final|aborted|error),
+   * message?, errorMessage?, usage?, stopReason?
+   *
+   * The gateway's delta events carry the full accumulated text, not
+   * incremental deltas. We track the last seen length and emit only
+   * the new portion.
+   */
+  private parseChatEvent(data: Record<string, unknown>): OpenClawEvent | null {
+    const state = data.state as string | undefined;
+
+    if (state === "delta") {
+      const msg = data.message as Record<string, unknown> | undefined;
+      const content = msg?.content as Array<Record<string, unknown>> | undefined;
+      const fullText = content?.[0]?.text as string | undefined;
+      if (fullText) {
+        const prev = this.chatAccumulatedLen;
+        if (fullText.length > prev) {
+          this.chatAccumulatedLen = fullText.length;
+          return { type: "text_delta", delta: fullText.slice(prev) };
+        }
+      }
+      return null;
+    }
+
+    if (state === "final") {
+      return { type: "turn_end" };
+    }
+
+    if (state === "error") {
+      return {
+        type: "error",
+        message: (data.errorMessage as string) ?? "Agent error",
+      };
+    }
+
+    if (state === "aborted") {
+      return { type: "turn_end" };
+    }
+
+    logger.debug(`Unhandled chat event state: ${state}`);
+    return null;
+  }
+
+  /**
+   * Parse an "agent" event (AgentEventPayload).
+   * Fields: runId, stream, seq, ts, data, sessionKey?
+   *
+   * Text streaming comes via "chat" events — the "agent" assistant stream
+   * carries accumulated text so we skip it to avoid duplication.
+   */
+  private parseAgentEvent(payload: Record<string, unknown>): OpenClawEvent | null {
+    const stream = payload.stream as string | undefined;
+    const evtData = payload.data as Record<string, unknown> | undefined;
+
+    if (stream === "tool" && evtData) {
+      const phase = evtData.phase as string | undefined;
+      if (phase === "start" || !phase) {
         return {
           type: "tool_start",
-          name: (data.name as string) ?? "unknown",
-          input: (data.input as Record<string, unknown>) ?? {},
+          name: (evtData.name as string) ?? "unknown",
+          input: (evtData.input as Record<string, unknown>) ?? {},
         };
-      case "agent.tool_end":
+      }
+      if (phase === "end" || phase === "result") {
         return {
           type: "tool_end",
-          name: (data.name as string) ?? "unknown",
-          result: (data.result as string) ?? "",
+          name: (evtData.name as string) ?? "unknown",
+          result: (evtData.result as string) ?? "",
         };
-      case "agent.turn_end":
+      }
+    }
+
+    if (stream === "lifecycle" && evtData) {
+      const phase = evtData.phase as string | undefined;
+      if (phase === "end") {
         return { type: "turn_end" };
-      case "agent.error":
+      }
+      if (phase === "error") {
         return {
           type: "error",
-          message: (data.message as string) ?? "Unknown agent error",
+          message: (evtData.error as string) ?? "Agent lifecycle error",
         };
-      default:
-        logger.debug(`Unhandled event type: ${frame.event}`);
-        return null;
+      }
     }
+
+    if (stream === "error") {
+      return {
+        type: "error",
+        message: (evtData?.reason as string) ?? "Agent error",
+      };
+    }
+
+    logger.debug(`Unhandled agent event stream: ${stream}`);
+    return null;
   }
 
   // -------------------------------------------------------------------------
   // Sending messages
   // -------------------------------------------------------------------------
 
-  /**
-   * Send a message to the agent and yield streaming events as an async
-   * iterable. Only one message can be in-flight at a time.
-   */
   async *sendMessage(
     params: SendMessageParams
   ): AsyncIterable<OpenClawEvent> {
@@ -300,17 +572,16 @@ export class OpenClawWsClient {
       throw new Error("A message is already in flight");
     }
 
+    this.chatAccumulatedLen = 0;
     const reqId = this.nextId();
 
-    // Build the request payload
     const reqParams: Record<string, unknown> = {
       message: params.message,
       sessionKey: params.sessionKey,
+      idempotencyKey: crypto.randomUUID(),
     };
     if (params.thinking) reqParams.thinking = params.thinking;
-    if (params.model) reqParams.model = params.model;
 
-    // Set up the event queue that the async generator will drain
     const queue: Array<{ event: OpenClawEvent; done: boolean }> = [];
     let queueResolve: (() => void) | null = null;
     let finished = false;
@@ -352,15 +623,13 @@ export class OpenClawWsClient {
       }
     };
 
-    // Send the request
     this.sendRaw({
       type: "req",
       id: reqId,
-      method: "agent.message",
+      method: "chat.send",
       params: reqParams,
     });
 
-    // Wait for acknowledgement (res frame)
     const resPromise = new Promise<WsFrame>((resolve, reject) => {
       this.pendingRequests.set(reqId, { resolve, reject });
     });
@@ -375,12 +644,10 @@ export class OpenClawWsClient {
       this.eventListener = null;
       if (timeoutTimer) clearTimeout(timeoutTimer);
 
-      // Attempt reconnect if connection dropped
       if (!this.connected && !this.reconnecting) {
         logger.info("Connection lost during send, attempting reconnect...");
         const reconnected = await this.tryReconnect();
         if (reconnected) {
-          // Retry the message on the new connection
           yield* this.sendMessage(params);
           return;
         }
@@ -396,12 +663,11 @@ export class OpenClawWsClient {
         typeof resFrame.error === "string"
           ? resFrame.error
           : resFrame.error.message;
-      throw new Error(`agent.message rejected: ${errMsg}`);
+      throw new Error(`chat.send rejected: ${errMsg}`);
     }
 
-    logger.debug(`agent.message accepted (req ${reqId})`);
+    logger.debug(`chat.send accepted (req ${reqId})`);
 
-    // Drain the event queue
     try {
       while (true) {
         if (queue.length > 0) {
@@ -411,14 +677,12 @@ export class OpenClawWsClient {
         } else if (finished) {
           return;
         } else {
-          // Wait for next event
           await new Promise<void>((resolve) => {
             queueResolve = resolve;
           });
         }
       }
     } finally {
-      // Cleanup in case consumer breaks out early
       finished = true;
       this.eventListener = null;
       if (timeoutTimer) clearTimeout(timeoutTimer);
@@ -482,7 +746,6 @@ export class OpenClawWsClient {
       }
       this.ws = null;
     }
-    // Reject pending requests
     this.pendingRequests.forEach((pending) => {
       pending.reject(new Error("Client disconnected"));
     });

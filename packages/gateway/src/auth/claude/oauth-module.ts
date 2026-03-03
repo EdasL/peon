@@ -110,13 +110,20 @@ export class ClaudeOAuthModule extends BaseProviderModule {
       logger.info(`Injecting ${profile.authType} profile for space ${agentId}`);
       if (profile.authType === "oauth") {
         envVars.CLAUDE_CODE_OAUTH_TOKEN = profile.credential;
+
+        if (profile.metadata?.refreshToken) {
+          envVars.CLAUDE_CODE_OAUTH_REFRESH_TOKEN = profile.metadata.refreshToken;
+        }
+        if (profile.metadata?.clientId) {
+          envVars.CLAUDE_CODE_OAUTH_CLIENT_ID = profile.metadata.clientId;
+        }
+        if (profile.metadata?.scopes?.length) {
+          envVars.CLAUDE_CODE_OAUTH_SCOPES = profile.metadata.scopes.join(",");
+        }
       } else {
         envVars.ANTHROPIC_API_KEY = profile.credential;
       }
     }
-
-    // AGENT_DEFAULT_MODEL is now delivered dynamically via session context.
-    // No longer baked into static container env vars.
 
     return envVars;
   }
@@ -696,6 +703,7 @@ export class ClaudeOAuthModule extends BaseProviderModule {
     agentId: string,
     credentials: ClaudeCredentials
   ): Promise<void> {
+    const config = this.oauthClient.getConfig();
     await this.authProfilesManager.upsertProfile({
       agentId,
       provider: this.providerId,
@@ -708,6 +716,8 @@ export class ClaudeOAuthModule extends BaseProviderModule {
       metadata: {
         refreshToken: credentials.refreshToken,
         expiresAt: credentials.expiresAt,
+        scopes: credentials.scopes,
+        clientId: config.clientId,
       },
       makePrimary: true,
     });

@@ -155,6 +155,17 @@ export class PeonResponseRenderer implements ResponseRenderer {
       })
       .returning()
 
+    // Flip project status to "error" if still in "creating"
+    const [updatedProject] = await db
+      .update(projects)
+      .set({ status: "error", updatedAt: new Date() })
+      .where(and(eq(projects.id, projectId), eq(projects.status, "creating")))
+      .returning()
+
+    if (updatedProject) {
+      broadcastToProject(projectId, "project_status", { status: "error" })
+    }
+
     // Broadcast to SSE clients
     broadcastToProject(projectId, "message", assistantMsg)
 

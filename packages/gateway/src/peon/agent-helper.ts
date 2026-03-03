@@ -70,6 +70,11 @@ export async function bridgeCredentials(
     where: eq(apiKeys.userId, userId),
   })
 
+  logger.info(
+    { userId, lobuAgentId, keyCount: userKeys.length, providers: userKeys.map(k => k.provider) },
+    "bridgeCredentials: fetched user API keys from DB"
+  )
+
   if (userKeys.length === 0) {
     logger.warn({ userId, lobuAgentId }, "No API keys found for user")
     return false
@@ -79,8 +84,15 @@ export async function bridgeCredentials(
 
   for (const key of userKeys) {
     const decryptedKey = decrypt(key.encryptedKey)
+    const keyPreview = decryptedKey.length > 8
+      ? `${decryptedKey.slice(0, 7)}...${decryptedKey.slice(-4)}`
+      : "***"
 
     if (key.provider === "anthropic") {
+      logger.info(
+        { userId, lobuAgentId, keyPreview, label: key.label },
+        "bridgeCredentials: upserting Anthropic key into Redis"
+      )
       // "anthropic" in apiKeys table maps to "claude" in the module registry
       await catalogService.installProvider(lobuAgentId, "claude")
       await profilesManager.upsertProfile({

@@ -100,6 +100,7 @@ export interface ClaudeOAuthStateData {
   agentId: string;
   codeVerifier: string;
   context?: OAuthPlatformContext;
+  redirectTo?: string;
 }
 
 export type ClaudeOAuthState = ClaudeOAuthStateData & { createdAt: number };
