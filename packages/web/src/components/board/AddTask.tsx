@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
@@ -9,6 +9,7 @@ interface AddTaskProps {
 
 export function AddTask({ onAdd }: AddTaskProps) {
   const [value, setValue] = useState("")
+  const inputRef = useRef<HTMLInputElement>(null)
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -16,11 +17,13 @@ export function AddTask({ onAdd }: AddTaskProps) {
     if (!trimmed) return
     onAdd(trimmed)
     setValue("")
+    inputRef.current?.focus()
   }
 
   return (
     <form onSubmit={handleSubmit} className="flex gap-2">
       <Input
+        ref={inputRef}
         placeholder="Add a task..."
         value={value}
         onChange={(e) => setValue(e.target.value)}

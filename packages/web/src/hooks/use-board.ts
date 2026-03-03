@@ -51,9 +51,9 @@ export function useBoard(teamName: string) {
         if (existing >= 0) {
           const updated = [...prev.tasks]
           updated[existing] = boardTask
-          return { ...prev, tasks: updated }
+          return { ...prev, tasks: updated, error: null }
         }
-        return { ...prev, tasks: [...prev.tasks, boardTask] }
+        return { ...prev, tasks: [...prev.tasks, boardTask], error: null }
       })
     })
 

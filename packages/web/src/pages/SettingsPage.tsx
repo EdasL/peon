@@ -34,7 +34,7 @@ const PROVIDERS = ["anthropic", "openai"] as const
 type Provider = (typeof PROVIDERS)[number]
 
 export function SettingsPage() {
-  const { user } = useAuth()
+  const { user, refreshUser } = useAuth()
   const [section, setSection] = useState<Section>("profile")
   const [keys, setKeys] = useState<api.ApiKeyInfo[]>([])
   const [keysLoading, setKeysLoading] = useState(true)
@@ -55,6 +55,7 @@ export function SettingsPage() {
   // Delete account
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false)
   const [deleteAccountLoading, setDeleteAccountLoading] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState("")
 
   useEffect(() => {
     api.getApiKeys()
@@ -76,6 +77,8 @@ export function SettingsPage() {
       setNewKey("")
       setAddingProvider(null)
       toast.success(`${addingProvider} key added`)
+    } catch {
+      // toast shown by api layer
     } finally {
       setAddingKey(false)
     }
@@ -89,6 +92,8 @@ export function SettingsPage() {
       setKeys((prev) => prev.filter((k) => k.id !== deletingKeyId))
       setDeletingKeyId(null)
       toast.success("API key removed")
+    } catch {
+      // toast shown by api layer
     } finally {
       setDeleteKeyLoading(false)
     }
@@ -100,17 +105,23 @@ export function SettingsPage() {
       await api.disconnectGithub()
       toast.success("GitHub disconnected")
       setGithubDisconnected(true)
+      await refreshUser()
+    } catch {
+      // toast shown by api layer
     } finally {
       setDisconnecting(false)
     }
   }
 
   const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== "DELETE") return
     setDeleteAccountLoading(true)
     try {
       await api.deleteAccount()
       toast.success("Account deleted")
       window.location.href = "/"
+    } catch {
+      // toast shown by api layer
     } finally {
       setDeleteAccountLoading(false)
     }
@@ -386,17 +397,32 @@ export function SettingsPage() {
                           undone.
                         </DialogDescription>
                       </DialogHeader>
+                      <div className="space-y-2 py-2">
+                        <Label htmlFor="delete-confirm" className="text-sm">
+                          Type <span className="font-mono font-semibold">DELETE</span> to confirm
+                        </Label>
+                        <Input
+                          id="delete-confirm"
+                          value={deleteConfirmText}
+                          onChange={(e) => setDeleteConfirmText(e.target.value)}
+                          placeholder="DELETE"
+                          className="font-mono"
+                        />
+                      </div>
                       <DialogFooter>
                         <Button
                           variant="outline"
-                          onClick={() => setDeleteAccountOpen(false)}
+                          onClick={() => {
+                            setDeleteAccountOpen(false)
+                            setDeleteConfirmText("")
+                          }}
                         >
                           Cancel
                         </Button>
                         <Button
                           variant="destructive"
                           onClick={handleDeleteAccount}
-                          disabled={deleteAccountLoading}
+                          disabled={deleteAccountLoading || deleteConfirmText !== "DELETE"}
                         >
                           {deleteAccountLoading && (
                             <Loader2 className="h-4 w-4 animate-spin" />

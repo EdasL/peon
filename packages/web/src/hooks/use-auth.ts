@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from "react"
+import { useState, useEffect, useCallback, createContext, useContext } from "react"
 
 interface User {
   id: string
@@ -12,12 +12,14 @@ interface AuthContext {
   user: User | null
   loading: boolean
   logout: () => Promise<void>
+  refreshUser: () => Promise<void>
 }
 
 export const AuthCtx = createContext<AuthContext>({
   user: null,
   loading: true,
   logout: async () => {},
+  refreshUser: async () => {},
 })
 
 export function useAuth() {
@@ -58,11 +60,21 @@ export function useAuthProvider(): AuthContext {
     }
   }, [])
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const r = await fetch("/api/auth/me", { credentials: "include" })
+      if (r.ok) {
+        const d = await r.json()
+        setUser(d?.user ?? null)
+      }
+    } catch {}
+  }, [])
+
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" })
     setUser(null)
     window.location.href = "/"
   }
 
-  return { user, loading, logout }
+  return { user, loading, logout, refreshUser }
 }
