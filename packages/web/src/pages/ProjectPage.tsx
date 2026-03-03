@@ -29,6 +29,7 @@ import {
   Power,
   Settings,
   LogOut,
+  RefreshCw,
 } from "lucide-react"
 
 function ProjectSkeleton() {
@@ -174,6 +175,7 @@ export function ProjectPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<Project["status"] | null>(null)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [centerView, setCenterView] = useState<"board" | "chat">("chat")
 
   useEffect(() => {
@@ -210,8 +212,9 @@ export function ProjectPage() {
     })
     es.addEventListener("project_status", (e) => {
       try {
-        const data = JSON.parse(e.data) as { status: Project["status"] }
+        const data = JSON.parse(e.data) as { status: Project["status"]; message?: string }
         setStatus(data.status)
+        if (data.message) setStatusMessage(data.message)
       } catch {}
     })
     return () => es.close()
@@ -220,6 +223,17 @@ export function ProjectPage() {
   const handleProvisioningReady = useCallback(() => {
     setStatus("running")
   }, [])
+
+  const handleRestart = useCallback(async () => {
+    setStatus("creating")
+    setStatusMessage(null)
+    try {
+      const { status: newStatus } = await api.restartProject(id!)
+      setStatus(newStatus as Project["status"])
+    } catch {
+      setStatus("error")
+    }
+  }, [id])
 
   if (!id) return null
   if (loading || status === null) return <ProjectSkeleton />
@@ -237,17 +251,38 @@ export function ProjectPage() {
 
   if (status === "error") {
     return (
-      <div className="h-screen flex flex-col items-center justify-center gap-4 bg-zinc-950">
-        <div className="flex items-center gap-3 text-destructive">
-          <AlertCircle className="h-6 w-6" />
-          <h2 className="text-lg font-semibold">Project failed to start</h2>
+      <div className="h-screen flex flex-col items-center justify-center bg-zinc-950 p-6">
+        <div className="w-full max-w-md">
+          <div className="bg-red-950/20 border border-red-900/30 rounded-lg p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h2 className="text-sm font-semibold text-red-300">Project failed to start</h2>
+                <p className="text-xs text-red-400/80 mt-1">
+                  {statusMessage ?? "Check that your API key is valid and try again."}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                onClick={handleRestart}
+                className="bg-red-600 hover:bg-red-700 text-white border-0"
+              >
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                Restart
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("/dashboard")}
+                className="text-zinc-400 hover:text-zinc-200"
+              >
+                Back to Dashboard
+              </Button>
+            </div>
+          </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Check that your API key is valid and try again.
-        </p>
-        <Button variant="outline" onClick={() => navigate("/dashboard")}>
-          Back to dashboard
-        </Button>
       </div>
     )
   }
@@ -260,18 +295,10 @@ export function ProjectPage() {
         <div className="flex items-center gap-2 px-4 py-2 bg-amber-950/30 border-b border-amber-800/30 text-amber-400 text-xs flex-shrink-0">
           <Power className="h-3.5 w-3.5" />
           <span className="flex-1">
-            Container is stopped. Activity data is from the last session.
+            {statusMessage ?? "Container is stopped. Activity data is from the last session."}
           </span>
           <button
-            onClick={async () => {
-              setStatus("creating")
-              try {
-                const { status: newStatus } = await api.restartProject(id!)
-                setStatus(newStatus as Project["status"])
-              } catch {
-                setStatus("error")
-              }
-            }}
+            onClick={handleRestart}
             className="px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/50 text-amber-300 font-medium transition-colors"
           >
             Restart
@@ -293,6 +320,19 @@ export function ProjectPage() {
         <h1 className="font-semibold text-sm text-zinc-100">
           {project?.name ?? "Project"}
         </h1>
+
+        {status === "running" && (
+          <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Running
+          </span>
+        )}
+        {status === "stopped" && (
+          <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" />
+            Stopped
+          </span>
+        )}
 
         {tmpl && (
           <div className="flex items-center gap-1.5 ml-1">

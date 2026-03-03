@@ -219,19 +219,24 @@ projectsRouter.post("/:id/restart", async (c) => {
     return c.json({ error: "No container associated with this project" }, 400)
   }
 
+  // Broadcast "creating" immediately so the frontend sees the transition right away
+  await db.update(projects).set({ status: "creating", updatedAt: new Date() }).where(eq(projects.id, project.id))
+  broadcastToProject(project.id, "project_status", { status: "creating" })
+
   const restarted = await restartContainer(project.deploymentName)
   if (!restarted) {
     // Container doesn't exist — need to re-provision
     const services = getPeonPlatform().getServices()
     const { ensureUserContainer, initProjectWorkspace, waitForContainerReady } = await import("../../web/project-launcher.js")
 
-    await db.update(projects).set({ status: "creating", updatedAt: new Date() }).where(eq(projects.id, project.id))
-
     const containerResult = await ensureUserContainer(session.userId, services)
     if (containerResult.error) {
+      const message = containerResult.error === "no-api-key"
+        ? "No API key found — add an Anthropic key in settings"
+        : containerResult.error
       await db.update(projects).set({ status: "error", updatedAt: new Date() }).where(eq(projects.id, project.id))
-      broadcastToProject(project.id, "project_status", { status: "error" })
-      return c.json({ error: containerResult.error }, 400)
+      broadcastToProject(project.id, "project_status", { status: "error", message })
+      return c.json({ error: message }, 400)
     }
 
     const deploymentName = getPeonDeploymentName(session.userId, containerResult.lobuAgentId)

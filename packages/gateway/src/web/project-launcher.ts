@@ -183,7 +183,7 @@ Ready for user instructions.`,
 export async function waitForContainerReady(
   projectId: string,
   deploymentName: string,
-  timeoutMs = 90_000,
+  timeoutMs = 120_000,
   intervalMs = 3_000,
 ): Promise<void> {
   const { getContainerStatus } = await import("./container-manager.js")
@@ -202,7 +202,7 @@ export async function waitForContainerReady(
       if (status === "error") {
         await db.update(projects).set({ status: "error", updatedAt: new Date() })
           .where(eq(projects.id, projectId))
-        broadcastToProject(projectId, "project_status", { status: "error" })
+        broadcastToProject(projectId, "project_status", { status: "error", message: "Container reported an error during startup" })
         return
       }
       await new Promise((r) => setTimeout(r, intervalMs))
@@ -210,7 +210,7 @@ export async function waitForContainerReady(
     // Timeout — mark as error
     await db.update(projects).set({ status: "error", updatedAt: new Date() })
       .where(eq(projects.id, projectId))
-    broadcastToProject(projectId, "project_status", { status: "error" })
+    broadcastToProject(projectId, "project_status", { status: "error", message: "Container failed to start within 2 minutes" })
   }
 
   // Fire and forget the polling — don't block the response

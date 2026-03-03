@@ -163,7 +163,7 @@ export class PeonResponseRenderer implements ResponseRenderer {
       .returning()
 
     if (updatedProject) {
-      broadcastToProject(projectId, "project_status", { status: "error" })
+      broadcastToProject(projectId, "project_status", { status: "error", message: errorContent })
     }
 
     // Broadcast to SSE clients

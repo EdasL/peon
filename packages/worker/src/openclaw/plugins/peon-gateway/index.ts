@@ -14,8 +14,15 @@ import { readFileSync } from "node:fs";
 import { readFile, stat, writeFile, mkdir, unlink } from "node:fs/promises";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { buildToolActivityText } from "../../tool-activity.js";
+import {
+  createSession,
+  sendKeys,
+  capturePane,
+  killSession,
+  hasSession,
+} from "../../tmux-manager.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -526,7 +533,7 @@ async function postSubagentActivity(
 // ---------------------------------------------------------------------------
 
 interface TeamProcess {
-  process: ChildProcess;
+  sessionName: string;
   projectId: string;
   startedAt: number;
   output: string;
@@ -549,9 +556,30 @@ async function delegateToProject(
 
   const claudeDir = join(projectDir, ".claude");
   await mkdir(claudeDir, { recursive: true });
-  const claudeMd = join(claudeDir, "CLAUDE.md");
-  try { await stat(claudeMd); } catch {
-    await writeFile(claudeMd, `# Project: ${params.projectId}\n\nManaged project workspace.\n`, "utf-8");
+
+  // Check if CLAUDE.md exists at either conventional location
+  const claudeMdRoot = join(projectDir, "CLAUDE.md");
+  const claudeMdDot = join(claudeDir, "CLAUDE.md");
+  const hasCLAUDEmd =
+    await stat(claudeMdRoot).then(() => true, () => false) ||
+    await stat(claudeMdDot).then(() => true, () => false);
+
+  if (!hasCLAUDEmd) {
+    // Try claude init --yes for a richer bootstrap; fall back to minimal file
+    const initResult = spawnSync("claude", ["init", "--yes"], {
+      cwd: projectDir,
+      stdio: "pipe",
+      timeout: 30000,
+      env: { ...process.env } as Record<string, string>,
+    });
+    const initSucceeded =
+      initResult.status === 0 &&
+      (await stat(claudeMdRoot).then(() => true, () => false) ||
+       await stat(claudeMdDot).then(() => true, () => false));
+
+    if (!initSucceeded) {
+      await writeFile(claudeMdDot, `# Project: ${params.projectId}\n\nManaged project workspace.\n`, "utf-8");
+    }
   }
 
   const existing = activeTeams.get(params.projectId);
@@ -559,82 +587,112 @@ async function delegateToProject(
     return text(`Error: A team is already running for "${params.projectId}". Use CheckTeamStatus.`);
   }
 
+  const sessionName = `peon-${params.projectId}`;
+  const subagentName = `delegate:${params.projectId}`;
   const allowedTools = params.allowedTools || "Read,Edit,Write,Bash,Grep,Glob";
 
-  return new Promise((resolve) => {
-    const child = spawn("claude", ["-p", params.task, "--output-format", "stream-json", "--allowedTools", allowedTools], {
-      cwd: projectDir,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1" } as Record<string, string>,
-    });
+  const team: TeamProcess = {
+    sessionName,
+    projectId: params.projectId,
+    startedAt: Date.now(),
+    output: "",
+    completed: false,
+    exitCode: null,
+  };
+  activeTeams.set(params.projectId, team);
 
-    const team: TeamProcess = { process: child, projectId: params.projectId, startedAt: Date.now(), output: "", completed: false, exitCode: null };
-    activeTeams.set(params.projectId, team);
+  // Run tmux-based Claude Code launch in a non-blocking async task
+  // so we can return status to the caller while the agent runs
+  (async () => {
+    try {
+      await createSession(sessionName, projectDir);
 
-    // Use projectId as the agent name so the activity feed labels it clearly
-    const subagentName = `delegate:${params.projectId}`;
+      // Build the claude command with --dangerously-skip-permissions and stream-json output
+      const claudeCmd = [
+        "claude",
+        "--dangerously-skip-permissions",
+        "--output-format", "stream-json",
+        "--allowedTools", allowedTools,
+        "-p", params.task,
+      ].join(" ");
 
-    child.stdout?.on("data", (chunk: Buffer) => {
-      const lines = chunk.toString().split("\n");
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        team.output += line + "\n";
-        try {
-          const ev = JSON.parse(trimmed) as Record<string, unknown>;
+      await sendKeys(sessionName, claudeCmd);
 
-          if (ev.type === "tool_use" && typeof ev.name === "string") {
-            const toolName = ev.name;
-            const toolInput = (ev.input && typeof ev.input === "object")
-              ? ev.input as Record<string, unknown>
-              : {};
+      // Poll pane output for completion, parsing stream-json lines
+      let lastPaneLength = 0;
+      const pollInterval = 200;
+      const maxWaitMs = 10 * 60 * 1000; // 10 minutes
+      const start = Date.now();
 
-            // Sync task tools to the board
-            if (TASK_TOOL_NAMES.has(toolName)) {
-              syncTaskToGateway(toolName, toolInput).catch(() => {});
-            }
+      while (Date.now() - start < maxWaitMs) {
+        if (!await hasSession(sessionName)) {
+          team.completed = true;
+          team.exitCode = 0;
+          break;
+        }
 
-            // Post activity event for non-silent tools
-            if (!SILENT_TOOLS.has(toolName)) {
-              const activityText = buildToolActivityText(toolName, toolInput);
-              postSubagentActivity(subagentName, "tool_start", toolName, activityText).catch(() => {});
-            }
-          } else if (ev.type === "tool_result") {
-            // tool_result follows tool_use — emit tool_end
-            const toolId = (ev.tool_use_id as string | undefined) ?? "";
-            if (toolId) {
-              postSubagentActivity(subagentName, "tool_end").catch(() => {});
-            }
-          } else if (ev.type === "message" && (ev as any).stop_reason === "end_turn") {
-            postSubagentActivity(subagentName, "turn_end").catch(() => {});
+        const pane = await capturePane(sessionName).catch(() => "");
+        if (pane.length > lastPaneLength) {
+          const newText = pane.slice(lastPaneLength);
+          lastPaneLength = pane.length;
+          team.output += newText;
+
+          // Parse stream-json events from new output
+          for (const line of newText.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const ev = JSON.parse(trimmed) as Record<string, unknown>;
+
+              if (ev.type === "tool_use" && typeof ev.name === "string") {
+                const toolName = ev.name;
+                const toolInput = (ev.input && typeof ev.input === "object")
+                  ? ev.input as Record<string, unknown>
+                  : {};
+                if (TASK_TOOL_NAMES.has(toolName)) {
+                  syncTaskToGateway(toolName, toolInput).catch(() => {});
+                }
+                if (!SILENT_TOOLS.has(toolName)) {
+                  const activityText = buildToolActivityText(toolName, toolInput);
+                  postSubagentActivity(subagentName, "tool_start", toolName, activityText).catch(() => {});
+                }
+              } else if (ev.type === "tool_result") {
+                const toolId = (ev.tool_use_id as string | undefined) ?? "";
+                if (toolId) {
+                  postSubagentActivity(subagentName, "tool_end").catch(() => {});
+                }
+              } else if (ev.type === "message" && (ev as Record<string, unknown>).stop_reason === "end_turn") {
+                postSubagentActivity(subagentName, "turn_end").catch(() => {});
+                // Claude finished — session will exit on its own
+                team.completed = true;
+                team.exitCode = 0;
+              } else if (ev.type === "result") {
+                team.completed = true;
+                team.exitCode = 0;
+              }
+            } catch { /* not JSON — terminal output, ignore */ }
           }
-        } catch { /* not JSON — ignore */ }
-      }
-    });
-    child.stderr?.on("data", (_chunk: Buffer) => { /* stderr captured but not surfaced */ });
+        }
 
-    child.on("exit", (code) => {
-      team.completed = true;
-      team.exitCode = code;
-      let resultText = "";
-      for (const line of team.output.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const ev = JSON.parse(trimmed);
-          if (ev.type === "result" && typeof ev.result === "string") resultText = ev.result;
-          else if (ev.type === "assistant" && ev.subtype === "text" && typeof ev.text === "string") resultText += ev.text;
-        } catch { /* not JSON */ }
+        if (team.completed) break;
+        await new Promise((r) => setTimeout(r, pollInterval));
       }
-      resolve(text(resultText || `Team completed with exit code ${code}`));
-    });
 
-    child.on("error", (err) => {
+      if (!team.completed) {
+        // Timed out
+        team.completed = true;
+        team.exitCode = 1;
+      }
+    } catch (err) {
       team.completed = true;
       team.exitCode = 1;
-      resolve(text(`Failed to spawn Claude Code team: ${err.message}`));
-    });
-  });
+      team.output += `\nError: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      await killSession(sessionName).catch(() => {});
+    }
+  })();
+
+  return text(`Delegated task to project "${params.projectId}" (tmux session: ${sessionName}). Use CheckTeamStatus to poll and GetTeamResult when done.`);
 }
 
 async function checkTeamStatus(

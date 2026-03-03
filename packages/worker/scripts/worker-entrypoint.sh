@@ -251,6 +251,34 @@ AUTHEOF
     echo "  OpenClaw auth-profiles.json written"
 fi
 
+# Write Claude Code settings.json with required plugins and model config
+echo "  Writing Claude Code settings..."
+CLAUDE_CONFIG_DIR="${HOME:-/workspace}/.claude"
+mkdir -p "$CLAUDE_CONFIG_DIR"
+cat > "$CLAUDE_CONFIG_DIR/settings.json" << 'SETTINGSEOF'
+{
+  "model": "opus",
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "github@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "figma@claude-plugins-official": true
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}
+SETTINGSEOF
+chmod 644 "$CLAUDE_CONFIG_DIR/settings.json"
+echo "  Claude Code settings.json written to $CLAUDE_CONFIG_DIR/settings.json"
+
 # Start the OpenClaw gateway as a background subprocess
 echo "🚀 Starting OpenClaw gateway..."
 OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
@@ -318,11 +346,19 @@ while [ "$OPENCLAW_READY" = "false" ] && [ "$OPENCLAW_RETRY" -lt "$OPENCLAW_MAX_
 done
 
 if [ "$OPENCLAW_READY" = "false" ]; then
-    echo "⚠️  OpenClaw gateway did not become ready after ${OPENCLAW_MAX_RETRIES}s, proceeding anyway..."
+    echo "  OpenClaw gateway did not become ready after ${OPENCLAW_MAX_RETRIES}s, proceeding anyway..."
 fi
 
 export OPENCLAW_PORT
 export OPENCLAW_PID
+
+# Install OpenClaw skills on first boot (requires gateway to be running)
+echo "  Installing OpenClaw skills..."
+SKILLS="coding-agent github tmux summarize oracle clawhub"
+for skill in $SKILLS; do
+    openclaw skill install "$skill" 2>/dev/null || echo "  Skill $skill not available, skipping"
+done
+echo "  OpenClaw skills installation complete"
 
 # Start the worker process
 echo "🚀 Executing Worker..."

@@ -119,6 +119,31 @@ chatRouter.post("/:id/chat", async (c) => {
   // Broadcast user message to SSE clients immediately
   broadcastToProject(projectId, "message", userMsg)
 
+  // Build project context prefix so OpenClaw knows where it is and what tasks exist
+  const { getProjectTasks } = await import("./task-sync.js")
+  const currentTasks = await getProjectTasks(projectId)
+  const taskLines = currentTasks.length === 0
+    ? "  (none)"
+    : currentTasks.map((t) => {
+        const owner = t.owner ? ` (${t.owner})` : " (unassigned)"
+        return `  - [${t.status}] ${t.subject}${owner}`
+      }).join("\n")
+
+  const contextPrefix = [
+    "[Project Context]",
+    `Project: ${project.name} (${project.id})`,
+    `Template: ${project.templateId}`,
+    `Repo: ${project.repoUrl ?? "none"}`,
+    `Workspace: /workspace/projects/${project.id}`,
+    "",
+    "Current tasks:",
+    taskLines,
+    "[End Context]",
+    "",
+  ].join("\n")
+
+  const messageText = contextPrefix + content
+
   // Ensure credentials are bridged (idempotent — installs provider in catalog if missing)
   const services = getPeonPlatform().getServices()
   try {
@@ -143,7 +168,7 @@ chatRouter.post("/:id/chat", async (c) => {
     agentId: lobuAgentId,
     botId: "peon-agent",
     platform: "peon",
-    messageText: content,
+    messageText,
     platformMetadata: { projectId, userId: session.userId },
     agentOptions: { provider: "claude" },
   })
