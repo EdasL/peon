@@ -90,8 +90,8 @@ export function ActivityFeed({ events, maxEvents = 100 }: ActivityFeedProps) {
   const handleScroll = useCallback(() => {
     const viewport = scrollAreaRef.current?.querySelector("[data-slot='scroll-area-viewport']")
     if (!viewport) return
-    // If scrolled more than 50px from top, user is reading older events
-    setUserScrolled(viewport.scrollTop > 50)
+    // If scrolled more than 200px from top, user is reading older events
+    setUserScrolled(viewport.scrollTop > 200)
   }, [])
 
   // Auto-scroll to top only when new events arrive AND user hasn't scrolled away

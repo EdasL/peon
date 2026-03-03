@@ -281,7 +281,10 @@ export function DashboardPage() {
                     variant="ghost"
                     size="sm"
                     className="text-xs h-7"
-                    onClick={() => navigate(`/project/${chatProjectId}`)}
+                    onClick={() => {
+                      setChatProjectId(null)
+                      navigate(`/project/${chatProjectId}`)
+                    }}
                   >
                     Open project
                   </Button>

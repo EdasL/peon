@@ -49,6 +49,7 @@ export function OnboardingPage() {
   const [reposLoaded, setReposLoaded] = useState(false)
   const [repoUrl, setRepoUrl] = useState("")
   const [selectedRepo, setSelectedRepo] = useState<api.GithubRepo | null>(null)
+  const [reposError, setReposError] = useState<string | null>(null)
 
   // Form state
   const [selectedTemplate, setSelectedTemplate] = useState("fullstack")
@@ -99,9 +100,11 @@ export function OnboardingPage() {
         .then((d) => {
           setRepos(d.repos)
           setReposLoaded(true)
+          setReposError(null)
         })
-        .catch(() => {
+        .catch((err: unknown) => {
           setReposLoaded(true)
+          setReposError(err instanceof Error ? err.message : "Failed to load repositories")
         })
         .finally(() => setReposLoading(false))
     }
@@ -327,7 +330,13 @@ export function OnboardingPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground p-2">No repos found.</p>
+                    <p className="text-sm text-muted-foreground p-2">
+                      {reposError ? (
+                        <span className="text-destructive">{reposError}</span>
+                      ) : (
+                        "No repos found."
+                      )}
+                    </p>
                   )
                 ) : (
                   <Input

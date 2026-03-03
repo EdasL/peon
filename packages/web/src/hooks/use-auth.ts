@@ -29,19 +29,22 @@ export function useAuthProvider(): AuthContext {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
+
     fetch("/api/auth/me", { credentials: "include" })
       .then((r) => {
         if (r.status === 401) return { user: null }
         return r.json()
       })
-      .then((d) => setUser(d.user))
-      .finally(() => setLoading(false))
+      .then((d) => { if (!cancelled) setUser(d?.user ?? null) })
+      .catch(() => { if (!cancelled) setUser(null) })
+      .finally(() => { if (!cancelled) setLoading(false) })
 
     // Re-validate session every 5 minutes
     const interval = setInterval(() => {
       fetch("/api/auth/me", { credentials: "include" })
         .then((r) => {
-          if (r.status === 401) {
+          if (!cancelled && r.status === 401) {
             setUser(null)
             window.location.href = "/login"
           }
@@ -49,7 +52,10 @@ export function useAuthProvider(): AuthContext {
         .catch(() => {})
     }, 5 * 60 * 1000)
 
-    return () => clearInterval(interval)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
   }, [])
 
   const logout = async () => {
