@@ -43,7 +43,7 @@ export function Column({
         </div>
       </CardHeader>
       <CardContent className="flex-1 px-3 pb-3">
-        <ScrollArea className="h-[calc(100vh-220px)]">
+        <ScrollArea className="h-full">
           <div className="flex flex-col gap-2 pr-2">
             {tasks.map((task) => (
               <TaskCard key={task.id} task={task} onDelete={onDeleteTask} />

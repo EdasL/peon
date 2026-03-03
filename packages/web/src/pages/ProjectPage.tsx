@@ -190,7 +190,7 @@ export function ProjectPage() {
               onSwitchToBoard={() => setMainView("board")}
             />
           ) : (
-            <Board teamName={id} onBack={() => navigate("/dashboard")} />
+            <Board teamName={id} />
           )}
         </div>
         <div className="w-[380px] flex-shrink-0">

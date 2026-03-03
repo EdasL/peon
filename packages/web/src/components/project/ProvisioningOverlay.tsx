@@ -54,10 +54,14 @@ export function ProvisioningOverlay({
   }, [])
 
   useEffect(() => {
-    if (status === "running" || status === "stopped") {
+    if (status === "running") {
       setActiveStep(STEPS.length - 1)
       const timer = setTimeout(onReady, 1200)
       return () => clearTimeout(timer)
+    }
+    if (status === "stopped") {
+      // Don't show "Ready!" for stopped — transition immediately
+      onReady()
     }
   }, [status, onReady])
 
@@ -78,7 +82,7 @@ export function ProvisioningOverlay({
         <div className="space-y-4">
           {STEPS.map((step, i) => {
             const isActive = i === activeStep && !isError
-            const isComplete = i < activeStep || (i === STEPS.length - 1 && (status === "running" || status === "stopped"))
+            const isComplete = i < activeStep || (i === STEPS.length - 1 && status === "running")
 
             return (
               <div

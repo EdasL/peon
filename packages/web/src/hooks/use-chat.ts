@@ -36,8 +36,16 @@ export function useChat(projectId: string) {
 
     // Connect SSE
     const es = new EventSource(`/api/projects/${projectId}/chat/stream`, { withCredentials: true })
+    let wasConnected = false
 
     es.onopen = () => {
+      // Re-fetch history on reconnect to fill any gaps from while disconnected
+      if (wasConnected) {
+        api.getChatHistory(projectId)
+          .then((d) => { if (!cancelled) setMessages(d.messages) })
+          .catch(() => {})
+      }
+      wasConnected = true
       setConnected(true)
       setError(null)
     }

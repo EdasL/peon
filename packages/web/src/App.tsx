@@ -31,6 +31,7 @@ export default function App() {
             <Route path="/dashboard" element={<AuthGuard><DashboardPage /></AuthGuard>} />
             <Route path="/project/:id" element={<AuthGuard><ProjectPage /></AuthGuard>} />
             <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </ErrorBoundary>
       </BrowserRouter>

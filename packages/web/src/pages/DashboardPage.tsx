@@ -109,6 +109,12 @@ export function DashboardPage() {
       setRenamingId(null)
       return
     }
+    // Skip PATCH if name unchanged
+    const current = projects.find((p) => p.id === renamingId)
+    if (current && current.name === renameValue.trim()) {
+      setRenamingId(null)
+      return
+    }
     try {
       const { project } = await api.updateProject(renamingId, { name: renameValue.trim() })
       setProjects((prev) => prev.map((p) => p.id === project.id ? { ...p, name: project.name } : p))

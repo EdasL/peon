@@ -115,7 +115,12 @@ export function useBoard(teamName: string) {
         await updateTask(teamName, taskId, { ...updates, boardColumn: toColumn })
         // SSE will deliver the confirmed update
       } catch {
-        // Reload on failure to restore correct state
+        // Roll back optimistic columnMap override before reloading
+        setColumnMap((prev) => {
+          const next = { ...prev }
+          delete next[taskId]
+          return next
+        })
         const raw = await fetchTasks(teamName)
         const boardTasks = toBoardTasks(raw, columnMapRef.current)
         setState({ tasks: boardTasks, loading: false, error: null })

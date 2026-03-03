@@ -9,6 +9,8 @@ import { Loader2, Check, Github, ExternalLink, Users } from "lucide-react"
 import * as api from "@/lib/api"
 import { TEMPLATES } from "@/lib/templates"
 
+type Step = "apikey" | "repo-template" | "launch"
+
 function ProgressDots({ steps, current }: { steps: Step[]; current: Step }) {
   const currentIndex = steps.indexOf(current)
   return (
@@ -154,6 +156,8 @@ export function OnboardingPage() {
         templateId: selectedTemplate,
       })
       navigate(`/project/${project.id}`)
+    } catch {
+      // Error toast shown by api.ts layer
     } finally {
       setLaunching(false)
     }

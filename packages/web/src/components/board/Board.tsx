@@ -15,15 +15,12 @@ import { COLUMNS } from "@/lib/state-machine"
 import { Column } from "./Column"
 import { DragOverlayCard } from "./DragOverlayCard"
 import { TeamSidebar } from "./TeamSidebar"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
 
 interface BoardProps {
   teamName: string
-  onBack: () => void
 }
 
-export function Board({ teamName, onBack }: BoardProps) {
+export function Board({ teamName }: BoardProps) {
   const { tasks, loading, error, addTask, moveTask, removeTask } =
     useBoard(teamName)
   const [activeTask, setActiveTask] = useState<BoardTask | null>(null)
@@ -65,24 +62,7 @@ export function Board({ teamName, onBack }: BoardProps) {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-background">
-      {/* Header */}
-      <header className="flex items-center gap-4 border-b border-border/40 px-6 py-4">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="size-4" />
-          Back
-        </Button>
-        <div className="h-5 w-px bg-border" />
-        <h1 className="text-lg font-semibold tracking-tight">{teamName}</h1>
-        {loading && (
-          <span className="text-xs text-muted-foreground">Loading...</span>
-        )}
-        {error && (
-          <span className="text-xs text-destructive">{error}</span>
-        )}
-      </header>
-
-      {/* Board + Sidebar */}
+    <div className="flex h-full flex-col">
       <div className="flex flex-1 overflow-hidden">
         <DndContext
           sensors={sensors}
