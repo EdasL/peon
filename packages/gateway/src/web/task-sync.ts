@@ -10,7 +10,10 @@ export interface WorkerTask {
   status: "pending" | "in_progress" | "completed"
   owner: string | null
   boardColumn: string
+  metadata?: Record<string, unknown>
   updatedAt: number
+  blocks?: string[]
+  blockedBy?: string[]
 }
 
 export async function handleWorkerTaskUpdate(projectId: string, task: WorkerTask) {
@@ -23,6 +26,7 @@ export async function handleWorkerTaskUpdate(projectId: string, task: WorkerTask
     status: task.status,
     owner: task.owner,
     boardColumn,
+    metadata: task.metadata ?? null,
   }).onConflictDoUpdate({
     target: tasks.id,
     set: {
@@ -31,6 +35,7 @@ export async function handleWorkerTaskUpdate(projectId: string, task: WorkerTask
       status: task.status,
       owner: task.owner,
       boardColumn,
+      metadata: task.metadata ?? null,
       updatedAt: new Date(),
     },
   })
@@ -49,7 +54,10 @@ export async function getProjectTasks(projectId: string): Promise<WorkerTask[]> 
     status: r.status,
     owner: r.owner,
     boardColumn: r.boardColumn,
+    metadata: (r.metadata as Record<string, unknown>) ?? undefined,
     updatedAt: r.updatedAt.getTime(),
+    blocks: [],     // Not yet tracked in DB — placeholder for type alignment
+    blockedBy: [],  // Not yet tracked in DB — placeholder for type alignment
   }))
 }
 

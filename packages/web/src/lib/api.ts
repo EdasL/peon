@@ -65,7 +65,15 @@ import type { ClaudeTeamConfig, ClaudeTask } from "../../server/types"
 
 export async function fetchTeamConfig(projectId: string): Promise<ClaudeTeamConfig> {
   const { project } = await request<{ project: Project }>(`/api/projects/${projectId}`)
-  return { name: project.name, members: [], taskList: project.id } as unknown as ClaudeTeamConfig
+  const config: ClaudeTeamConfig = {
+    name: project.name,
+    description: "",
+    createdAt: Date.now(),
+    leadAgentId: "",
+    leadSessionId: "",
+    members: [],
+  }
+  return config
 }
 
 export async function fetchTasks(projectId: string): Promise<ClaudeTask[]> {

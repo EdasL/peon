@@ -6,8 +6,8 @@ export interface ClaudeTask {
   activeForm?: string
   owner?: string
   status: "pending" | "in_progress" | "completed"
-  blocks: string[]
-  blockedBy: string[]
+  blocks?: string[]
+  blockedBy?: string[]
   metadata?: Record<string, unknown>
 }
 

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, uuid, jsonb } from "drizzle-orm/pg-core"
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -51,6 +51,7 @@ export const tasks = pgTable("tasks", {
   status: text("status", { enum: ["pending", "in_progress", "completed"] }).default("pending").notNull(),
   owner: text("owner"),
   boardColumn: text("board_column", { enum: ["backlog", "todo", "in_progress", "qa", "done"] }).default("backlog").notNull(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })

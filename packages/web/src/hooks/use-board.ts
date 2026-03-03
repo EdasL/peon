@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import type { ClaudeTask, BoardColumn, BoardTask } from "../../server/types"
 import { fetchTasks, createTask, updateTask, deleteTask } from "@/lib/api"
-import { toBoardTasks, detectTransitions } from "@/lib/state-machine"
-
-const POLL_INTERVAL = 5000
+import { toBoardTasks } from "@/lib/state-machine"
 
 interface BoardState {
   tasks: BoardTask[]
@@ -18,65 +16,67 @@ export function useBoard(teamName: string) {
     error: null,
   })
   const [columnMap, setColumnMap] = useState<Record<string, BoardColumn>>({})
-  const prevTasksRef = useRef<BoardTask[]>([])
+  const columnMapRef = useRef(columnMap)
+  columnMapRef.current = columnMap
 
-  const load = useCallback(async () => {
-    try {
-      const raw = await fetchTasks(teamName)
+  // Initial load
+  useEffect(() => {
+    fetchTasks(teamName)
+      .then((raw) => {
+        const boardTasks = toBoardTasks(raw, columnMapRef.current)
+        setState({ tasks: boardTasks, loading: false, error: null })
+      })
+      .catch(() => {
+        setState((prev) => ({ ...prev, loading: false, error: "Failed to load tasks" }))
+      })
+  }, [teamName])
 
-      // Detect transitions from previous state
-      if (prevTasksRef.current.length > 0) {
-        const transitions = detectTransitions(
-          prevTasksRef.current,
-          raw,
-          columnMap
-        )
-        if (transitions.length > 0) {
-          const newMap = { ...columnMap }
-          for (const t of transitions) {
-            newMap[t.taskId] = t.column
-            // Apply status/owner updates if needed
-            if (t.updates.status || t.updates.owner) {
-              try {
-                await updateTask(teamName, t.taskId, t.updates)
-              } catch {
-                // Best effort — backend might not be ready
-              }
-            }
-          }
-          setColumnMap(newMap)
+  // SSE for real-time updates
+  useEffect(() => {
+    const es = new EventSource(`/api/projects/${teamName}/chat/stream`, { withCredentials: true })
+
+    es.addEventListener("task_update", (e) => {
+      const task = JSON.parse(e.data) as ClaudeTask & { boardColumn?: string }
+      setState((prev) => {
+        const existing = prev.tasks.findIndex((t) => t.id === task.id)
+        const boardColumn = (task.boardColumn ?? columnMapRef.current[task.id] ?? "backlog") as BoardColumn
+        const boardTask: BoardTask = {
+          ...task,
+          boardColumn,
+          blocks: task.blocks ?? [],
+          blockedBy: task.blockedBy ?? [],
         }
-      }
 
-      const boardTasks = toBoardTasks(raw, columnMap)
-      prevTasksRef.current = boardTasks
-      setState({ tasks: boardTasks, loading: false, error: null })
-    } catch {
+        if (existing >= 0) {
+          const updated = [...prev.tasks]
+          updated[existing] = boardTask
+          return { ...prev, tasks: updated }
+        }
+        return { ...prev, tasks: [...prev.tasks, boardTask] }
+      })
+    })
+
+    es.addEventListener("task_delete", (e) => {
+      const { id } = JSON.parse(e.data) as { id: string }
       setState((prev) => ({
         ...prev,
-        loading: false,
-        error: "Failed to load tasks",
+        tasks: prev.tasks.filter((t) => t.id !== id),
       }))
-    }
-  }, [teamName, columnMap])
+    })
 
-  // Initial load + polling
-  useEffect(() => {
-    load()
-    const id = setInterval(load, POLL_INTERVAL)
-    return () => clearInterval(id)
-  }, [load])
+    return () => es.close()
+  }, [teamName])
 
   const addTask = useCallback(
     async (subject: string) => {
       try {
         await createTask(teamName, { subject })
-        await load()
+        // SSE will deliver the update
       } catch {
-        // Graceful — task creation might fail if backend isn't ready
+        // Graceful
       }
     },
-    [teamName, load]
+    [teamName]
   )
 
   const moveTask = useCallback(
@@ -84,7 +84,12 @@ export function useBoard(teamName: string) {
       // Update local column map immediately for responsive UI
       setColumnMap((prev) => ({ ...prev, [taskId]: toColumn }))
 
-      // Determine what status/owner changes this column move implies
+      // Optimistic local update
+      setState((prev) => ({
+        ...prev,
+        tasks: prev.tasks.map((t) => t.id === taskId ? { ...t, boardColumn: toColumn } : t),
+      }))
+
       const updates: Partial<Pick<ClaudeTask, "status" | "owner">> = {}
       switch (toColumn) {
         case "backlog":
@@ -108,29 +113,35 @@ export function useBoard(teamName: string) {
 
       try {
         await updateTask(teamName, taskId, updates)
-        await load()
+        // SSE will deliver the confirmed update
       } catch {
-        // Best effort
+        // Reload on failure to restore correct state
+        const raw = await fetchTasks(teamName)
+        const boardTasks = toBoardTasks(raw, columnMapRef.current)
+        setState({ tasks: boardTasks, loading: false, error: null })
       }
     },
-    [teamName, load]
+    [teamName]
   )
 
   const removeTask = useCallback(
     async (taskId: string) => {
-      // Optimistic: remove from UI
+      // Optimistic remove
       setState((prev) => ({
         ...prev,
         tasks: prev.tasks.filter((t) => t.id !== taskId),
       }))
       try {
         await deleteTask(teamName, taskId)
+        // SSE will confirm the delete
       } catch {
-        // Reload to restore if delete failed
-        await load()
+        // Reload on failure
+        const raw = await fetchTasks(teamName)
+        const boardTasks = toBoardTasks(raw, columnMapRef.current)
+        setState({ tasks: boardTasks, loading: false, error: null })
       }
     },
-    [teamName, load]
+    [teamName]
   )
 
   return { ...state, addTask, moveTask, removeTask }
