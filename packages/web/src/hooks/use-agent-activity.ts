@@ -100,7 +100,6 @@ export function useAgentActivity(projectId: string) {
   /** Most recent tool action text + the time it arrived (for TTL check) */
   const [lastToolAction, setLastToolAction] = useState<{ text: string; at: number } | null>(null)
   const prevTasksRef = useRef<Map<string, ClaudeTask>>(new Map())
-  const eventSourceRef = useRef<EventSource | null>(null)
 
   const addFeedEvent = useCallback((event: Omit<ActivityEvent, "id">) => {
     const e: ActivityEvent = { ...event, id: `${Date.now()}-${Math.random()}` }
@@ -257,16 +256,20 @@ export function useAgentActivity(projectId: string) {
       }
     })
 
-    eventSourceRef.current = es
     return () => es.close()
   }, [projectId, refresh, addFeedEvent])
 
-  // Derive a current tool action string if it's within the TTL window
-  const now = Date.now()
-  const currentToolAction =
-    lastToolAction && now - lastToolAction.at < TOOL_ACTION_TTL
-      ? lastToolAction.text
-      : null
+  // Auto-clear stale tool action after TTL expires
+  useEffect(() => {
+    if (!lastToolAction) return
+    const remaining = TOOL_ACTION_TTL - (Date.now() - lastToolAction.at)
+    if (remaining <= 0) {
+      setLastToolAction(null)
+      return
+    }
+    const timer = setTimeout(() => setLastToolAction(null), remaining)
+    return () => clearTimeout(timer)
+  }, [lastToolAction])
 
-  return { tasks, agents, feed, loading, currentToolAction }
+  return { tasks, agents, feed, loading, currentToolAction: lastToolAction?.text ?? null }
 }

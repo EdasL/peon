@@ -25,6 +25,13 @@ export type AgentActivityEventType =
   | "turn_end"
   | "error"
 
+const ALLOWED_TYPES = new Set<string>([
+  "tool_start", "tool_end", "thinking", "turn_end", "error",
+])
+
+// Cache conversationId → projectId for 60s to avoid DB hits on every event
+const projectIdCache = new Map<string, { id: string | null; expiresAt: number }>()
+
 export interface AgentActivityEvent {
   type: AgentActivityEventType
   /** Tool name for tool_start / tool_end */
@@ -45,19 +52,27 @@ export interface AgentActivityEvent {
 async function resolveProjectId(
   conversationId: string
 ): Promise<string | null> {
+  const cached = projectIdCache.get(conversationId)
+  if (cached && cached.expiresAt > Date.now()) return cached.id
+
   // conversationId == lobuAgentId == users.lobu_agent_id
   const user = await db.query.users.findFirst({
     where: eq(users.lobuAgentId, conversationId),
     columns: { id: true },
   })
-  if (!user) return null
+  if (!user) {
+    projectIdCache.set(conversationId, { id: null, expiresAt: Date.now() + 60_000 })
+    return null
+  }
 
   const project = await db.query.projects.findFirst({
     where: eq(projects.userId, user.id),
     orderBy: (p, { desc }) => [desc(p.updatedAt)],
     columns: { id: true },
   })
-  return project?.id ?? null
+  const id = project?.id ?? null
+  projectIdCache.set(conversationId, { id, expiresAt: Date.now() + 60_000 })
+  return id
 }
 
 export function createAgentActivityRoutes(): Hono {
@@ -83,8 +98,8 @@ export function createAgentActivityRoutes(): Hono {
       return c.json({ error: "Invalid JSON body" }, 400)
     }
 
-    if (!body.type) {
-      return c.json({ error: "Missing event type" }, 400)
+    if (!body.type || !ALLOWED_TYPES.has(body.type)) {
+      return c.json({ error: "Invalid event type" }, 400)
     }
 
     const { conversationId } = tokenData
@@ -97,9 +112,9 @@ export function createAgentActivityRoutes(): Hono {
     const event: AgentActivityEvent = {
       type: body.type,
       timestamp: body.timestamp ?? Date.now(),
-      ...(body.tool && { tool: body.tool }),
-      ...(body.text && { text: body.text.slice(0, 200) }), // cap thinking snippets
-      ...(body.message && { message: body.message }),
+      ...(body.tool && { tool: body.tool.slice(0, 100) }),
+      ...(body.text && { text: body.text.slice(0, 200) }),
+      ...(body.message && { message: body.message.slice(0, 500) }),
     }
 
     broadcastToProject(projectId, "agent_activity", event)
