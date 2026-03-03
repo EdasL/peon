@@ -97,6 +97,7 @@ export function useAgentActivity(projectId: string) {
   const [agents, setAgents] = useState<AgentState[]>([])
   const [feed, setFeed] = useState<ActivityEvent[]>([])
   const [loading, setLoading] = useState(true)
+  const [connected, setConnected] = useState(false)
   /** Most recent tool action text + the time it arrived (for TTL check) */
   const [lastToolAction, setLastToolAction] = useState<{ text: string; at: number } | null>(null)
   const prevTasksRef = useRef<Map<string, ClaudeTask>>(new Map())
@@ -197,6 +198,9 @@ export function useAgentActivity(projectId: string) {
       withCredentials: true,
     })
 
+    es.onopen = () => setConnected(true)
+    es.onerror = () => setConnected(false)
+
     es.addEventListener("task_update", () => {
       // Trigger a refresh to get the latest state
       refresh()
@@ -282,5 +286,5 @@ export function useAgentActivity(projectId: string) {
     return () => clearTimeout(timer)
   }, [lastToolAction])
 
-  return { tasks, agents, feed, loading, currentToolAction: lastToolAction?.text ?? null }
+  return { tasks, agents, feed, loading, connected, currentToolAction: lastToolAction?.text ?? null }
 }

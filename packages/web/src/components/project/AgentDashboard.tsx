@@ -11,7 +11,7 @@ interface AgentDashboardProps {
 }
 
 export function AgentDashboard({ projectId, onSwitchToBoard }: AgentDashboardProps) {
-  const { agents, feed, loading, currentToolAction } = useAgentActivity(projectId)
+  const { agents, feed, loading, connected, currentToolAction } = useAgentActivity(projectId)
   const [view, setView] = useState<"dashboard" | "feed">("dashboard")
 
   const workingCount = agents.filter((a) => a.status === "working").length
@@ -49,6 +49,18 @@ export function AgentDashboard({ projectId, onSwitchToBoard }: AgentDashboardPro
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {!connected && (
+            <span className="flex items-center gap-1 text-[10px] text-amber-500">
+              <span className="inline-block size-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Reconnecting...
+            </span>
+          )}
+          {connected && !loading && workingCount === 0 && (
+            <span className="flex items-center gap-1 text-[10px] text-zinc-600">
+              <span className="inline-block size-1.5 rounded-full bg-zinc-600" />
+              Connected
+            </span>
+          )}
           {loading && (
             <span className="text-[10px] text-zinc-600">syncing...</span>
           )}

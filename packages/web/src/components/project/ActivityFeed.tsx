@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 
 interface ActivityFeedProps {
   events: ActivityEvent[]
+  maxEvents?: number
 }
 
 function formatTime(ts: number): string {
@@ -79,7 +80,7 @@ function FeedRow({ event }: { event: ActivityEvent }) {
   )
 }
 
-export function ActivityFeed({ events }: ActivityFeedProps) {
+export function ActivityFeed({ events, maxEvents = 100 }: ActivityFeedProps) {
   const topRef = useRef<HTMLDivElement>(null)
 
   // Scroll to top whenever new events arrive (newest is at top)
@@ -109,6 +110,13 @@ export function ActivityFeed({ events }: ActivityFeedProps) {
             {events.map((e) => (
               <FeedRow key={e.id} event={e} />
             ))}
+            {events.length >= maxEvents && (
+              <div className="px-3 py-2 text-center border-t border-border/20">
+                <span className="text-[10px] text-zinc-600">
+                  Showing latest {maxEvents} events
+                </span>
+              </div>
+            )}
           </div>
         )}
       </ScrollArea>
