@@ -35,7 +35,9 @@ function AgentCard({ agent, currentToolAction }: { agent: AgentState; currentToo
           "flex size-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold",
           agent.status === "working"
             ? "bg-emerald-900/60 text-emerald-300"
-            : "bg-zinc-800 text-zinc-400"
+            : agent.status === "error"
+              ? "bg-red-900/60 text-red-300"
+              : "bg-zinc-800 text-zinc-400"
         )}
       >
         {initials || "?"}

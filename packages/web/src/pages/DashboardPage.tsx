@@ -14,9 +14,37 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Trash2, Loader2, X, MessageSquare } from "lucide-react"
+import { Trash2, Loader2, X, MessageSquare, FolderOpen } from "lucide-react"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import * as api from "@/lib/api"
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const s = Math.floor(diff / 1000)
+  if (s < 60) return "Just now"
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d}d ago`
+  const mo = Math.floor(d / 30)
+  if (mo < 12) return `${mo}mo ago`
+  return `${Math.floor(mo / 12)}y ago`
+}
+
+function statusBadgeClass(status: api.Project["status"]): string {
+  switch (status) {
+    case "running":
+      return "bg-emerald-600 text-white hover:bg-emerald-600"
+    case "creating":
+      return "bg-amber-500 text-white hover:bg-amber-500"
+    case "error":
+      return "bg-red-600 text-white hover:bg-red-600"
+    default:
+      return ""
+  }
+}
 
 function ProjectCardSkeleton() {
   return (
@@ -104,7 +132,10 @@ export function DashboardPage() {
                       </CardHeader>
                       <CardContent>
                         <div className="flex items-center gap-2">
-                          <Badge variant={p.status === "running" ? "default" : "secondary"}>
+                          <Badge
+                            variant={p.status === "stopped" ? "secondary" : "default"}
+                            className={statusBadgeClass(p.status)}
+                          >
                             {p.status}
                           </Badge>
                           {p.status === "running" && (
@@ -114,6 +145,9 @@ export function DashboardPage() {
                             </span>
                           )}
                         </div>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Last active {timeAgo(p.updatedAt)}
+                        </p>
                       </CardContent>
                       {/* Delete button */}
                       <button
@@ -129,9 +163,22 @@ export function DashboardPage() {
                     </Card>
                   ))}
                   {projects.length === 0 && (
-                    <p className="text-muted-foreground col-span-full text-center py-12">
-                      No projects yet. Create one to get started.
-                    </p>
+                    <div className="col-span-full flex justify-center py-12">
+                      <Card className="w-full max-w-sm text-center px-8 py-10">
+                        <div className="flex justify-center mb-4">
+                          <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+                            <FolderOpen className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                        </div>
+                        <h3 className="text-lg font-semibold mb-1">No projects yet</h3>
+                        <p className="text-sm text-muted-foreground mb-6">
+                          Create your first project to start working with AI agents.
+                        </p>
+                        <Button onClick={() => navigate("/onboarding")} className="w-full">
+                          Create your first project
+                        </Button>
+                      </Card>
+                    </div>
                   )}
                 </>
               )}

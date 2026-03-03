@@ -218,6 +218,12 @@ export function useAgentActivity(projectId: string) {
 
       if (data.type === "tool_start" && data.tool) {
         const label = toolLabel(data.tool)
+        // Ensure at least one agent exists when a tool fires before tasks load
+        setAgents((prev) => {
+          if (prev.length === 0)
+            return [{ name: "agent", status: "working", currentTask: null, activeForm: label }]
+          return prev.map((a) => ({ ...a, status: "working" as const, activeForm: label }))
+        })
         // Use local clock for TTL, not server timestamp
         setLastToolAction({ text: label, at: Date.now() })
         addFeedEvent({
@@ -246,6 +252,11 @@ export function useAgentActivity(projectId: string) {
         // Clear tool action when turn finishes
         setLastToolAction(null)
       } else if (data.type === "error" && data.message) {
+        setAgents((prev) => {
+          if (prev.length === 0)
+            return [{ name: "agent", status: "error", currentTask: null, activeForm: data.message ?? null }]
+          return prev.map((a) => ({ ...a, status: "error" as const, activeForm: data.message ?? a.activeForm }))
+        })
         addFeedEvent({
           timestamp: ts,
           agentName: "agent",
