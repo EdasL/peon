@@ -82,6 +82,76 @@ chatRouter.get("/:id/chat", async (c) => {
     orderBy: [asc(chatMessages.createdAt)],
   })
 
+  // PROACTIVE AGENT MESSAGING: If no messages exist, send welcome from team lead
+  if (messages.length === 0) {
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, session.userId),
+    })
+    const lobuAgentId = user?.lobuAgentId
+
+    if (lobuAgentId) {
+      // Get team configuration for personalized welcome
+      const projectTeam = await db.query.teams.findFirst({
+        where: eq(teams.projectId, projectId),
+        with: { members: true },
+      })
+      
+      const teamLead = projectTeam?.members?.find(m => m.roleName === 'lead') || projectTeam?.members?.[0]
+      const agentName = teamLead?.displayName || 'Project Lead'
+      const agentRole = teamLead?.roleName || 'lead'
+      
+      // Build welcome message with project context
+      const { getProjectTasks } = await import("./task-sync.js")
+      const currentTasks = await getProjectTasks(projectId)
+      const taskSummary = currentTasks.length > 0 
+        ? `\n\nCurrent tasks:\n${currentTasks.map(t => `- ${t.subject} (${t.status})`).join('\n')}`
+        : ""
+
+      const welcomeContent = `Hi! I'm ${agentName}, your ${agentRole} for the ${project.name} project.
+
+I can see we're working on: ${project.repoUrl ? `\n🔗 Repository: ${project.repoUrl}` : "a new project"}
+${project.templateId ? `\n📋 Template: ${project.templateId}` : ""}${taskSummary}
+
+I'm here to coordinate our AI team and ensure we ship features fast. What would you like us to work on first?`
+
+      // Enqueue welcome message (async, non-blocking)
+      const services = getPeonPlatform().getServices()
+      const queueProducer = services.getQueueProducer()
+      
+      // Don't await - let it process in background
+      queueProducer.enqueueMessage({
+        userId: session.userId,
+        conversationId: lobuAgentId,
+        messageId: randomUUID(),
+        channelId: lobuAgentId,
+        teamId: "peon",
+        agentId: lobuAgentId,
+        botId: "peon-agent",
+        platform: "peon",
+        messageText: `[Project Context]
+Project: ${project.name} (${project.id})
+Template: ${project.templateId}
+Repo: ${project.repoUrl ?? "none"}
+Workspace: /workspace/projects/${project.id}
+
+Current tasks:
+${currentTasks.length === 0 ? "  (none)" : currentTasks.map(t => `  - [${t.status}] ${t.subject}`).join('\n')}
+[End Context]
+
+${welcomeContent}`,
+        platformMetadata: {
+          projectId,
+          userId: session.userId,
+          openclawAgentId: `project-${projectId}`,
+          projectName: project.name,
+          projectRepoUrl: project.repoUrl,
+          isWelcomeMessage: true,
+        },
+        agentOptions: { provider: "claude" },
+      }).catch(err => console.error("Failed to enqueue welcome message:", err))
+    }
+  }
+
   return c.json({ messages })
 })
 
@@ -185,6 +255,7 @@ chatRouter.post("/:id/chat", async (c) => {
       userId: session.userId,
       openclawAgentId: `project-${projectId}`,
       projectName: project.name,
+      projectRepoUrl: project.repoUrl,
       teamMembers: teamMembersList,
     },
     agentOptions: { provider: "claude" },

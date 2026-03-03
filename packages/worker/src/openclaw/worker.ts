@@ -122,6 +122,9 @@ export class OpenClawWorker implements WorkerExecutor {
       // Setup I/O directories for file handling
       await this.setupIODirectories();
 
+      // Auto-clone project repository if configured
+      await this.cloneProjectRepository();
+
       // Download input files if any
       await this.downloadInputFiles();
 
@@ -803,6 +806,74 @@ Create and show files for any output that helps answer the user's request by usi
 - **Code files**: scripts, configurations, examples
 - **Images**: generated images, processed photos, screenshots.${userFilesSection}
 `;
+  }
+
+  /**
+   * Auto-clone project repository if configured in platformMetadata
+   */
+  private async cloneProjectRepository(): Promise<void> {
+    try {
+      const pmeta = this.config.platformMetadata as Record<string, unknown> | undefined;
+      const repoUrl = pmeta?.projectRepoUrl as string | undefined;
+      
+      if (!repoUrl) {
+        logger.info("No repository URL configured - skipping repo clone");
+        return;
+      }
+
+      const workspaceDir = this.workspaceManager.getCurrentWorkingDirectory();
+      const repoDir = path.join(workspaceDir, "repo");
+      
+      // Check if repo already exists
+      try {
+        await fs.stat(path.join(repoDir, ".git"));
+        logger.info(`Repository already exists at ${repoDir} - pulling latest changes`);
+        
+        // Pull latest changes
+        const { exec } = await import("node:child_process");
+        const { promisify } = await import("node:util");
+        const execAsync = promisify(exec);
+        
+        try {
+          await execAsync("git pull origin main", { cwd: repoDir });
+          logger.info("✅ Pulled latest changes from repository");
+        } catch (pullError) {
+          logger.warn("Could not pull latest changes:", pullError);
+        }
+        return;
+      } catch {
+        // Repo doesn't exist, proceed with clone
+      }
+
+      logger.info(`🔄 Cloning repository: ${repoUrl}`);
+      
+      // Import dynamically to avoid loading if not needed
+      const { exec } = await import("node:child_process");
+      const { promisify } = await import("node:util");
+      const execAsync = promisify(exec);
+
+      // Clone the repository
+      const gitCommand = `git clone "${repoUrl}" repo`;
+      await execAsync(gitCommand, { 
+        cwd: workspaceDir,
+        timeout: 60000, // 1 minute timeout
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: '0' // Disable interactive prompts
+        }
+      });
+      
+      logger.info(`✅ Successfully cloned repository to ${repoDir}`);
+      
+      // Set working directory to the cloned repo
+      process.chdir(repoDir);
+      logger.info(`📁 Changed working directory to: ${repoDir}`);
+      
+    } catch (error) {
+      logger.error("Failed to clone repository:", error);
+      // Don't fail the entire session if repo clone fails
+      // Agent can still work without the repo
+    }
   }
 
   private async maybeBuildAuthHintMessage(
