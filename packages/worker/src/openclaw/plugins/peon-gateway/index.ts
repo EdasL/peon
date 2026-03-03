@@ -654,6 +654,8 @@ async function delegateToProject(
     allowedTools?: string;
     role?: string;
     teamMembers?: TeamMember[];
+    repoUrl?: string;
+    claudeMd?: string;
   }
 ): Promise<ToolResult> {
   const projectDir = getProjectWorkspace(params.projectId);
@@ -662,26 +664,49 @@ async function delegateToProject(
   const claudeDir = join(projectDir, ".claude");
   await mkdir(claudeDir, { recursive: true });
 
+  // Clone repo if provided and workspace isn't already a git repo
+  if (params.repoUrl) {
+    const hasGit = await stat(join(projectDir, ".git")).then(() => true, () => false);
+    if (!hasGit) {
+      const cloneResult = spawnSync("git", ["clone", params.repoUrl, "."], {
+        cwd: projectDir,
+        stdio: "pipe",
+        timeout: 120000,
+        env: { ...process.env } as Record<string, string>,
+      });
+      if (cloneResult.status !== 0) {
+        const stderr = cloneResult.stderr?.toString() || "unknown error";
+        return text(`Error: git clone failed for ${params.repoUrl}: ${stderr}`);
+      }
+    }
+  }
+
+  // Write CLAUDE.md — prefer explicit content, fall back to init/placeholder
   const claudeMdRoot = join(projectDir, "CLAUDE.md");
   const claudeMdDot = join(claudeDir, "CLAUDE.md");
-  const hasCLAUDEmd =
-    await stat(claudeMdRoot).then(() => true, () => false) ||
-    await stat(claudeMdDot).then(() => true, () => false);
 
-  if (!hasCLAUDEmd) {
-    const initResult = spawnSync("claude", ["init", "--yes"], {
-      cwd: projectDir,
-      stdio: "pipe",
-      timeout: 30000,
-      env: { ...process.env } as Record<string, string>,
-    });
-    const initSucceeded =
-      initResult.status === 0 &&
-      (await stat(claudeMdRoot).then(() => true, () => false) ||
-       await stat(claudeMdDot).then(() => true, () => false));
+  if (params.claudeMd) {
+    await writeFile(claudeMdDot, params.claudeMd, "utf-8");
+  } else {
+    const hasCLAUDEmd =
+      await stat(claudeMdRoot).then(() => true, () => false) ||
+      await stat(claudeMdDot).then(() => true, () => false);
 
-    if (!initSucceeded) {
-      await writeFile(claudeMdDot, `# Project: ${params.projectId}\n\nManaged project workspace.\n`, "utf-8");
+    if (!hasCLAUDEmd) {
+      const initResult = spawnSync("claude", ["init", "--yes"], {
+        cwd: projectDir,
+        stdio: "pipe",
+        timeout: 30000,
+        env: { ...process.env } as Record<string, string>,
+      });
+      const initSucceeded =
+        initResult.status === 0 &&
+        (await stat(claudeMdRoot).then(() => true, () => false) ||
+         await stat(claudeMdDot).then(() => true, () => false));
+
+      if (!initSucceeded) {
+        await writeFile(claudeMdDot, `# Project: ${params.projectId}\n\nManaged project workspace.\n`, "utf-8");
+      }
     }
   }
 
@@ -927,8 +952,8 @@ export default function register(api: any): void {
 
   api.registerTool({
     name: "DelegateToProject",
-    description: "Send a coding task to a project's Claude Code Agent Team. The lead session spawns teammates if teamMembers are provided. Returns the result when done.",
-    parameters: { type: "object", properties: { projectId: { type: "string", description: "Project identifier (maps to ~/projects/{id})" }, task: { type: "string", description: "Coding task (natural language)" }, allowedTools: { type: "string", description: 'Comma-separated tools (default: "Read,Edit,Write,Bash,Grep,Glob")' }, role: { type: "string", description: "Team role performing this task (e.g. 'backend', 'frontend', 'qa')" }, teamMembers: { type: "array", description: "Team members to spawn as Agent Team teammates. Each has roleName, displayName, systemPrompt.", items: { type: "object", properties: { roleName: { type: "string" }, displayName: { type: "string" }, systemPrompt: { type: "string" } }, required: ["roleName", "displayName", "systemPrompt"] } } }, required: ["projectId", "task"] },
+    description: "Send a coding task to a project's Claude Code Agent Team. Handles workspace setup: clones repo (if repoUrl provided), writes CLAUDE.md (if claudeMd provided), then launches Claude Code. The lead session spawns teammates if teamMembers are provided.",
+    parameters: { type: "object", properties: { projectId: { type: "string", description: "Project identifier (maps to ~/projects/{id})" }, task: { type: "string", description: "Coding task (natural language)" }, allowedTools: { type: "string", description: 'Comma-separated tools (default: "Read,Edit,Write,Bash,Grep,Glob")' }, role: { type: "string", description: "Team role performing this task (e.g. 'backend', 'frontend', 'qa')" }, repoUrl: { type: "string", description: "Git repository URL to clone into the project workspace (skipped if already cloned)" }, claudeMd: { type: "string", description: "Content for .claude/CLAUDE.md project context file" }, teamMembers: { type: "array", description: "Team members to spawn as Agent Team teammates. Each has roleName, displayName, systemPrompt.", items: { type: "object", properties: { roleName: { type: "string" }, displayName: { type: "string" }, systemPrompt: { type: "string" } }, required: ["roleName", "displayName", "systemPrompt"] } } }, required: ["projectId", "task"] },
     execute: delegateToProject,
   });
 

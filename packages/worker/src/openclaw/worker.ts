@@ -636,8 +636,6 @@ Use it when the user references past discussions or you need context.`);
         logger.info(`[openclaw:tool] Starting: ${event.name}`);
         const input = event.input ?? {};
         const activityText = buildToolActivityText(event.name, input);
-        const label = activityText || `Running ${event.name}`;
-        onDelta(`\n> ${label}...\n`);
         const filePath = (input.file_path ?? input.path) as string | undefined;
         const command = input.command as string | undefined;
         this.postAgentActivity({

@@ -154,16 +154,19 @@ export async function initProjectWorkspace(
 ): Promise<void> {
   const members = teamMembers?.length ? teamMembers : []
 
-  const workspaceDirs = [
-    `/workspace/projects/${projectId}`,
-    `/workspace/projects/${projectId}/.claude`,
-    `/workspace/projects/${projectId}/src`,
-  ]
-
   const claudeMdContent = buildClaudeMd(projectId, templateId, repoUrl, members)
   const teamSpawnInstruction = members.length > 0
     ? buildTeamSpawnInstruction(members)
     : ""
+
+  // Build the DelegateToProject call arguments for the agent.
+  // The tool handles git clone, CLAUDE.md writing, and workspace setup.
+  const delegateArgs: Record<string, unknown> = {
+    projectId,
+    claudeMd: claudeMdContent,
+  }
+  if (repoUrl) delegateArgs.repoUrl = repoUrl
+  if (members.length > 0) delegateArgs.teamMembers = members
 
   const queueProducer = services.getQueueProducer()
   await queueProducer.enqueueMessage({
@@ -175,18 +178,13 @@ export async function initProjectWorkspace(
     agentId: lobuAgentId,
     botId: "peon-agent",
     platform: "peon",
-    messageText: `[system] Initialize project workspace for ${projectId}.
+    messageText: `[system] Initialize project "${projectId}".
 
-Create the following directory structure:
-${workspaceDirs.map((d) => `- ${d}`).join("\n")}
+Use DelegateToProject with these arguments:
+${JSON.stringify(delegateArgs, null, 2)}
 
-Write this to /workspace/projects/${projectId}/.claude/CLAUDE.md:
-\`\`\`
-${claudeMdContent}
-\`\`\`
-${repoUrl ? `\nClone the repository: git clone ${repoUrl} /workspace/projects/${projectId}` : ""}
-${teamSpawnInstruction ? `\n${teamSpawnInstruction}` : ""}
-Ready for user instructions.`,
+Task for the team: Set up the project workspace and await user instructions.
+${teamSpawnInstruction ? `\n${teamSpawnInstruction}` : ""}`,
     platformMetadata: {
       projectId,
       userId,
