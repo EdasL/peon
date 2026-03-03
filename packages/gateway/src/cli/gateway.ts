@@ -279,6 +279,15 @@ function setupServer(
     logger.info("Internal interaction routes enabled");
   }
 
+  // Agent activity routes — workers POST real-time events (tool_start, tool_end, thinking)
+  // and the gateway fans them out to SSE clients watching the project
+  {
+    const { createAgentActivityRoutes } = require("../routes/internal/agent-activity");
+    const agentActivityRouter = createAgentActivityRoutes();
+    app.route("", agentActivityRouter);
+    logger.info("Agent activity routes enabled at :8080/internal/agent-activity");
+  }
+
   // Messaging routes (already Hono)
   if (platformRegistry) {
     const { createMessagingRoutes } = require("../routes/public/messaging");

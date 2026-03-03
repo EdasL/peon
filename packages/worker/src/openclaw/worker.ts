@@ -639,19 +639,23 @@ Use it when the user references past discussions or you need context.`);
       case "thinking":
         // Thinking events — could stream if verbose mode
         logger.debug(`[openclaw:thinking] ${event.delta.substring(0, 100)}...`);
+        this.postAgentActivity({ type: "thinking", text: event.delta });
         break;
 
       case "tool_start":
         logger.info(`[openclaw:tool] Starting: ${event.name}`);
         onDelta(`\n> Running ${event.name}...\n`);
+        this.postAgentActivity({ type: "tool_start", tool: event.name });
         break;
 
       case "tool_end":
         logger.info(`[openclaw:tool] Completed: ${event.name}`);
+        this.postAgentActivity({ type: "tool_end", tool: event.name });
         break;
 
       case "turn_end":
         logger.info("OpenClaw turn completed");
+        this.postAgentActivity({ type: "turn_end" });
         break;
 
       case "error":
@@ -659,6 +663,31 @@ Use it when the user references past discussions or you need context.`);
         onError(event.message);
         break;
     }
+  }
+
+  /**
+   * Fire-and-forget: POST an agent activity event to the gateway so it can
+   * fan it out to SSE clients watching the project in real time.
+   * Never throws — failures are logged but never propagate to the caller.
+   */
+  private postAgentActivity(
+    event: { type: string; tool?: string; text?: string; message?: string }
+  ): void {
+    const gatewayUrl = process.env.DISPATCHER_URL;
+    const workerToken = process.env.WORKER_TOKEN;
+    if (!gatewayUrl || !workerToken) return;
+
+    fetch(`${gatewayUrl}/internal/agent-activity`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${workerToken}`,
+      },
+      body: JSON.stringify({ ...event, timestamp: Date.now() }),
+      signal: AbortSignal.timeout(3000),
+    }).catch((err) => {
+      logger.debug(`Failed to post agent activity (${event.type}): ${err instanceof Error ? err.message : String(err)}`);
+    });
   }
 
   // ---------------------------------------------------------------------------
