@@ -79,14 +79,70 @@ export const sendChatMessage = (projectId: string, content: string) =>
     body: JSON.stringify({ content }),
   })
 
+// Teams
+export const getProjectTeams = (projectId: string) =>
+  request<{ teams: Team[] }>(`/api/projects/${projectId}/teams`)
+
+export const createTeam = (
+  projectId: string,
+  data: { name: string; members: Omit<TeamMember, "id">[] }
+) =>
+  request<{ team: Team }>(`/api/projects/${projectId}/teams`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+
+export const addTeamMember = (teamId: string, data: Omit<TeamMember, "id">) =>
+  request<{ member: TeamMember }>(`/api/teams/${teamId}/members`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+
+export const deleteTeamMember = (teamId: string, memberId: string) =>
+  request<{ ok: boolean }>(`/api/teams/${teamId}/members/${memberId}`, { method: "DELETE" })
+
 // Board/task APIs (project-scoped)
 import type { ClaudeTeamConfig, ClaudeTeamMember, ClaudeTask } from "../../server/types"
 import { getTemplate } from "./templates"
 
 export async function fetchTeamConfig(projectId: string): Promise<ClaudeTeamConfig> {
-  const { project } = await request<{ project: Project }>(`/api/projects/${projectId}`)
-  const tmpl = getTemplate(project.templateId)
+  // Try DB teams first, fall back to template for old projects
+  let dbMembers: ClaudeTeamMember[] | null = null
+  try {
+    const { teams } = await getProjectTeams(projectId)
+    const first = teams[0]
+    if (first && first.members.length > 0) {
+      dbMembers = first.members.map((m) => ({
+        agentId: m.roleName.toLowerCase(),
+        name: m.roleName.toLowerCase(),
+        agentType: m.displayName,
+        model: "claude-sonnet-4-6",
+        color: m.color,
+        joinedAt: Date.now(),
+        tmuxPaneId: "",
+        cwd: "",
+        subscriptions: [],
+      }))
+    }
+  } catch {
+    // Fall through to template-based
+  }
 
+  const { project } = await request<{ project: Project }>(`/api/projects/${projectId}`)
+
+  if (dbMembers && dbMembers.length > 0) {
+    return {
+      name: project.name,
+      description: "",
+      createdAt: Date.now(),
+      leadAgentId: dbMembers[0]?.agentId ?? "",
+      leadSessionId: "",
+      members: dbMembers,
+    }
+  }
+
+  // Template fallback for old projects
+  const tmpl = getTemplate(project.templateId)
   const members: ClaudeTeamMember[] = tmpl?.agents.map((a) => ({
     agentId: a.role.toLowerCase(),
     name: a.role.toLowerCase(),
@@ -152,11 +208,37 @@ export interface Project {
   updatedAt: string
 }
 
+export interface TeamMember {
+  id: string
+  roleName: string
+  displayName: string
+  systemPrompt: string
+  color: string
+}
+
+export interface Team {
+  id: string
+  projectId: string
+  name: string
+  members: TeamMember[]
+}
+
+export interface TeamMemberInput {
+  roleName: string
+  displayName: string
+  systemPrompt: string
+  color: string
+}
+
 export interface CreateProjectInput {
   name?: string
   repoUrl?: string
   repoBranch?: string
-  templateId: string
+  templateId?: string
+  team?: {
+    name: string
+    members: TeamMemberInput[]
+  }
 }
 
 export interface GithubRepo {

@@ -19,6 +19,7 @@ import { ChatPanel } from "@/components/chat/ChatPanel"
 import { Input } from "@/components/ui/input"
 import * as api from "@/lib/api"
 import { getTemplate } from "@/lib/templates"
+import type { Team } from "@/lib/api"
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -67,6 +68,7 @@ function ProjectCardSkeleton() {
 export function DashboardPage() {
   const navigate = useNavigate()
   const [projects, setProjects] = useState<api.Project[]>([])
+  const [projectTeams, setProjectTeams] = useState<Map<string, Team[]>>(new Map())
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
@@ -77,7 +79,21 @@ export function DashboardPage() {
 
   useEffect(() => {
     api.getProjects()
-      .then((d) => setProjects(d.projects))
+      .then(async (d) => {
+        setProjects(d.projects)
+        // Fetch teams for all projects in parallel, best-effort
+        const entries = await Promise.all(
+          d.projects.map(async (p) => {
+            try {
+              const { teams } = await api.getProjectTeams(p.id)
+              return [p.id, teams] as [string, Team[]]
+            } catch {
+              return [p.id, []] as [string, Team[]]
+            }
+          })
+        )
+        setProjectTeams(new Map(entries))
+      })
       .finally(() => setLoading(false))
 
     // Poll for status changes every 10s (container creation, stops, etc.)
@@ -222,6 +238,27 @@ export function DashboardPage() {
                           )}
                         </div>
                         {(() => {
+                          const teams = projectTeams.get(p.id)
+                          const dbMembers = teams?.[0]?.members
+                          if (dbMembers && dbMembers.length > 0) {
+                            return (
+                              <div className="flex items-center gap-2 mt-2">
+                                <span className="text-xs text-muted-foreground">
+                                  {dbMembers.length} member{dbMembers.length !== 1 ? "s" : ""}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  {dbMembers.map((m) => (
+                                    <span
+                                      key={m.id}
+                                      className={`size-1.5 rounded-full ${m.color}`}
+                                      title={m.displayName}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          }
+                          // Fallback: template dots for old projects
                           const tmpl = getTemplate(p.templateId)
                           if (!tmpl) return null
                           return (

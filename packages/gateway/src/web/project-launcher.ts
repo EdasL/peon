@@ -110,10 +110,26 @@ const TEMPLATE_TEAM_PROMPTS: Record<string, string> = {
 3. Test and validate before marking complete`,
 }
 
+export interface TeamMemberConfig {
+  roleName: string
+  displayName: string
+  systemPrompt: string
+}
+
+function buildTeamPromptFromMembers(members: TeamMemberConfig[]): string {
+  const lines = members.map(
+    (m) => `- **${m.roleName}** (${m.displayName}) — ${m.systemPrompt}`
+  )
+  return `### Agents\n${lines.join("\n")}`
+}
+
 /**
  * Initializes a project workspace inside the user's existing container.
  * Creates the workspace directory structure and sends a system message
  * so the agent knows about the new project and its team configuration.
+ *
+ * When teamMembers is provided, the CLAUDE.md is built from those members
+ * instead of the templateId. templateId is still used as a label/fallback.
  */
 export async function initProjectWorkspace(
   userId: string,
@@ -121,10 +137,12 @@ export async function initProjectWorkspace(
   projectId: string,
   templateId: string,
   repoUrl: string | null,
-  services: CoreServices
+  services: CoreServices,
+  teamMembers?: TeamMemberConfig[]
 ): Promise<void> {
-  const teamPrompt =
-    TEMPLATE_TEAM_PROMPTS[templateId] || TEMPLATE_TEAM_PROMPTS.default
+  const teamPrompt = teamMembers?.length
+    ? buildTeamPromptFromMembers(teamMembers)
+    : TEMPLATE_TEAM_PROMPTS[templateId] || TEMPLATE_TEAM_PROMPTS.default
 
   // Build the workspace initialization command that the agent will execute
   const workspaceDirs = [

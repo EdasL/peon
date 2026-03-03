@@ -19,6 +19,7 @@ import { authRoutes } from "../routes/public/auth.js";
 import { projectsRouter } from "../routes/api/projects.js";
 import { keysRouter } from "../routes/api/keys.js";
 import { userRouter } from "../routes/api/user.js";
+import { projectTeamsRouter, teamMembersRouter } from "../routes/api/teams.js";
 import { chatRouter } from "../web/chat-routes.js";
 import { initBroadcast } from "../web/redis-broadcast.js";
 import { claudeOAuthRouter } from "../routes/api/claude-oauth.js";
@@ -112,6 +113,8 @@ function setupServer(
   app.route("/api/projects", projectsRouter);
   app.route("/api/keys", keysRouter);
   app.route("/api/user", userRouter);
+  app.route("/api/projects", projectTeamsRouter);
+  app.route("/api/teams", teamMembersRouter);
 
   // Femrun web chat (SSE streaming, chat history, message sending)
   app.route("/api/projects", chatRouter);

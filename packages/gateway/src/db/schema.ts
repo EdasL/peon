@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, uuid, jsonb } from "drizzle-orm/pg-core"
+import { relations } from "drizzle-orm"
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -19,7 +20,7 @@ export const projects = pgTable("projects", {
   name: text("name").notNull(),
   repoUrl: text("repo_url"),
   repoBranch: text("repo_branch").default("main"),
-  templateId: text("template_id").notNull(),
+  templateId: text("template_id"),
   status: text("status", { enum: ["creating", "running", "stopped", "error"] }).default("stopped").notNull(),
   deploymentName: text("deployment_name"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -56,6 +57,32 @@ export const tasks = pgTable("tasks", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
+export const teams = pgTable("teams", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
+export const teamMembers = pgTable("team_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  roleName: text("role_name").notNull(),
+  displayName: text("display_name").notNull(),
+  systemPrompt: text("system_prompt").notNull(),
+  color: text("color").notNull().default("bg-zinc-500"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
+export const teamsRelations = relations(teams, ({ one, many }) => ({
+  project: one(projects, { fields: [teams.projectId], references: [projects.id] }),
+  members: many(teamMembers),
+}))
+
+export const teamMembersRelations = relations(teamMembers, ({ one }) => ({
+  team: one(teams, { fields: [teamMembers.teamId], references: [teams.id] }),
+}))
+
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 export type Project = typeof projects.$inferSelect
@@ -63,3 +90,7 @@ export type NewProject = typeof projects.$inferInsert
 export type ApiKey = typeof apiKeys.$inferSelect
 export type ChatMessage = typeof chatMessages.$inferSelect
 export type Task = typeof tasks.$inferSelect
+export type Team = typeof teams.$inferSelect
+export type NewTeam = typeof teams.$inferInsert
+export type TeamMember = typeof teamMembers.$inferSelect
+export type NewTeamMember = typeof teamMembers.$inferInsert

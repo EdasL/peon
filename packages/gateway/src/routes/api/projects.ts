@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { requireAuth, getSession } from "../../auth/middleware.js"
 import { db } from "../../db/connection.js"
-import { projects, apiKeys, users } from "../../db/schema.js"
+import { projects, apiKeys, users, teams, teamMembers } from "../../db/schema.js"
 import { eq, and } from "drizzle-orm"
 import { ensureUserContainer, initProjectWorkspace } from "../../web/project-launcher.js"
 import { getPeonPlatform } from "../../peon/platform.js"
@@ -87,7 +87,16 @@ projectsRouter.post("/", async (c) => {
     name?: string
     repoUrl?: string
     repoBranch?: string
-    templateId: string
+    templateId?: string
+    team?: {
+      name: string
+      members: Array<{
+        roleName: string
+        displayName: string
+        systemPrompt: string
+        color?: string
+      }>
+    }
   }>()
 
   // Require API key before creating project
@@ -98,6 +107,9 @@ projectsRouter.post("/", async (c) => {
     return c.json({ error: "Add an Anthropic API key in settings before creating a project" }, 400)
   }
 
+  // Resolve templateId: use provided value, fall back to "custom" for goal-driven projects
+  const templateId = body.templateId ?? (body.team ? "custom" : "default")
+
   // Generate a human-readable name if none provided
   const projectName = body.name?.trim() || generateProjectName()
 
@@ -106,14 +118,39 @@ projectsRouter.post("/", async (c) => {
     name: projectName,
     repoUrl: body.repoUrl,
     repoBranch: body.repoBranch ?? "main",
-    templateId: body.templateId,
+    templateId,
     status: "creating",
   }).returning()
   const project = result[0]
   if (!project) return c.json({ error: "Failed to create project" }, 500)
 
+  // If team data provided, persist team + members to DB
+  if (body.team?.name && body.team.members?.length) {
+    const [team] = await db.insert(teams).values({
+      projectId: project.id,
+      name: body.team.name,
+    }).returning()
+    if (team) {
+      await db.insert(teamMembers).values(
+        body.team.members.map((m) => ({
+          teamId: team.id,
+          roleName: m.roleName,
+          displayName: m.displayName,
+          systemPrompt: m.systemPrompt,
+          color: m.color ?? "bg-zinc-500",
+        }))
+      )
+    }
+  }
+
   // Ensure user has a container (idempotent) + init project workspace
   const services = getPeonPlatform().getServices()
+  const teamMembersForLauncher = body.team?.members?.map((m) => ({
+    roleName: m.roleName,
+    displayName: m.displayName,
+    systemPrompt: m.systemPrompt,
+  }))
+
   ensureUserContainer(session.userId, services).then(async (containerResult) => {
     if (containerResult.error === "no-api-key") {
       await db.update(projects).set({ status: "error", updatedAt: new Date() }).where(eq(projects.id, project.id))
@@ -130,9 +167,10 @@ projectsRouter.post("/", async (c) => {
       session.userId,
       containerResult.lobuAgentId,
       project.id,
-      body.templateId,
+      templateId,
       body.repoUrl ?? null,
-      services
+      services,
+      teamMembersForLauncher
     )
 
     // Start polling for container readiness (fire-and-forget)
@@ -243,7 +281,7 @@ projectsRouter.post("/:id/restart", async (c) => {
       const deploymentName = getPeonDeploymentName(session.userId, containerResult.lobuAgentId)
       await db.update(projects).set({ deploymentName, status: "creating" }).where(eq(projects.id, project.id))
 
-      await initProjectWorkspace(session.userId, containerResult.lobuAgentId, project.id, project.templateId, project.repoUrl, services)
+      await initProjectWorkspace(session.userId, containerResult.lobuAgentId, project.id, project.templateId ?? "default", project.repoUrl, services)
       waitForContainerReady(project.id, deploymentName)
 
       return c.json({ status: "creating" })

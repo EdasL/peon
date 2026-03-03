@@ -18,7 +18,7 @@ import { Board } from "@/components/board/Board"
 import { AgentSidebar } from "@/components/project/AgentSidebar"
 import { ActivityFeed } from "@/components/project/ActivityFeed"
 import { ProvisioningOverlay } from "@/components/project/ProvisioningOverlay"
-import type { Project } from "@/lib/api"
+import type { Project, TeamMember } from "@/lib/api"
 import * as api from "@/lib/api"
 import { getTemplate } from "@/lib/templates"
 import {
@@ -79,15 +79,28 @@ function ProjectBody({
   centerView: "board" | "chat"
   onCenterViewChange: (v: "board" | "chat") => void
 }) {
-  const templateAgentNames = useMemo(() => {
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+
+  useEffect(() => {
+    api.getProjectTeams(projectId).then(({ teams }) => {
+      const first = teams[0]
+      if (first?.members.length) setTeamMembers(first.members)
+    }).catch(() => {})
+  }, [projectId])
+
+  // Prefer DB team member names, fall back to template
+  const agentNames = useMemo(() => {
+    if (teamMembers.length > 0) {
+      return teamMembers.map((m) => m.roleName.toLowerCase())
+    }
     if (!templateId) return undefined
     const tmpl = getTemplate(templateId)
     return tmpl?.agents.map((a) => a.role.toLowerCase())
-  }, [templateId])
+  }, [teamMembers, templateId])
 
   const { agents, feed, loading, connected, currentToolAction } = useAgentActivity(
     projectId,
-    templateAgentNames
+    agentNames
   )
 
   return (
@@ -99,6 +112,7 @@ function ProjectBody({
         connected={connected}
         currentToolAction={currentToolAction}
         templateId={templateId}
+        teamMembers={teamMembers}
         feedCount={feed.length}
       />
 
@@ -177,6 +191,7 @@ export function ProjectPage() {
   const [status, setStatus] = useState<Project["status"] | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [centerView, setCenterView] = useState<"board" | "chat">("chat")
+  const [headerTeamMembers, setHeaderTeamMembers] = useState<TeamMember[]>([])
 
   useEffect(() => {
     if (!id) return
@@ -233,6 +248,14 @@ export function ProjectPage() {
     } catch {
       setStatus("error")
     }
+  }, [id])
+
+  useEffect(() => {
+    if (!id) return
+    api.getProjectTeams(id).then(({ teams }) => {
+      const first = teams[0]
+      if (first?.members.length) setHeaderTeamMembers(first.members)
+    }).catch(() => {})
   }, [id])
 
   if (!id) return null
@@ -334,7 +357,18 @@ export function ProjectPage() {
           </span>
         )}
 
-        {tmpl && (
+        {headerTeamMembers.length > 0 ? (
+          <div className="flex items-center gap-1.5 ml-1">
+            {headerTeamMembers.map((m) => (
+              <span
+                key={m.id}
+                className={`size-2 rounded-full ${m.color} opacity-70`}
+                title={m.displayName}
+              />
+            ))}
+            <span className="text-[11px] text-zinc-600">{headerTeamMembers.length} members</span>
+          </div>
+        ) : tmpl ? (
           <div className="flex items-center gap-1.5 ml-1">
             {tmpl.agents.map((a) => (
               <span
@@ -345,7 +379,7 @@ export function ProjectPage() {
             ))}
             <span className="text-[11px] text-zinc-600">{tmpl.name}</span>
           </div>
-        )}
+        ) : null}
 
         <div className="ml-auto flex items-center gap-1">
           <DropdownMenu>

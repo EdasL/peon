@@ -1,6 +1,8 @@
 import { getTemplate } from "@/lib/templates"
 import { cn } from "@/lib/utils"
 import type { AgentState } from "@/hooks/use-agent-activity"
+import type { TeamMember } from "@/lib/api"
+import { useNavigate } from "react-router-dom"
 
 interface AgentSidebarProps {
   agents: AgentState[]
@@ -8,10 +10,19 @@ interface AgentSidebarProps {
   connected: boolean
   currentToolAction: string | null
   templateId?: string
+  teamMembers?: TeamMember[]
   feedCount: number
 }
 
-function getAgentColor(agentName: string, templateId?: string): string {
+function getAgentColor(agentName: string, teamMembers?: TeamMember[], templateId?: string): string {
+  // Try DB team members first
+  if (teamMembers?.length) {
+    const match = teamMembers.find(
+      (m) => m.roleName.toLowerCase() === agentName.toLowerCase()
+    )
+    if (match) return match.color
+  }
+  // Fall back to template
   if (templateId) {
     const tmpl = getTemplate(templateId)
     if (tmpl) {
@@ -33,6 +44,16 @@ function getAgentColor(agentName: string, templateId?: string): string {
   return colorMap[agentName.toLowerCase()] ?? "bg-zinc-500"
 }
 
+function getAgentDisplayName(agentName: string, teamMembers?: TeamMember[]): string {
+  if (teamMembers?.length) {
+    const match = teamMembers.find(
+      (m) => m.roleName.toLowerCase() === agentName.toLowerCase()
+    )
+    if (match) return match.displayName
+  }
+  return agentName
+}
+
 function StatusPulse({ status }: { status: AgentState["status"] }) {
   return (
     <span
@@ -49,19 +70,22 @@ function StatusPulse({ status }: { status: AgentState["status"] }) {
 function AgentCard({
   agent,
   templateId,
+  teamMembers,
   currentToolAction,
 }: {
   agent: AgentState
   templateId?: string
+  teamMembers?: TeamMember[]
   currentToolAction: string | null
 }) {
-  const initials = agent.name
+  const displayName = getAgentDisplayName(agent.name, teamMembers)
+  const initials = displayName
     .split(/[-_\s]/)
     .map((w) => w[0]?.toUpperCase() ?? "")
     .join("")
     .slice(0, 2)
 
-  const avatarColor = getAgentColor(agent.name, templateId)
+  const avatarColor = getAgentColor(agent.name, teamMembers, templateId)
 
   const displayText =
     agent.activeForm ??
@@ -98,7 +122,7 @@ function AgentCard({
           <div className="flex items-center gap-1.5">
             <StatusPulse status={agent.status} />
             <span className="text-xs font-medium leading-none text-zinc-200 truncate flex-1 min-w-0">
-              {agent.name}
+              {displayName}
             </span>
             <span
               className={cn(
@@ -136,16 +160,19 @@ export function AgentSidebar({
   connected,
   currentToolAction,
   templateId,
+  teamMembers,
   feedCount,
 }: AgentSidebarProps) {
+  const navigate = useNavigate()
   const workingCount = agents.filter((a) => a.status === "working").length
+  const hasTeam = (teamMembers && teamMembers.length > 0) || !!templateId
 
   return (
     <aside className="flex h-full w-[220px] flex-shrink-0 flex-col border-r border-border/40 bg-zinc-950">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/40">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-          Agents
+          Team
         </span>
         <div className="flex items-center gap-2">
           {!connected && (
@@ -167,7 +194,19 @@ export function AgentSidebar({
 
       {/* Agent cards */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-        {agents.length === 0 ? (
+        {agents.length === 0 && !hasTeam ? (
+          <div className="px-2 py-6 text-center space-y-3">
+            <p className="text-[11px] text-zinc-600 leading-relaxed">
+              No team configured yet
+            </p>
+            <button
+              onClick={() => navigate("/onboarding")}
+              className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+            >
+              Set up your team
+            </button>
+          </div>
+        ) : agents.length === 0 ? (
           <div className="px-2 py-6 text-center">
             <p className="text-[11px] text-zinc-700 leading-relaxed">
               Agents will appear once tasks are created
@@ -179,6 +218,7 @@ export function AgentSidebar({
               key={agent.name}
               agent={agent}
               templateId={templateId}
+              teamMembers={teamMembers}
               currentToolAction={currentToolAction}
             />
           ))
