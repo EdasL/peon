@@ -11,7 +11,7 @@
 
 import { createLogger, verifyWorkerToken } from "@lobu/core"
 import { Hono } from "hono"
-import { broadcastToProject } from "../../web/chat-routes.js"
+import { broadcastToProject, getActiveProject } from "../../web/chat-routes.js"
 import { db } from "../../db/connection.js"
 import { projects, users } from "../../db/schema.js"
 import { eq } from "drizzle-orm"
@@ -46,12 +46,19 @@ export interface AgentActivityEvent {
 /**
  * Look up which project to broadcast to from the conversationId carried in
  * the worker token.  The conversationId is the lobuAgentId stored on users.
- * We return the *most recently updated* project for that user so activity
- * lands on the project the user is actively working on.
+ *
+ * Priority:
+ * 1. Explicit active project (set when user sends a chat message)
+ * 2. Cached DB lookup
+ * 3. Most recently updated project (fallback)
  */
 async function resolveProjectId(
   conversationId: string
 ): Promise<string | null> {
+  // Check explicit active project first (set by chat-routes on message send)
+  const active = getActiveProject(conversationId)
+  if (active) return active
+
   const cached = projectIdCache.get(conversationId)
   if (cached && cached.expiresAt > Date.now()) return cached.id
 

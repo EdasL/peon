@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { db } from "../db/connection.js"
-import { apiKeys } from "../db/schema.js"
+import { apiKeys, projects } from "../db/schema.js"
 import { eq } from "drizzle-orm"
 import { decrypt } from "../services/encryption.js"
 import { ensureLobuAgent, bridgeCredentials } from "../peon/agent-helper.js"
@@ -138,6 +138,50 @@ Ready for user instructions.`,
       teamPrompt,
     },
     agentOptions: { provider: "claude" },
+  })
+}
+
+/**
+ * Polls the container status until it becomes "running" or "error", then
+ * updates the DB and broadcasts a project_status SSE event.
+ * Fires-and-forgets internally — the caller is not blocked.
+ */
+export async function waitForContainerReady(
+  projectId: string,
+  deploymentName: string,
+  timeoutMs = 90_000,
+  intervalMs = 3_000,
+): Promise<void> {
+  const { getContainerStatus } = await import("./container-manager.js")
+  const { broadcastToProject } = await import("./chat-routes.js")
+  const deadline = Date.now() + timeoutMs
+
+  const poll = async () => {
+    while (Date.now() < deadline) {
+      const status = await getContainerStatus(deploymentName)
+      if (status === "running") {
+        await db.update(projects).set({ status: "running", updatedAt: new Date() })
+          .where(eq(projects.id, projectId))
+        broadcastToProject(projectId, "project_status", { status: "running" })
+        return
+      }
+      if (status === "error") {
+        await db.update(projects).set({ status: "error", updatedAt: new Date() })
+          .where(eq(projects.id, projectId))
+        broadcastToProject(projectId, "project_status", { status: "error" })
+        return
+      }
+      await new Promise((r) => setTimeout(r, intervalMs))
+    }
+    // Timeout — mark as error
+    await db.update(projects).set({ status: "error", updatedAt: new Date() })
+      .where(eq(projects.id, projectId))
+    broadcastToProject(projectId, "project_status", { status: "error" })
+  }
+
+  // Fire and forget the polling — don't block the response
+  poll().catch((err) => {
+    console.error(`Container readiness poll failed for ${projectId}:`, err)
   })
 }
 

@@ -82,6 +82,7 @@ function setupServer(
 
     return c.json({
       status: "ok",
+      uptime: Math.floor(process.uptime()),
       mode,
       version: process.env.npm_package_version || "2.3.0",
       timestamp: new Date().toISOString(),

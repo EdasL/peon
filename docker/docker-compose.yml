@@ -87,6 +87,12 @@ services:
       - lobu-public   # Internet access
       - lobu-internal # Internal services (redis, workers)
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       redis:
         condition: service_healthy

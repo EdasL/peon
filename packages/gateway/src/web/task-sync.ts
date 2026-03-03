@@ -1,9 +1,9 @@
+import { db } from "../db/connection.js"
+import { tasks, type Task } from "../db/schema.js"
+import { eq, and } from "drizzle-orm"
 import { broadcastToProject } from "./chat-routes.js"
 
-// Task state cache per project (populated from worker events)
-const projectTasks = new Map<string, Map<string, WorkerTask>>()
-
-interface WorkerTask {
+export interface WorkerTask {
   id: string
   subject: string
   description: string
@@ -13,28 +13,51 @@ interface WorkerTask {
   updatedAt: number
 }
 
-export function handleWorkerTaskUpdate(projectId: string, task: WorkerTask) {
-  if (!projectTasks.has(projectId)) projectTasks.set(projectId, new Map())
-  projectTasks.get(projectId)!.set(task.id, task)
+export async function handleWorkerTaskUpdate(projectId: string, task: WorkerTask) {
+  const boardColumn = task.boardColumn as Task["boardColumn"]
+  await db.insert(tasks).values({
+    id: task.id,
+    projectId,
+    subject: task.subject,
+    description: task.description,
+    status: task.status,
+    owner: task.owner,
+    boardColumn,
+  }).onConflictDoUpdate({
+    target: tasks.id,
+    set: {
+      subject: task.subject,
+      description: task.description,
+      status: task.status,
+      owner: task.owner,
+      boardColumn,
+      updatedAt: new Date(),
+    },
+  })
 
-  // Broadcast to all SSE clients watching this project
   broadcastToProject(projectId, "task_update", task)
 }
 
-export function getProjectTasks(projectId: string): WorkerTask[] {
-  const tasks = projectTasks.get(projectId)
-  if (!tasks) return []
-  return Array.from(tasks.values())
+export async function getProjectTasks(projectId: string): Promise<WorkerTask[]> {
+  const rows = await db.query.tasks.findMany({
+    where: eq(tasks.projectId, projectId),
+  })
+  return rows.map((r) => ({
+    id: r.id,
+    subject: r.subject,
+    description: r.description,
+    status: r.status,
+    owner: r.owner,
+    boardColumn: r.boardColumn,
+    updatedAt: r.updatedAt.getTime(),
+  }))
 }
 
-export function deleteProjectTask(projectId: string, taskId: string) {
-  const tasks = projectTasks.get(projectId)
-  if (tasks) {
-    tasks.delete(taskId)
-    broadcastToProject(projectId, "task_delete", { id: taskId })
-  }
+export async function deleteProjectTask(projectId: string, taskId: string) {
+  await db.delete(tasks).where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)))
+  broadcastToProject(projectId, "task_delete", { id: taskId })
 }
 
-export function clearProjectTasks(projectId: string) {
-  projectTasks.delete(projectId)
+export async function clearProjectTasks(projectId: string) {
+  await db.delete(tasks).where(eq(tasks.projectId, projectId))
 }

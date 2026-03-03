@@ -131,6 +131,10 @@ projectsRouter.post("/", async (c) => {
       body.repoUrl ?? null,
       services
     )
+
+    // Start polling for container readiness (fire-and-forget)
+    const { waitForContainerReady } = await import("../../web/project-launcher.js")
+    waitForContainerReady(project.id, deploymentName)
   }).catch(async (err) => {
     console.error(`Failed to launch project ${project.id}:`, err)
     await db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))

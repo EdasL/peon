@@ -10,6 +10,19 @@ import { getPeonPlatform } from "../peon/platform.js"
 // In-memory SSE clients per project (production: use Redis pub/sub)
 const sseClients = new Map<string, Set<(event: string, data: string) => void>>()
 
+// Active project mapping: conversationId (lobuAgentId) → projectId
+// Updated every time a user sends a chat message, so agent activity events
+// route to the correct project instead of "most recently updated".
+const activeProjectMap = new Map<string, string>()
+
+export function setActiveProject(conversationId: string, projectId: string) {
+  activeProjectMap.set(conversationId, projectId)
+}
+
+export function getActiveProject(conversationId: string): string | undefined {
+  return activeProjectMap.get(conversationId)
+}
+
 export function broadcastToProject(projectId: string, event: string, data: unknown) {
   const clients = sseClients.get(projectId)
   if (!clients) return
@@ -100,6 +113,9 @@ chatRouter.post("/:id/chat", async (c) => {
     return c.json({ error: "Agent not ready" }, 409)
   }
 
+  // Record which project this user's agent is actively working on
+  setActiveProject(lobuAgentId, projectId)
+
   // Store user message in Postgres
   const [userMsg] = await db.insert(chatMessages).values({
     projectId,
@@ -154,7 +170,7 @@ chatRouter.get("/:id/tasks", async (c) => {
   if (!project) return c.json({ error: "Not found" }, 404)
 
   const { getProjectTasks } = await import("./task-sync.js")
-  const tasks = getProjectTasks(projectId)
+  const tasks = await getProjectTasks(projectId)
   return c.json({ tasks })
 })
 
@@ -171,7 +187,7 @@ chatRouter.post("/:id/tasks", async (c) => {
 
   const { handleWorkerTaskUpdate, getProjectTasks } = await import("./task-sync.js")
   const id = crypto.randomUUID()
-  handleWorkerTaskUpdate(projectId, {
+  await handleWorkerTaskUpdate(projectId, {
     id,
     subject,
     description: description ?? "",
@@ -180,7 +196,7 @@ chatRouter.post("/:id/tasks", async (c) => {
     boardColumn: "backlog",
     updatedAt: Date.now(),
   })
-  const tasks = getProjectTasks(projectId)
+  const tasks = await getProjectTasks(projectId)
   const task = tasks.find((t) => t.id === id)
   return c.json({ task }, 201)
 })
@@ -198,18 +214,18 @@ chatRouter.patch("/:id/tasks/:taskId", async (c) => {
   if (!project) return c.json({ error: "Not found" }, 404)
 
   const { getProjectTasks, handleWorkerTaskUpdate } = await import("./task-sync.js")
-  const tasks = getProjectTasks(projectId)
+  const tasks = await getProjectTasks(projectId)
   const existing = tasks.find((t) => t.id === taskId)
   if (!existing) return c.json({ error: "Task not found" }, 404)
 
-  handleWorkerTaskUpdate(projectId, {
+  await handleWorkerTaskUpdate(projectId, {
     ...existing,
     ...(updates.status && { status: updates.status as "pending" | "in_progress" | "completed" }),
     ...(updates.owner !== undefined && { owner: updates.owner || null }),
     updatedAt: Date.now(),
   })
 
-  const updated = getProjectTasks(projectId).find((t) => t.id === taskId)
+  const updated = (await getProjectTasks(projectId)).find((t) => t.id === taskId)
   return c.json({ task: updated })
 })
 
@@ -225,7 +241,7 @@ chatRouter.delete("/:id/tasks/:taskId", async (c) => {
   if (!project) return c.json({ error: "Not found" }, 404)
 
   const { deleteProjectTask } = await import("./task-sync.js")
-  deleteProjectTask(projectId, taskId)
+  await deleteProjectTask(projectId, taskId)
   return c.json({ ok: true })
 })
 
