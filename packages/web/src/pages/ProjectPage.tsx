@@ -92,8 +92,10 @@ export function ProjectPage() {
 
     const es = new EventSource(`/api/projects/${id}/chat/stream`, { withCredentials: true })
     es.addEventListener("project_status", (e) => {
-      const data = JSON.parse(e.data) as { status: Project["status"] }
-      setStatus(data.status)
+      try {
+        const data = JSON.parse(e.data) as { status: Project["status"] }
+        setStatus(data.status)
+      } catch {}
     })
 
     return () => es.close()

@@ -11,6 +11,7 @@ import {
   removeContainer,
   restartContainer,
 } from "../../web/container-manager.js"
+import { broadcastToProject } from "../../web/chat-routes.js"
 
 // ---------------------------------------------------------------------------
 // Name generation — adjective + noun pairs
@@ -115,7 +116,8 @@ projectsRouter.post("/", async (c) => {
   const services = getPeonPlatform().getServices()
   ensureUserContainer(session.userId, services).then(async (containerResult) => {
     if (containerResult.error === "no-api-key") {
-      await db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))
+      await db.update(projects).set({ status: "error", updatedAt: new Date() }).where(eq(projects.id, project.id))
+      broadcastToProject(project.id, "project_status", { status: "error" })
       return
     }
     // Store deployment name in DB for future status queries and cleanup
@@ -138,7 +140,8 @@ projectsRouter.post("/", async (c) => {
     waitForContainerReady(project.id, deploymentName)
   }).catch(async (err) => {
     console.error(`Failed to launch project ${project.id}:`, err)
-    await db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))
+    await db.update(projects).set({ status: "error", updatedAt: new Date() }).where(eq(projects.id, project.id))
+    broadcastToProject(project.id, "project_status", { status: "error" })
   })
 
   return c.json({ project }, 201)
@@ -178,11 +181,12 @@ projectsRouter.get("/:id/status", async (c) => {
     const dockerStatus = await getContainerStatus(project.deploymentName)
     if (dockerStatus !== null) {
       containerStatus = dockerStatus
-      // Sync DB status
+      // Sync DB status and broadcast to SSE clients
       const dbStatus = dockerStatus === "starting" ? "creating" : dockerStatus
       if (project.status !== dbStatus) {
         await db.update(projects).set({ status: dbStatus as any, updatedAt: new Date() })
           .where(eq(projects.id, project.id))
+        broadcastToProject(project.id, "project_status", { status: dbStatus })
       }
     } else {
       containerStatus = mapDbStatus(project.status)
@@ -225,8 +229,9 @@ projectsRouter.post("/:id/restart", async (c) => {
 
     const containerResult = await ensureUserContainer(session.userId, services)
     if (containerResult.error) {
-      await db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))
-      return c.json({ error: containerResult.error }, 500)
+      await db.update(projects).set({ status: "error", updatedAt: new Date() }).where(eq(projects.id, project.id))
+      broadcastToProject(project.id, "project_status", { status: "error" })
+      return c.json({ error: containerResult.error }, 400)
     }
 
     const deploymentName = getPeonDeploymentName(session.userId, containerResult.lobuAgentId)
@@ -240,6 +245,7 @@ projectsRouter.post("/:id/restart", async (c) => {
 
   // Container restarted successfully
   await db.update(projects).set({ status: "running", updatedAt: new Date() }).where(eq(projects.id, project.id))
+  broadcastToProject(project.id, "project_status", { status: "running" })
   return c.json({ status: "running" })
 })
 
