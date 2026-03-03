@@ -151,7 +151,7 @@ export function DashboardPage() {
                       key={p.id}
                       className={`cursor-pointer hover:border-primary/50 transition-colors relative group ${
                         chatProjectId === p.id ? "border-primary/50" : ""
-                      }`}
+                      } ${p.status === "running" ? "border-emerald-800/50 bg-emerald-950/10" : ""}`}
                       onClick={() => {
                         if (p.status === "running") {
                           setChatProjectId((prev) => (prev === p.id ? null : p.id))

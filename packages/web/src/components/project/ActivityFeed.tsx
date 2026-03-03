@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react"
+import { useRef, useEffect, useCallback, useState } from "react"
 import type { ActivityEvent } from "@/hooks/use-agent-activity"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
@@ -82,11 +82,25 @@ function FeedRow({ event }: { event: ActivityEvent }) {
 
 export function ActivityFeed({ events, maxEvents = 100 }: ActivityFeedProps) {
   const topRef = useRef<HTMLDivElement>(null)
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const [userScrolled, setUserScrolled] = useState(false)
+  const prevCountRef = useRef(events.length)
 
-  // Scroll to top whenever new events arrive (newest is at top)
+  // Track whether user has scrolled away from top
+  const handleScroll = useCallback(() => {
+    const viewport = scrollAreaRef.current?.querySelector("[data-slot='scroll-area-viewport']")
+    if (!viewport) return
+    // If scrolled more than 50px from top, user is reading older events
+    setUserScrolled(viewport.scrollTop > 50)
+  }, [])
+
+  // Auto-scroll to top only when new events arrive AND user hasn't scrolled away
   useEffect(() => {
-    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-  }, [events.length])
+    if (events.length > prevCountRef.current && !userScrolled) {
+      topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+    prevCountRef.current = events.length
+  }, [events.length, userScrolled])
 
   return (
     <div className="flex flex-col h-full">
@@ -97,7 +111,7 @@ export function ActivityFeed({ events, maxEvents = 100 }: ActivityFeedProps) {
         <span className="text-[10px] text-zinc-600">{events.length} events</span>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1" ref={scrollAreaRef} onScrollCapture={handleScroll}>
         {events.length === 0 ? (
           <div className="flex items-center justify-center py-10 px-3">
             <p className="text-xs text-zinc-600 text-center">

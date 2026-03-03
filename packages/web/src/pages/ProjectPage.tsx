@@ -1,7 +1,17 @@
 import { useParams, useNavigate } from "react-router-dom"
 import { useEffect, useState, useCallback } from "react"
+import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { Board } from "@/components/board/Board"
 import { AgentDashboard } from "@/components/project/AgentDashboard"
@@ -9,7 +19,7 @@ import { ProvisioningOverlay } from "@/components/project/ProvisioningOverlay"
 import type { Project } from "@/lib/api"
 import * as api from "@/lib/api"
 import { getTemplate } from "@/lib/templates"
-import { ArrowLeft, AlertCircle, Activity, LayoutGrid, Power } from "lucide-react"
+import { ArrowLeft, AlertCircle, Activity, LayoutGrid, Power, Settings, LogOut } from "lucide-react"
 
 function ProjectSkeleton() {
   return (
@@ -40,6 +50,14 @@ function ProjectSkeleton() {
 export function ProjectPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user, logout } = useAuth()
+
+  const initials = user?.name
+    ?.split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() ?? "?"
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<Project["status"]>("creating")
@@ -179,6 +197,33 @@ export function ProjectPage() {
             <LayoutGrid className="size-3.5" />
             Board
           </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="ml-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <Avatar size="sm">
+                  {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name} />}
+                  <AvatarFallback>{initials}</AvatarFallback>
+                </Avatar>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="font-normal">
+                <div className="text-sm font-medium">{user?.name}</div>
+                <div className="text-xs text-muted-foreground">{user?.email}</div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate("/settings")}>
+                <Settings />
+                Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={logout}>
+                <LogOut />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
       <div className="flex-1 flex min-h-0">
