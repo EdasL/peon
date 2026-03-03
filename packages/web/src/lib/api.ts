@@ -14,6 +14,11 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
     toast.error("Network error — check your connection")
     throw new Error("Network error")
   }
+  if (res.status === 401) {
+    // Session expired — redirect to login
+    window.location.href = "/login"
+    throw new Error("Session expired")
+  }
   if (!res.ok) {
     const body = await res.text()
     toast.error(body || `Request failed (${res.status})`)
@@ -95,7 +100,7 @@ export async function createTask(
 export async function updateTask(
   projectId: string,
   id: string,
-  data: Partial<Pick<ClaudeTask, "status" | "owner">>
+  data: Partial<Pick<ClaudeTask, "status" | "owner">> & { boardColumn?: string }
 ): Promise<ClaudeTask> {
   const { task } = await request<{ task: ClaudeTask }>(`/api/projects/${projectId}/tasks/${id}`, {
     method: "PATCH",

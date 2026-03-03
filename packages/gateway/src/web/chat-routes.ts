@@ -199,7 +199,7 @@ chatRouter.patch("/:id/tasks/:taskId", async (c) => {
   const session = getSession(c)
   const projectId = c.req.param("id")
   const taskId = c.req.param("taskId")
-  const updates = await c.req.json<{ status?: string; owner?: string; metadata?: Record<string, unknown> }>()
+  const updates = await c.req.json<{ status?: string; owner?: string; boardColumn?: string; metadata?: Record<string, unknown> }>()
 
   const project = await db.query.projects.findFirst({
     where: and(eq(projects.id, projectId), eq(projects.userId, session.userId)),
@@ -215,6 +215,7 @@ chatRouter.patch("/:id/tasks/:taskId", async (c) => {
     ...existing,
     ...(updates.status && { status: updates.status as "pending" | "in_progress" | "completed" }),
     ...(updates.owner !== undefined && { owner: updates.owner || null }),
+    ...(updates.boardColumn && { boardColumn: updates.boardColumn }),
     ...(updates.metadata !== undefined && { metadata: updates.metadata }),
     updatedAt: Date.now(),
   })

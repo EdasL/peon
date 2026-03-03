@@ -30,9 +30,26 @@ export function useAuthProvider(): AuthContext {
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
-      .then((r) => r.json())
+      .then((r) => {
+        if (r.status === 401) return { user: null }
+        return r.json()
+      })
       .then((d) => setUser(d.user))
       .finally(() => setLoading(false))
+
+    // Re-validate session every 5 minutes
+    const interval = setInterval(() => {
+      fetch("/api/auth/me", { credentials: "include" })
+        .then((r) => {
+          if (r.status === 401) {
+            setUser(null)
+            window.location.href = "/login"
+          }
+        })
+        .catch(() => {})
+    }, 5 * 60 * 1000)
+
+    return () => clearInterval(interval)
   }, [])
 
   const logout = async () => {
