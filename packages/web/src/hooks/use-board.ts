@@ -37,7 +37,8 @@ export function useBoard(teamName: string) {
     const es = new EventSource(`/api/projects/${teamName}/chat/stream`, { withCredentials: true })
 
     es.addEventListener("task_update", (e) => {
-      const task = JSON.parse(e.data) as ClaudeTask & { boardColumn?: string }
+      let task: ClaudeTask & { boardColumn?: string }
+      try { task = JSON.parse(e.data) } catch { return }
       setState((prev) => {
         const existing = prev.tasks.findIndex((t) => t.id === task.id)
         const boardColumn = (task.boardColumn ?? columnMapRef.current[task.id] ?? "backlog") as BoardColumn
@@ -58,10 +59,11 @@ export function useBoard(teamName: string) {
     })
 
     es.addEventListener("task_delete", (e) => {
-      const { id } = JSON.parse(e.data) as { id: string }
+      let data: { id: string }
+      try { data = JSON.parse(e.data) } catch { return }
       setState((prev) => ({
         ...prev,
-        tasks: prev.tasks.filter((t) => t.id !== id),
+        tasks: prev.tasks.filter((t) => t.id !== data.id),
       }))
     })
 

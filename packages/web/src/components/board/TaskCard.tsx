@@ -58,6 +58,7 @@ export function TaskCard({ task, onDelete }: TaskCardProps) {
             onDelete(task.id)
           }}
           onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Delete task"
         >
           <X className="size-3" />
         </Button>

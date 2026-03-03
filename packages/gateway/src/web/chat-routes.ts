@@ -90,6 +90,7 @@ chatRouter.post("/:id/chat", async (c) => {
   const session = getSession(c)
   const projectId = c.req.param("id")
   const { content } = await c.req.json<{ content: string }>()
+  if (!content?.trim()) return c.json({ error: "Message cannot be empty" }, 400)
 
   const project = await db.query.projects.findFirst({
     where: and(eq(projects.id, projectId), eq(projects.userId, session.userId)),
@@ -171,6 +172,7 @@ chatRouter.post("/:id/tasks", async (c) => {
   const session = getSession(c)
   const projectId = c.req.param("id")
   const { subject, description, metadata } = await c.req.json<{ subject: string; description?: string; metadata?: Record<string, unknown> }>()
+  if (!subject?.trim()) return c.json({ error: "Subject is required" }, 400)
 
   const project = await db.query.projects.findFirst({
     where: and(eq(projects.id, projectId), eq(projects.userId, session.userId)),
