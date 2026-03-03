@@ -112,7 +112,7 @@ export function useBoard(teamName: string) {
       }
 
       try {
-        await updateTask(teamName, taskId, updates)
+        await updateTask(teamName, taskId, { ...updates, boardColumn: toColumn })
         // SSE will deliver the confirmed update
       } catch {
         // Reload on failure to restore correct state

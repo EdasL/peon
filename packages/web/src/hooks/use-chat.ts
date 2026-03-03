@@ -81,9 +81,28 @@ export function useChat(projectId: string) {
     async (content: string) => {
       setSending(true)
       setError(null)
+
+      // Optimistic insert — show the message immediately
+      const optimisticId = `optimistic-${Date.now()}`
+      const optimisticMsg: ChatMessage = {
+        id: optimisticId,
+        projectId,
+        role: "user",
+        content,
+        createdAt: new Date().toISOString(),
+      }
+      setMessages((prev) => [...prev, optimisticMsg])
+
       try {
-        await api.sendChatMessage(projectId, content)
+        const { message } = await api.sendChatMessage(projectId, content)
+        // Replace optimistic message with server-confirmed one (also dedup if SSE arrived first)
+        setMessages((prev) => {
+          const filtered = prev.filter((m) => m.id !== optimisticId && m.id !== message.id)
+          return [...filtered, message]
+        })
       } catch (err: unknown) {
+        // Remove optimistic message on failure
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
         const msg = err instanceof Error ? err.message : "Failed to send message"
         setError(msg)
       } finally {

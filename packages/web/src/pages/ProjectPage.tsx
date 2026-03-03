@@ -121,7 +121,21 @@ export function ProjectPage() {
       {status === "stopped" && (
         <div className="flex items-center gap-2 px-4 py-2 bg-amber-950/30 border-b border-amber-800/30 text-amber-400 text-xs">
           <Power className="h-3.5 w-3.5" />
-          <span>Container is stopped. Activity data is from the last session.</span>
+          <span className="flex-1">Container is stopped. Activity data is from the last session.</span>
+          <button
+            onClick={async () => {
+              setStatus("creating")
+              try {
+                const { status: newStatus } = await api.restartProject(id!)
+                setStatus(newStatus as Project["status"])
+              } catch {
+                setStatus("error")
+              }
+            }}
+            className="px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/50 text-amber-300 font-medium transition-colors"
+          >
+            Restart
+          </button>
         </div>
       )}
       <header className="border-b px-4 py-2 flex items-center gap-3">

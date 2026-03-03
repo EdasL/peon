@@ -126,3 +126,35 @@ export async function removeContainer(deploymentName: string): Promise<void> {
     logger.warn(`Unexpected error cleaning up container ${deploymentName}:`, err)
   }
 }
+
+/**
+ * Restart a stopped Docker container by deployment name.
+ * If the container doesn't exist, returns false.
+ */
+export async function restartContainer(deploymentName: string): Promise<boolean> {
+  let docker: Docker
+  try {
+    docker = new Docker({ socketPath: "/var/run/docker.sock" })
+  } catch (err) {
+    logger.warn("Could not connect to Docker daemon for restart:", err)
+    return false
+  }
+
+  try {
+    const container = docker.getContainer(deploymentName)
+    await container.start()
+    logger.info(`Restarted container: ${deploymentName}`)
+    return true
+  } catch (err: any) {
+    if (err?.statusCode === 404 || err?.message?.includes("No such container")) {
+      logger.warn(`Container ${deploymentName} not found for restart`)
+      return false
+    }
+    // Container might already be running — that's fine
+    if (err?.statusCode === 304) {
+      return true
+    }
+    logger.warn(`Error restarting container ${deploymentName}:`, err)
+    return false
+  }
+}

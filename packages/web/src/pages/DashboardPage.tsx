@@ -78,6 +78,15 @@ export function DashboardPage() {
     api.getProjects()
       .then((d) => setProjects(d.projects))
       .finally(() => setLoading(false))
+
+    // Poll for status changes every 10s (container creation, stops, etc.)
+    const interval = setInterval(() => {
+      api.getProjects()
+        .then((d) => setProjects(d.projects))
+        .catch(() => {})
+    }, 10_000)
+
+    return () => clearInterval(interval)
   }, [])
 
   const handleDelete = async () => {

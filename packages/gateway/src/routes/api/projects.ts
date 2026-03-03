@@ -9,6 +9,7 @@ import {
   getPeonDeploymentName,
   getContainerStatus,
   removeContainer,
+  restartContainer,
 } from "../../web/container-manager.js"
 
 // ---------------------------------------------------------------------------
@@ -201,6 +202,46 @@ function mapDbStatus(dbStatus: string): "starting" | "running" | "stopped" | "er
     default: return "stopped"
   }
 }
+
+// POST /api/projects/:id/restart — restart a stopped project container
+projectsRouter.post("/:id/restart", async (c) => {
+  const session = getSession(c)
+  const project = await db.query.projects.findFirst({
+    where: and(eq(projects.id, c.req.param("id")), eq(projects.userId, session.userId)),
+  })
+  if (!project) return c.json({ error: "Not found" }, 404)
+
+  if (!project.deploymentName) {
+    return c.json({ error: "No container associated with this project" }, 400)
+  }
+
+  const restarted = await restartContainer(project.deploymentName)
+  if (!restarted) {
+    // Container doesn't exist — need to re-provision
+    const services = getPeonPlatform().getServices()
+    const { ensureUserContainer, initProjectWorkspace, waitForContainerReady } = await import("../../web/project-launcher.js")
+
+    await db.update(projects).set({ status: "creating", updatedAt: new Date() }).where(eq(projects.id, project.id))
+
+    const containerResult = await ensureUserContainer(session.userId, services)
+    if (containerResult.error) {
+      await db.update(projects).set({ status: "error" }).where(eq(projects.id, project.id))
+      return c.json({ error: containerResult.error }, 500)
+    }
+
+    const deploymentName = getPeonDeploymentName(session.userId, containerResult.lobuAgentId)
+    await db.update(projects).set({ deploymentName, status: "creating" }).where(eq(projects.id, project.id))
+
+    await initProjectWorkspace(session.userId, containerResult.lobuAgentId, project.id, project.templateId, project.repoUrl, services)
+    waitForContainerReady(project.id, deploymentName)
+
+    return c.json({ status: "creating" })
+  }
+
+  // Container restarted successfully
+  await db.update(projects).set({ status: "running", updatedAt: new Date() }).where(eq(projects.id, project.id))
+  return c.json({ status: "running" })
+})
 
 // PATCH /api/projects/:id — update project name
 projectsRouter.patch("/:id", async (c) => {
