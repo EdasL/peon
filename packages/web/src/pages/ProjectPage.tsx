@@ -8,7 +8,7 @@ import { AgentDashboard } from "@/components/project/AgentDashboard"
 import { ProvisioningOverlay } from "@/components/project/ProvisioningOverlay"
 import type { Project } from "@/lib/api"
 import * as api from "@/lib/api"
-import { ArrowLeft, AlertCircle, Activity, LayoutGrid } from "lucide-react"
+import { ArrowLeft, AlertCircle, Activity, LayoutGrid, Power } from "lucide-react"
 
 function ProjectSkeleton() {
   return (
@@ -117,6 +117,12 @@ export function ProjectPage() {
 
   return (
     <div className="h-screen flex flex-col">
+      {status === "stopped" && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-950/30 border-b border-amber-800/30 text-amber-400 text-xs">
+          <Power className="h-3.5 w-3.5" />
+          <span>Container is stopped. Activity data is from the last session.</span>
+        </div>
+      )}
       <header className="border-b px-4 py-2 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard")}>
           <ArrowLeft className="h-4 w-4" />
