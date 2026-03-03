@@ -9,11 +9,16 @@
     "packages/web"
   ],
   "scripts": {
+    "start": "npm run dev",
     "dev": "docker compose -f docker/docker-compose.yml up -d && cd packages/web && npm run dev",
     "dev:gateway": "cd packages/gateway && bun run src/index.ts",
     "dev:web": "cd packages/web && vite",
     "build": "cd packages/core && bun run build && cd ../gateway && bun run build && cd ../worker && bun run build && cd ../web && vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist packages/*/dist packages/*/.next packages/*/node_modules/.cache",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f"
   },
   "devDependencies": {
     "@types/bun": "1.2.11",
