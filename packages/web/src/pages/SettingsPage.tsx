@@ -53,6 +53,7 @@ export function SettingsPage() {
 
   // GitHub
   const [disconnecting, setDisconnecting] = useState(false)
+  const [githubDisconnected, setGithubDisconnected] = useState(false)
 
   // Delete account
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false)
@@ -101,7 +102,7 @@ export function SettingsPage() {
     try {
       await api.disconnectGithub()
       toast.success("GitHub disconnected")
-      window.location.reload()
+      setGithubDisconnected(true)
     } finally {
       setDisconnecting(false)
     }
@@ -320,7 +321,7 @@ export function SettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {user?.githubId ? (
+                {user?.githubId && !githubDisconnected ? (
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <Github className="h-5 w-5" />

@@ -14,8 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Trash2, Loader2, X, MessageSquare, FolderOpen } from "lucide-react"
+import { Trash2, Loader2, X, MessageSquare, FolderOpen, Pencil } from "lucide-react"
 import { ChatPanel } from "@/components/chat/ChatPanel"
+import { Input } from "@/components/ui/input"
 import * as api from "@/lib/api"
 
 function timeAgo(dateStr: string): string {
@@ -69,6 +70,8 @@ export function DashboardPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [chatProjectId, setChatProjectId] = useState<string | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState("")
 
   useEffect(() => {
     api.getProjects()
@@ -89,6 +92,20 @@ export function DashboardPage() {
     } finally {
       setDeleteLoading(false)
     }
+  }
+
+  const handleRename = async () => {
+    if (!renamingId || !renameValue.trim()) {
+      setRenamingId(null)
+      return
+    }
+    try {
+      const { project } = await api.updateProject(renamingId, { name: renameValue.trim() })
+      setProjects((prev) => prev.map((p) => p.id === project.id ? { ...p, name: project.name } : p))
+    } catch {
+      // toast shown by api layer
+    }
+    setRenamingId(null)
   }
 
   const deletingProject = projects.find((p) => p.id === deletingId)
@@ -127,8 +144,32 @@ export function DashboardPage() {
                         }
                       }}
                     >
-                      <CardHeader className="pb-2 pr-10">
-                        <CardTitle className="text-base">{p.name}</CardTitle>
+                      <CardHeader className="pb-2 pr-16">
+                        {renamingId === p.id ? (
+                          <Input
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleRename()
+                              if (e.key === "Escape") setRenamingId(null)
+                            }}
+                            onBlur={handleRename}
+                            autoFocus
+                            className="h-7 text-base font-semibold"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <CardTitle
+                            className="text-base"
+                            onDoubleClick={(e) => {
+                              e.stopPropagation()
+                              setRenamingId(p.id)
+                              setRenameValue(p.name)
+                            }}
+                          >
+                            {p.name}
+                          </CardTitle>
+                        )}
                       </CardHeader>
                       <CardContent>
                         <div className="flex items-center gap-2">
@@ -149,7 +190,18 @@ export function DashboardPage() {
                           Last active {timeAgo(p.updatedAt)}
                         </p>
                       </CardContent>
-                      {/* Delete button */}
+                      {/* Rename + delete buttons */}
+                      <button
+                        className="absolute top-3 right-9 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setRenamingId(p.id)
+                          setRenameValue(p.name)
+                        }}
+                        title="Rename project"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
                       <button
                         className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                         onClick={(e) => {
