@@ -42,6 +42,14 @@ keysRouter.post("/", async (c) => {
 
   const provider = body.provider as AllowedProvider
 
+  // Validate key format
+  if (provider === "anthropic" && !body.key.startsWith("sk-ant-")) {
+    return c.json({ error: "Invalid Anthropic API key format — must start with sk-ant-" }, 400)
+  }
+  if (provider === "openai" && !body.key.startsWith("sk-")) {
+    return c.json({ error: "Invalid OpenAI API key format — must start with sk-" }, 400)
+  }
+
   // Check if a key already exists for this provider
   const existing = await db.query.apiKeys.findFirst({
     where: and(

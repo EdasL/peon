@@ -198,6 +198,24 @@ function mapDbStatus(dbStatus: string): "starting" | "running" | "stopped" | "er
   }
 }
 
+// PATCH /api/projects/:id — update project name
+projectsRouter.patch("/:id", async (c) => {
+  const session = getSession(c)
+  const body = await c.req.json<{ name?: string }>()
+
+  if (!body.name?.trim()) {
+    return c.json({ error: "Name is required" }, 400)
+  }
+
+  const [updated] = await db.update(projects)
+    .set({ name: body.name.trim(), updatedAt: new Date() })
+    .where(and(eq(projects.id, c.req.param("id")), eq(projects.userId, session.userId)))
+    .returning()
+
+  if (!updated) return c.json({ error: "Not found" }, 404)
+  return c.json({ project: updated })
+})
+
 // DELETE /api/projects/:id — remove project from DB, remove container if last project
 projectsRouter.delete("/:id", async (c) => {
   const session = getSession(c)
