@@ -15,7 +15,16 @@ import { chatMessages, projects } from "../db/schema.js"
 const logger = createLogger("peon-response-renderer")
 
 /** Per-message streaming accumulation buffers keyed by messageId */
-const streamBuffers = new Map<string, string>()
+const streamBuffers = new Map<string, { content: string; createdAt: number }>()
+
+// Clean up stale buffers every 2 minutes (orphaned if handleCompletion never fires)
+const BUFFER_TTL = 5 * 60_000
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, val] of streamBuffers) {
+    if (now - val.createdAt > BUFFER_TTL) streamBuffers.delete(key)
+  }
+}, 2 * 60_000)
 
 /**
  * Extract projectId from the response payload's platformMetadata.
@@ -50,9 +59,9 @@ export class PeonResponseRenderer implements ResponseRenderer {
     if (!delta) return null
 
     // Accumulate into the buffer
-    const prev = streamBuffers.get(messageId) ?? ""
-    const accumulated = prev + delta
-    streamBuffers.set(messageId, accumulated)
+    const buf = streamBuffers.get(messageId)
+    const accumulated = (buf?.content ?? "") + delta
+    streamBuffers.set(messageId, { content: accumulated, createdAt: buf?.createdAt ?? Date.now() })
 
     broadcastToProject(projectId, "chat_delta", {
       delta,
@@ -86,7 +95,7 @@ export class PeonResponseRenderer implements ResponseRenderer {
 
     // Use accumulated buffer content, fall back to payload.content
     const content =
-      streamBuffers.get(messageId) ?? payload.content ?? ""
+      streamBuffers.get(messageId)?.content ?? payload.content ?? ""
 
     // Persist assistant message to Postgres
     const [assistantMsg] = await db

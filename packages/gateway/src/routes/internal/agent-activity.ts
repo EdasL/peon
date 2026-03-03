@@ -30,7 +30,16 @@ const ALLOWED_TYPES = new Set<string>([
 ])
 
 // Cache conversationId → projectId for 60s to avoid DB hits on every event
+const PROJECT_CACHE_MAX = 500
 const projectIdCache = new Map<string, { id: string | null; expiresAt: number }>()
+
+// Evict expired entries every 5 minutes
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, val] of projectIdCache) {
+    if (val.expiresAt <= now) projectIdCache.delete(key)
+  }
+}, 5 * 60_000)
 
 export interface AgentActivityEvent {
   type: AgentActivityEventType
@@ -80,6 +89,11 @@ async function resolveProjectId(
     columns: { id: true },
   })
   const id = project?.id ?? null
+  // Evict oldest if at capacity
+  if (projectIdCache.size >= PROJECT_CACHE_MAX) {
+    const firstKey = projectIdCache.keys().next().value
+    if (firstKey) projectIdCache.delete(firstKey)
+  }
   projectIdCache.set(conversationId, { id, expiresAt: Date.now() + 60_000 })
   return id
 }

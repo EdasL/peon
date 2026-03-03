@@ -5,6 +5,7 @@ import { ActivityFeed } from "./ActivityFeed"
 import { Button } from "@/components/ui/button"
 import { LayoutGrid } from "lucide-react"
 import { getTemplate } from "@/lib/templates"
+import { cn } from "@/lib/utils"
 
 interface AgentDashboardProps {
   projectId: string
@@ -31,21 +32,23 @@ export function AgentDashboard({ projectId, templateId, onSwitchToBoard }: Agent
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setView("dashboard")}
-            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+            className={cn(
+              "px-3 py-1.5 rounded text-xs font-medium transition-colors",
               view === "dashboard"
-                ? "bg-zinc-800 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
             Agents
           </button>
           <button
             onClick={() => setView("feed")}
-            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+            className={cn(
+              "px-3 py-1.5 rounded text-xs font-medium transition-colors",
               view === "feed"
-                ? "bg-zinc-800 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
             Activity
             {feed.length > 0 && (
