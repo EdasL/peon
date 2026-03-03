@@ -40,6 +40,8 @@ export interface AgentActivityEvent {
   text?: string
   /** Error message */
   message?: string
+  /** Agent identity (e.g., "lead", "frontend", "backend") */
+  agentName?: string
   timestamp: number
 }
 
@@ -122,6 +124,7 @@ export function createAgentActivityRoutes(): Hono {
       ...(body.tool && { tool: body.tool.slice(0, 100) }),
       ...(body.text && { text: body.text.slice(0, 200) }),
       ...(body.message && { message: body.message.slice(0, 500) }),
+      ...(body.agentName && { agentName: body.agentName.slice(0, 50) }),
     }
 
     broadcastToProject(projectId, "agent_activity", event)

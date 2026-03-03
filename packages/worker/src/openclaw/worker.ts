@@ -642,11 +642,20 @@ Use it when the user references past discussions or you need context.`);
         this.postAgentActivity({ type: "thinking", text: event.delta });
         break;
 
-      case "tool_start":
+      case "tool_start": {
         logger.info(`[openclaw:tool] Starting: ${event.name}`);
         onDelta(`\n> Running ${event.name}...\n`);
-        this.postAgentActivity({ type: "tool_start", tool: event.name });
+        // Extract short context from tool input for richer activity display
+        const input = event.input ?? {};
+        let context: string | undefined;
+        if (input.file_path) context = String(input.file_path).split("/").slice(-2).join("/");
+        else if (input.path) context = String(input.path).split("/").slice(-2).join("/");
+        else if (input.command) context = String(input.command).slice(0, 60);
+        else if (input.pattern) context = String(input.pattern).slice(0, 40);
+        else if (input.query) context = String(input.query).slice(0, 40);
+        this.postAgentActivity({ type: "tool_start", tool: event.name, ...(context && { text: context }) });
         break;
+      }
 
       case "tool_end":
         logger.info(`[openclaw:tool] Completed: ${event.name}`);
@@ -683,7 +692,7 @@ Use it when the user references past discussions or you need context.`);
         "Content-Type": "application/json",
         Authorization: `Bearer ${workerToken}`,
       },
-      body: JSON.stringify({ ...event, timestamp: Date.now() }),
+      body: JSON.stringify({ ...event, agentName: this.config.agentId ?? "agent", timestamp: Date.now() }),
       signal: AbortSignal.timeout(3000),
     }).catch((err) => {
       logger.debug(`Failed to post agent activity (${event.type}): ${err instanceof Error ? err.message : String(err)}`);

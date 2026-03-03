@@ -30,6 +30,7 @@ interface AgentActivityEvent {
   tool?: string
   text?: string
   message?: string
+  agentName?: string
   timestamp: number
 }
 
@@ -229,20 +230,30 @@ export function useAgentActivity(projectId: string, templateAgentNames?: string[
       }
 
       const ts = data.timestamp ?? Date.now()
+      const agentName = data.agentName ?? "agent"
 
       if (data.type === "tool_start" && data.tool) {
-        const label = toolLabel(data.tool)
+        const label = data.text
+          ? `${toolLabel(data.tool)} — ${data.text}`
+          : toolLabel(data.tool)
         // Ensure at least one agent exists when a tool fires before tasks load
         setAgents((prev) => {
           if (prev.length === 0)
-            return [{ name: "agent", status: "working", currentTask: null, activeForm: label }]
+            return [{ name: agentName, status: "working", currentTask: null, activeForm: label }]
+          // Update the matching agent or the first one if no match
+          const idx = prev.findIndex((a) => a.name === agentName)
+          if (idx >= 0) {
+            const updated = [...prev]
+            updated[idx] = { ...updated[idx], status: "working", activeForm: label }
+            return updated
+          }
           return prev.map((a) => ({ ...a, status: "working" as const, activeForm: label }))
         })
         // Use local clock for TTL, not server timestamp
         setLastToolAction({ text: label, at: Date.now() })
         addFeedEvent({
           timestamp: ts,
-          agentName: "agent",
+          agentName,
           type: "tool_use",
           taskSubject: data.tool,
           detail: label,
@@ -252,7 +263,7 @@ export function useAgentActivity(projectId: string, templateAgentNames?: string[
       } else if (data.type === "tool_end" && data.tool) {
         addFeedEvent({
           timestamp: ts,
-          agentName: "agent",
+          agentName,
           type: "tool_use",
           taskSubject: data.tool,
           detail: `Done: ${data.tool}`,
@@ -268,12 +279,12 @@ export function useAgentActivity(projectId: string, templateAgentNames?: string[
       } else if (data.type === "error" && data.message) {
         setAgents((prev) => {
           if (prev.length === 0)
-            return [{ name: "agent", status: "error", currentTask: null, activeForm: data.message ?? null }]
+            return [{ name: agentName, status: "error", currentTask: null, activeForm: data.message ?? null }]
           return prev.map((a) => ({ ...a, status: "error" as const, activeForm: data.message ?? a.activeForm }))
         })
         addFeedEvent({
           timestamp: ts,
-          agentName: "agent",
+          agentName,
           type: "status_change",
           taskSubject: "error",
           detail: data.message,

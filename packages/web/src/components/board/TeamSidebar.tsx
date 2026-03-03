@@ -22,6 +22,14 @@ const COLOR_MAP: Record<string, string> = {
   cyan: "bg-cyan-600",
 }
 
+/** Resolve a color field to a Tailwind bg class — handles both short names (e.g. "green")
+ *  and full Tailwind classes (e.g. "bg-emerald-500") */
+function resolveColor(color?: string): string {
+  if (!color) return "bg-muted-foreground"
+  if (color.startsWith("bg-")) return color
+  return COLOR_MAP[color] ?? "bg-muted-foreground"
+}
+
 interface TeamSidebarProps {
   team: ClaudeTeamConfig
 }
@@ -49,7 +57,7 @@ export function TeamSidebar({ team }: TeamSidebarProps) {
           >
             <Avatar size="sm">
               <AvatarFallback
-                className={`text-[10px] text-white ${COLOR_MAP[member.color ?? ""] ?? "bg-muted-foreground"}`}
+                className={`text-[10px] text-white ${resolveColor(member.color)}`}
               >
                 {getInitials(member.name)}
               </AvatarFallback>

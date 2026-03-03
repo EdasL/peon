@@ -68,19 +68,33 @@ export const sendChatMessage = (projectId: string, content: string) =>
   })
 
 // Board/task APIs (project-scoped)
-import type { ClaudeTeamConfig, ClaudeTask } from "../../server/types"
+import type { ClaudeTeamConfig, ClaudeTeamMember, ClaudeTask } from "../../server/types"
+import { getTemplate } from "./templates"
 
 export async function fetchTeamConfig(projectId: string): Promise<ClaudeTeamConfig> {
   const { project } = await request<{ project: Project }>(`/api/projects/${projectId}`)
-  const config: ClaudeTeamConfig = {
+  const tmpl = getTemplate(project.templateId)
+
+  const members: ClaudeTeamMember[] = tmpl?.agents.map((a) => ({
+    agentId: a.role.toLowerCase(),
+    name: a.role.toLowerCase(),
+    agentType: a.role,
+    model: "claude-sonnet-4-6",
+    color: a.color,
+    joinedAt: Date.now(),
+    tmuxPaneId: "",
+    cwd: "",
+    subscriptions: [],
+  })) ?? []
+
+  return {
     name: project.name,
-    description: "",
+    description: tmpl?.desc ?? "",
     createdAt: Date.now(),
-    leadAgentId: "",
+    leadAgentId: members[0]?.agentId ?? "",
     leadSessionId: "",
-    members: [],
+    members,
   }
-  return config
 }
 
 export async function fetchTasks(projectId: string): Promise<ClaudeTask[]> {
