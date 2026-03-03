@@ -3,6 +3,8 @@ import { cn } from "@/lib/utils"
 
 interface AgentStatusCardsProps {
   agents: AgentState[]
+  /** Current tool action text from a recent tool_start event (within 10s), if any */
+  currentToolAction?: string | null
 }
 
 function StatusDot({ status }: { status: AgentState["status"] }) {
@@ -18,7 +20,7 @@ function StatusDot({ status }: { status: AgentState["status"] }) {
   )
 }
 
-function AgentCard({ agent }: { agent: AgentState }) {
+function AgentCard({ agent, currentToolAction }: { agent: AgentState; currentToolAction?: string | null }) {
   const initials = agent.name
     .split(/[-_\s]/)
     .map((w) => w[0]?.toUpperCase() ?? "")
@@ -56,19 +58,30 @@ function AgentCard({ agent }: { agent: AgentState }) {
           </span>
         </div>
 
-        {agent.activeForm || agent.currentTask ? (
-          <p className="mt-1.5 truncate text-xs text-muted-foreground">
-            {agent.activeForm ?? agent.currentTask}
-          </p>
-        ) : (
-          <p className="mt-1.5 text-xs text-zinc-600">No active task</p>
-        )}
+        {(() => {
+          const displayText =
+            agent.activeForm ??
+            (agent.status === "working" && currentToolAction ? currentToolAction : null) ??
+            agent.currentTask
+          return displayText ? (
+            <p className={cn(
+              "mt-1.5 truncate text-xs",
+              agent.status === "working" && currentToolAction && !agent.activeForm
+                ? "text-cyan-500"
+                : "text-muted-foreground"
+            )}>
+              {displayText}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-xs text-zinc-600">No active task</p>
+          )
+        })()}
       </div>
     </div>
   )
 }
 
-export function AgentStatusCards({ agents }: AgentStatusCardsProps) {
+export function AgentStatusCards({ agents, currentToolAction }: AgentStatusCardsProps) {
   if (agents.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border/40 px-4 py-5 text-center">
@@ -82,7 +95,7 @@ export function AgentStatusCards({ agents }: AgentStatusCardsProps) {
   return (
     <div className="flex flex-col gap-2">
       {agents.map((agent) => (
-        <AgentCard key={agent.name} agent={agent} />
+        <AgentCard key={agent.name} agent={agent} currentToolAction={currentToolAction} />
       ))}
     </div>
   )

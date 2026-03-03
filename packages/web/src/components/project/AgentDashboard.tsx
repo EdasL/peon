@@ -11,7 +11,7 @@ interface AgentDashboardProps {
 }
 
 export function AgentDashboard({ projectId, onSwitchToBoard }: AgentDashboardProps) {
-  const { agents, feed, loading } = useAgentActivity(projectId)
+  const { agents, feed, loading, currentToolAction } = useAgentActivity(projectId)
   const [view, setView] = useState<"dashboard" | "feed">("dashboard")
 
   const workingCount = agents.filter((a) => a.status === "working").length
@@ -93,7 +93,7 @@ export function AgentDashboard({ projectId, onSwitchToBoard }: AgentDashboardPro
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                   Agent Status
                 </h3>
-                <AgentStatusCards agents={agents} />
+                <AgentStatusCards agents={agents} currentToolAction={currentToolAction} />
               </section>
 
               {/* Mini feed preview */}
@@ -154,29 +154,49 @@ function MiniEventRow({ event }: { event: import("@/hooks/use-agent-activity").A
     completed: "✓",
     task_update: "~",
     status_change: "·",
+    tool_use: "⚡",
   }
   const colors: Record<string, string> = {
     started: "text-blue-400",
     completed: "text-emerald-400",
     task_update: "text-yellow-400",
     status_change: "text-zinc-500",
+    tool_use: "text-cyan-400",
   }
 
   const t = new Date(event.timestamp)
   const time = `${t.getHours().toString().padStart(2, "0")}:${t.getMinutes().toString().padStart(2, "0")}:${t.getSeconds().toString().padStart(2, "0")}`
+
+  const toolEndIcon = event.type === "tool_use" && event.toolPhase === "end" ? "✓" : undefined
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/20 last:border-0">
       <span className="font-mono text-[10px] text-zinc-600 tabular-nums flex-shrink-0">
         {time}
       </span>
-      <span className={`text-xs flex-shrink-0 ${colors[event.type] ?? "text-zinc-500"}`}>
-        {icons[event.type] ?? "·"}
+      <span
+        className={`text-xs flex-shrink-0 ${
+          event.type === "tool_use" && event.toolPhase === "end"
+            ? "text-cyan-600"
+            : (colors[event.type] ?? "text-zinc-500")
+        }`}
+      >
+        {toolEndIcon ?? (icons[event.type] ?? "·")}
       </span>
       <span className="text-[11px] text-zinc-400 flex-shrink-0">{event.agentName}</span>
       <span className="text-[11px] text-zinc-300 truncate min-w-0">
-        {event.type === "started" ? "started " : event.type === "completed" ? "completed " : ""}
-        <span className="text-zinc-500 italic">{event.taskSubject}</span>
+        {event.type === "started" && <span>started <span className="text-zinc-500 italic">{event.taskSubject}</span></span>}
+        {event.type === "completed" && <span>completed <span className="text-zinc-500 italic">{event.taskSubject}</span></span>}
+        {event.type === "task_update" && <span className="text-zinc-500 italic">{event.taskSubject}</span>}
+        {event.type === "status_change" && <span className="text-zinc-500">{event.detail ?? "status changed"}</span>}
+        {event.type === "tool_use" && (
+          <span className={event.toolPhase === "end" ? "text-cyan-700" : "text-cyan-300"}>
+            {event.taskSubject}
+            {event.detail && event.detail !== event.taskSubject && (
+              <span className="text-zinc-500"> — {event.detail}</span>
+            )}
+          </span>
+        )}
       </span>
     </div>
   )

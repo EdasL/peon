@@ -15,13 +15,54 @@ export interface ActivityEvent {
   id: string
   timestamp: number
   agentName: string
-  type: "started" | "completed" | "status_change" | "task_update"
+  type: "started" | "completed" | "status_change" | "task_update" | "tool_use"
   taskSubject: string
   detail?: string
+  /** For tool_use events: the raw tool name (e.g. "Read", "Bash") */
+  tool?: string
+  /** For tool_use events: whether this is a start or end marker */
+  toolPhase?: "start" | "end"
+}
+
+/** Shape of SSE agent_activity event data from the backend */
+interface AgentActivityEvent {
+  type: "tool_start" | "tool_end" | "thinking" | "turn_end" | "error"
+  tool?: string
+  text?: string
+  message?: string
+  timestamp: number
 }
 
 const POLL_INTERVAL = 4000
 const MAX_FEED_EVENTS = 100
+/** How long (ms) a tool_start action stays visible on the agent card */
+const TOOL_ACTION_TTL = 10_000
+
+/** Convert a raw tool name into a short human-readable verb phrase */
+function toolLabel(tool: string): string {
+  switch (tool.toLowerCase()) {
+    case "read":
+      return "Reading file"
+    case "write":
+      return "Writing file"
+    case "edit":
+    case "multiedit":
+      return "Editing file"
+    case "bash":
+      return "Running command"
+    case "grep":
+      return "Searching codebase"
+    case "glob":
+      return "Scanning files"
+    case "webbrowser":
+    case "webfetch":
+      return "Fetching URL"
+    case "websearch":
+      return "Searching web"
+    default:
+      return `Using ${tool}`
+  }
+}
 
 function deriveAgentStatus(tasks: ClaudeTask[], agentName: string): AgentState {
   const owned = tasks.filter((t) => t.owner === agentName)
@@ -56,6 +97,8 @@ export function useAgentActivity(projectId: string) {
   const [agents, setAgents] = useState<AgentState[]>([])
   const [feed, setFeed] = useState<ActivityEvent[]>([])
   const [loading, setLoading] = useState(true)
+  /** Most recent tool action text + the time it arrived (for TTL check) */
+  const [lastToolAction, setLastToolAction] = useState<{ text: string; at: number } | null>(null)
   const prevTasksRef = useRef<Map<string, ClaudeTask>>(new Map())
   const eventSourceRef = useRef<EventSource | null>(null)
 
@@ -149,7 +192,7 @@ export function useAgentActivity(projectId: string) {
     return () => clearInterval(id)
   }, [refresh])
 
-  // SSE for immediate task_update events
+  // SSE for immediate task_update and agent_activity events
   useEffect(() => {
     const es = new EventSource(`/api/projects/${projectId}/chat/stream`, {
       withCredentials: true,
@@ -164,9 +207,66 @@ export function useAgentActivity(projectId: string) {
       refresh()
     })
 
+    es.addEventListener("agent_activity", (e: MessageEvent) => {
+      let data: AgentActivityEvent
+      try {
+        data = JSON.parse(e.data) as AgentActivityEvent
+      } catch {
+        return
+      }
+
+      const ts = data.timestamp ?? Date.now()
+
+      if (data.type === "tool_start" && data.tool) {
+        const label = toolLabel(data.tool)
+        // Use local clock for TTL, not server timestamp
+        setLastToolAction({ text: label, at: Date.now() })
+        addFeedEvent({
+          timestamp: ts,
+          agentName: "agent",
+          type: "tool_use",
+          taskSubject: data.tool,
+          detail: label,
+          tool: data.tool,
+          toolPhase: "start",
+        })
+      } else if (data.type === "tool_end" && data.tool) {
+        addFeedEvent({
+          timestamp: ts,
+          agentName: "agent",
+          type: "tool_use",
+          taskSubject: data.tool,
+          detail: `Done: ${data.tool}`,
+          tool: data.tool,
+          toolPhase: "end",
+        })
+      } else if (data.type === "thinking") {
+        // Intentionally skipped — too noisy for the feed.
+        // The agent is working; no state update needed.
+      } else if (data.type === "turn_end") {
+        // Clear tool action when turn finishes
+        setLastToolAction(null)
+      } else if (data.type === "error" && data.message) {
+        addFeedEvent({
+          timestamp: ts,
+          agentName: "agent",
+          type: "status_change",
+          taskSubject: "error",
+          detail: data.message,
+        })
+      }
+    })
+
     eventSourceRef.current = es
     return () => es.close()
-  }, [projectId, refresh])
+  }, [projectId, refresh, addFeedEvent])
 
-  return { tasks, agents, feed, loading }
+  // Derive a current tool action string if it's within the TTL window
+  const now = Date.now()
+  const currentToolAction =
+    lastToolAction && now - lastToolAction.at < TOOL_ACTION_TTL
+      ? lastToolAction.text
+      : null
+
+  return { tasks, agents, feed, loading, currentToolAction }
 }

@@ -15,7 +15,7 @@ function formatTime(ts: number): string {
   return `${h}:${m}:${s}`
 }
 
-function EventIcon({ type }: { type: ActivityEvent["type"] }) {
+function EventIcon({ type, toolPhase }: { type: ActivityEvent["type"]; toolPhase?: "start" | "end" }) {
   const base = "text-xs font-mono leading-none select-none"
   switch (type) {
     case "started":
@@ -26,12 +26,20 @@ function EventIcon({ type }: { type: ActivityEvent["type"] }) {
       return <span className={cn(base, "text-yellow-400")}>~</span>
     case "status_change":
       return <span className={cn(base, "text-zinc-400")}>·</span>
+    case "tool_use":
+      return (
+        <span className={cn(base, toolPhase === "end" ? "text-cyan-600" : "text-cyan-400")}>
+          {toolPhase === "end" ? "✓" : "⚡"}
+        </span>
+      )
     default:
       return <span className={cn(base, "text-zinc-500")}>·</span>
   }
 }
 
 function FeedRow({ event }: { event: ActivityEvent }) {
+  const isToolUse = event.type === "tool_use"
+
   return (
     <div className="flex items-start gap-2.5 px-3 py-1.5 hover:bg-white/[0.02] transition-colors">
       {/* Timestamp */}
@@ -41,11 +49,11 @@ function FeedRow({ event }: { event: ActivityEvent }) {
 
       {/* Icon */}
       <span className="mt-px flex-shrink-0 w-3 text-center">
-        <EventIcon type={event.type} />
+        <EventIcon type={event.type} toolPhase={event.toolPhase} />
       </span>
 
       {/* Agent name */}
-      <span className="flex-shrink-0 text-[11px] font-medium text-zinc-400">
+      <span className={cn("flex-shrink-0 text-[11px] font-medium", isToolUse ? "text-cyan-600" : "text-zinc-400")}>
         {event.agentName}
       </span>
 
@@ -55,8 +63,17 @@ function FeedRow({ event }: { event: ActivityEvent }) {
         {event.type === "completed" && "completed"}
         {event.type === "task_update" && (event.detail ?? "updated")}
         {event.type === "status_change" && (event.detail ?? "status changed")}
-        {" "}
-        <span className="text-zinc-500 italic">{event.taskSubject}</span>
+        {event.type === "tool_use" && (
+          <span className={event.toolPhase === "end" ? "text-cyan-700" : "text-cyan-300"}>
+            {event.taskSubject}
+            {event.detail && event.detail !== event.taskSubject && (
+              <span className="text-zinc-500"> — {event.detail}</span>
+            )}
+          </span>
+        )}
+        {event.type !== "tool_use" && (
+          <>{" "}<span className="text-zinc-500 italic">{event.taskSubject}</span></>
+        )}
       </span>
     </div>
   )
