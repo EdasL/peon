@@ -157,3 +157,43 @@ export async function bridgeCredentials(
   logger.warn({ userId, lobuAgentId }, "No credentials found (DB, OAuth profiles, or system env)")
   return false
 }
+
+/**
+ * Quick check whether a user has any usable credentials across all sources
+ * (Postgres API keys, OAuth profiles in Redis, or system env vars).
+ * Used as a gate before project creation.
+ */
+export async function hasAnyCredentials(
+  userId: string,
+  services: CoreServices
+): Promise<boolean> {
+  // 1. Postgres API keys
+  const userKeys = await db.query.apiKeys.findMany({
+    where: eq(apiKeys.userId, userId),
+  })
+  if (userKeys.length > 0) return true
+
+  // 2. OAuth profiles in Redis (e.g. Claude Code login)
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { lobuAgentId: true },
+  })
+  if (user?.lobuAgentId) {
+    const agentSettingsStore = services.getAgentSettingsStore()
+    const { AuthProfilesManager } = await import(
+      "../auth/settings/auth-profiles-manager.js"
+    )
+    const profilesManager = new AuthProfilesManager(agentSettingsStore)
+
+    const hasClaudeProfile = await profilesManager.hasProviderProfiles(user.lobuAgentId, "claude")
+    const hasOpenAiProfile = await profilesManager.hasProviderProfiles(user.lobuAgentId, "openai")
+    if (hasClaudeProfile || hasOpenAiProfile) return true
+  }
+
+  // 3. System-level env vars
+  if (process.env.ANTHROPIC_AUTH_TOKEN || process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY) {
+    return true
+  }
+
+  return false
+}

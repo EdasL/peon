@@ -1,10 +1,11 @@
 import { Hono } from "hono"
 import { requireAuth, getSession } from "../../auth/middleware.js"
 import { db } from "../../db/connection.js"
-import { projects, apiKeys, users, teams, teamMembers } from "../../db/schema.js"
+import { projects, users, teams, teamMembers } from "../../db/schema.js"
 import { eq, and } from "drizzle-orm"
 import { ensureUserContainer, initProjectWorkspace } from "../../web/project-launcher.js"
 import { getPeonPlatform } from "../../peon/platform.js"
+import { hasAnyCredentials } from "../../peon/agent-helper.js"
 import {
   getPeonDeploymentName,
   getContainerStatus,
@@ -99,12 +100,11 @@ projectsRouter.post("/", async (c) => {
     }
   }>()
 
-  // Require API key before creating project
-  const hasApiKey = await db.query.apiKeys.findFirst({
-    where: and(eq(apiKeys.userId, session.userId), eq(apiKeys.provider, "anthropic")),
-  })
-  if (!hasApiKey) {
-    return c.json({ error: "Add an Anthropic API key in settings before creating a project" }, 400)
+  // Require at least one credential source (API key, OAuth, or system env)
+  const services = getPeonPlatform().getServices()
+  const hasCreds = await hasAnyCredentials(session.userId, services)
+  if (!hasCreds) {
+    return c.json({ error: "Add an API key or log in with Claude Code in settings before creating a project" }, 400)
   }
 
   // Resolve templateId: use provided value, fall back to "custom" for goal-driven projects
@@ -144,7 +144,6 @@ projectsRouter.post("/", async (c) => {
   }
 
   // Ensure user has a container (idempotent) + init project workspace
-  const services = getPeonPlatform().getServices()
   const teamMembersForLauncher = body.team?.members?.map((m) => ({
     roleName: m.roleName,
     displayName: m.displayName,
