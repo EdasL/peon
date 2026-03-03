@@ -61,75 +61,87 @@ export async function ensureUserContainer(
   return { lobuAgentId, created: true }
 }
 
-/** Map template IDs to substantive CLAUDE.md team configuration content.
- * These configure how Claude Code organizes its work for the project. */
-const TEMPLATE_TEAM_PROMPTS: Record<string, string> = {
-  fullstack: `You are the lead of a full-stack development team.
-
-### Agents
-- **frontend** — UI components, pages, hooks, styling. Owns: \`src/components/\`, \`src/pages/\`, \`src/hooks/\`, \`*.css\`, \`*.tsx\`
-- **backend** — API endpoints, database, server logic. Owns: \`src/api/\`, \`src/server/\`, \`src/db/\`, \`src/routes/\`
-- **qa** — Runs tests after each task group, catches regressions, validates changes
-
-### Workflow
-1. Break incoming requests into frontend + backend sub-tasks
-2. Assign sub-tasks to the appropriate agent by setting task owner
-3. After implementation, assign QA to verify with tests
-4. Review and integrate the final result`,
-
-  backend: `You are the lead of a backend development team.
-
-### Agents
-- **backend** — API endpoints, database models, server-side logic, authentication, data validation
-- **qa** — Runs tests, checks API contracts, validates database migrations
-
-### Workflow
-1. Break incoming requests into implementation sub-tasks
-2. Assign to backend agent for implementation
-3. After each batch, assign QA to run tests and validate
-4. Review API contracts and error handling before marking complete`,
-
-  mobile: `You are the lead of a mobile development team.
-
-### Agents
-- **designer** — UI/UX design, component layout, screen flows, styling
-- **mobile** — Native/cross-platform implementation, platform APIs, navigation
-- **qa** — Device testing, compatibility checks, UI regression testing
-
-### Workflow
-1. Break incoming requests into design + implementation sub-tasks
-2. Designer creates UI specs and component designs first
-3. Mobile agent implements the designs
-4. QA validates on target platforms`,
-
-  default: `You are the lead of a development team. Adapt your approach based on the project requirements.
-
-### Workflow
-1. Analyze incoming requests and break into sub-tasks
-2. Implement changes systematically
-3. Test and validate before marking complete`,
-}
-
 export interface TeamMemberConfig {
   roleName: string
   displayName: string
   systemPrompt: string
 }
 
-function buildTeamPromptFromMembers(members: TeamMemberConfig[]): string {
-  const lines = members.map(
-    (m) => `- **${m.roleName}** (${m.displayName}) — ${m.systemPrompt}`
-  )
-  return `### Agents\n${lines.join("\n")}`
+/**
+ * Build the CLAUDE.md content for the project.
+ * This file is read by the lead session and contains project-level context.
+ * The actual team spawning happens via the system message prompt, not CLAUDE.md.
+ */
+function buildClaudeMd(
+  projectId: string,
+  templateId: string,
+  repoUrl: string | null,
+  members: TeamMemberConfig[]
+): string {
+  const memberList = members
+    .filter((m) => m.roleName !== "lead")
+    .map((m) => `- **${m.roleName}** (${m.displayName})`)
+    .join("\n")
+
+  return `# Project: ${projectId}
+
+## Template: ${templateId}
+${repoUrl ? `\n## Repository\n${repoUrl}\n` : ""}
+## Agent Team
+
+This project uses Claude Code Agent Teams. You are the team lead.
+Your teammates are separate Claude Code sessions that work in parallel.
+
+### Teammates
+${memberList}
+
+### Coordination
+- Use the shared task list to assign and track work
+- Message teammates directly when they need context or course corrections
+- Each teammate owns their scope — do not duplicate their work
+- Run QA after each task group before marking work complete
+`
+}
+
+/**
+ * Build the team spawn instruction that the lead session will execute.
+ * This tells Claude Code to create an Agent Team and spawn each teammate
+ * with their specific role prompt.
+ */
+function buildTeamSpawnInstruction(members: TeamMemberConfig[]): string {
+  const nonLeadMembers = members.filter((m) => m.roleName !== "lead")
+  if (nonLeadMembers.length === 0) return ""
+
+  const teammateSpecs = nonLeadMembers.map((m) => {
+    const firstLine = m.systemPrompt.split("\n")[0] || m.displayName
+    return `- **${m.roleName}** ("${m.displayName}"): ${firstLine}`
+  }).join("\n")
+
+  const spawnBlock = nonLeadMembers.map((m) => {
+    const escapedPrompt = m.systemPrompt.replace(/"/g, '\\"')
+    return `  - ${m.displayName} (role: ${m.roleName}): "${escapedPrompt}"`
+  }).join("\n")
+
+  return `Create an agent team for this project. Spawn the following teammates:
+
+${spawnBlock}
+
+Each teammate should work independently in their own scope. Use the shared task list to coordinate. Teammates can message each other directly.
+
+Team composition:
+${teammateSpecs}
+`
 }
 
 /**
  * Initializes a project workspace inside the user's existing container.
- * Creates the workspace directory structure and sends a system message
- * so the agent knows about the new project and its team configuration.
+ * Creates the workspace directory structure, writes CLAUDE.md with team
+ * context, and sends a system message that instructs the lead to spawn
+ * Agent Team teammates.
  *
- * When teamMembers is provided, the CLAUDE.md is built from those members
- * instead of the templateId. templateId is still used as a label/fallback.
+ * When teamMembers is provided, actual Claude Code Agent Team teammates
+ * are spawned via the system message prompt. The lead session acts as
+ * coordinator and each specialist gets their own Claude Code session.
  */
 export async function initProjectWorkspace(
   userId: string,
@@ -140,24 +152,18 @@ export async function initProjectWorkspace(
   services: CoreServices,
   teamMembers?: TeamMemberConfig[]
 ): Promise<void> {
-  const teamPrompt = teamMembers?.length
-    ? buildTeamPromptFromMembers(teamMembers)
-    : TEMPLATE_TEAM_PROMPTS[templateId] || TEMPLATE_TEAM_PROMPTS.default
+  const members = teamMembers?.length ? teamMembers : []
 
-  // Build the workspace initialization command that the agent will execute
   const workspaceDirs = [
     `/workspace/projects/${projectId}`,
     `/workspace/projects/${projectId}/.claude`,
     `/workspace/projects/${projectId}/src`,
   ]
 
-  const claudeMdContent = `# Project Configuration
-
-## Template: ${templateId}
-${repoUrl ? `\n## Repository\n${repoUrl}\n` : ""}
-## Team Configuration
-${teamPrompt}
-`
+  const claudeMdContent = buildClaudeMd(projectId, templateId, repoUrl, members)
+  const teamSpawnInstruction = members.length > 0
+    ? buildTeamSpawnInstruction(members)
+    : ""
 
   const queueProducer = services.getQueueProducer()
   await queueProducer.enqueueMessage({
@@ -179,15 +185,13 @@ Write this to /workspace/projects/${projectId}/.claude/CLAUDE.md:
 ${claudeMdContent}
 \`\`\`
 ${repoUrl ? `\nClone the repository: git clone ${repoUrl} /workspace/projects/${projectId}` : ""}
-
-Template: ${templateId}. Team prompt: ${teamPrompt}
-
+${teamSpawnInstruction ? `\n${teamSpawnInstruction}` : ""}
 Ready for user instructions.`,
     platformMetadata: {
       projectId,
       userId,
       templateId,
-      teamPrompt,
+      teamMembers: members,
     },
     agentOptions: { provider: "claude" },
   })

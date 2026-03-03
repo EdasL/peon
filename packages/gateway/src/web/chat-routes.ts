@@ -3,7 +3,7 @@ import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
 import { requireAuth, getSession } from "../auth/middleware.js"
 import { db } from "../db/connection.js"
-import { chatMessages, projects, users } from "../db/schema.js"
+import { chatMessages, projects, teams, teamMembers, users } from "../db/schema.js"
 import { eq, and, asc } from "drizzle-orm"
 import { getPeonPlatform } from "../peon/platform.js"
 
@@ -157,6 +157,17 @@ chatRouter.post("/:id/chat", async (c) => {
   const sessionManager = services.getSessionManager()
   await sessionManager.touchSession(lobuAgentId)
 
+  // Fetch configured team for this project
+  const projectTeam = await db.query.teams.findFirst({
+    where: eq(teams.projectId, projectId),
+    with: { members: true },
+  })
+  const teamMembersList = projectTeam?.members?.map((m) => ({
+    roleName: m.roleName,
+    displayName: m.displayName,
+    systemPrompt: m.systemPrompt,
+  })) ?? []
+
   // Enqueue message to existing agent
   const queueProducer = services.getQueueProducer()
   await queueProducer.enqueueMessage({
@@ -169,7 +180,13 @@ chatRouter.post("/:id/chat", async (c) => {
     botId: "peon-agent",
     platform: "peon",
     messageText,
-    platformMetadata: { projectId, userId: session.userId },
+    platformMetadata: {
+      projectId,
+      userId: session.userId,
+      openclawAgentId: `project-${projectId}`,
+      projectName: project.name,
+      teamMembers: teamMembersList,
+    },
     agentOptions: { provider: "claude" },
   })
 

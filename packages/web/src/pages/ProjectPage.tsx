@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useAuth } from "@/hooks/use-auth"
 import { useAgentActivity } from "@/hooks/use-agent-activity"
@@ -14,10 +14,11 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import { ChatPanel } from "@/components/chat/ChatPanel"
-import { Board } from "@/components/board/Board"
+import { AgentTimeline } from "@/components/project/AgentTimeline"
 import { AgentSidebar } from "@/components/project/AgentSidebar"
 import { ActivityFeed } from "@/components/project/ActivityFeed"
 import { ProvisioningOverlay } from "@/components/project/ProvisioningOverlay"
+import { KanbanBoard } from "@/components/board/KanbanBoard"
 import type { Project, TeamMember } from "@/lib/api"
 import * as api from "@/lib/api"
 import { getTemplate } from "@/lib/templates"
@@ -25,6 +26,7 @@ import {
   ArrowLeft,
   AlertCircle,
   MessageSquare,
+  FileCode,
   LayoutGrid,
   Power,
   Settings,
@@ -76,17 +78,23 @@ function ProjectBody({
 }: {
   projectId: string
   templateId?: string
-  centerView: "board" | "chat"
-  onCenterViewChange: (v: "board" | "chat") => void
+  centerView: "timeline" | "chat" | "board"
+  onCenterViewChange: (v: "timeline" | "chat" | "board") => void
 }) {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [teamId, setTeamId] = useState<string | null>(null)
 
-  useEffect(() => {
+  const refreshTeam = useCallback(() => {
     api.getProjectTeams(projectId).then(({ teams }) => {
       const first = teams[0]
-      if (first?.members.length) setTeamMembers(first.members)
+      if (first) {
+        setTeamId(first.id)
+        if (first.members.length) setTeamMembers(first.members)
+      }
     }).catch(() => {})
   }, [projectId])
+
+  useEffect(() => { refreshTeam() }, [refreshTeam])
 
   // Prefer DB team member names, fall back to template
   const agentNames = useMemo(() => {
@@ -98,7 +106,7 @@ function ProjectBody({
     return tmpl?.agents.map((a) => a.role.toLowerCase())
   }, [teamMembers, templateId])
 
-  const { agents, feed, loading, connected, currentToolAction } = useAgentActivity(
+  const { tasks, agents, feed, loading, connected, currentToolAction } = useAgentActivity(
     projectId,
     agentNames
   )
@@ -113,13 +121,27 @@ function ProjectBody({
         currentToolAction={currentToolAction}
         templateId={templateId}
         teamMembers={teamMembers}
+        teamId={teamId}
+        onTeamChange={refreshTeam}
         feedCount={feed.length}
       />
 
-      {/* Center: Board / Chat */}
+      {/* Center: Timeline / Chat */}
       <div className="flex flex-col flex-1 min-w-0 h-full">
         {/* Tab bar */}
         <div className="flex items-center gap-1 border-b border-border/40 px-3 py-1.5 bg-zinc-950 flex-shrink-0">
+          <button
+            onClick={() => onCenterViewChange("timeline")}
+            className={[
+              "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
+              centerView === "timeline"
+                ? "bg-zinc-800 text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-300",
+            ].join(" ")}
+          >
+            <FileCode className="size-3.5" />
+            Code Changes
+          </button>
           <button
             onClick={() => onCenterViewChange("board")}
             className={[
@@ -146,15 +168,23 @@ function ProjectBody({
           </button>
         </div>
 
-        {/* Both panels always mounted to avoid remount on tab switch */}
+        {/* All panels always mounted to avoid remount on tab switch */}
         <div className="flex-1 min-h-0 relative">
+          <div
+            className={[
+              "absolute inset-0",
+              centerView === "timeline" ? "block" : "hidden",
+            ].join(" ")}
+          >
+            <AgentTimeline events={feed} teamMembers={teamMembers} templateId={templateId} />
+          </div>
           <div
             className={[
               "absolute inset-0",
               centerView === "board" ? "block" : "hidden",
             ].join(" ")}
           >
-            <Board teamName={projectId} />
+            <KanbanBoard tasks={tasks} teamMembers={teamMembers} templateId={templateId} />
           </div>
           <div
             className={[
@@ -168,15 +198,42 @@ function ProjectBody({
       </div>
 
       {/* Right: Activity feed (280px) */}
-      <ActivityFeed events={feed} />
+      <ActivityFeed events={feed} teamMembers={teamMembers} templateId={templateId} />
     </div>
   )
+}
+
+const VALID_VIEWS = ["timeline", "chat", "board"] as const
+type CenterView = (typeof VALID_VIEWS)[number]
+
+function parseViewFromUrl(searchParams: URLSearchParams): CenterView {
+  const v = searchParams.get("view")
+  if (v === "timeline" || v === "chat" || v === "board") return v
+  return "chat"
 }
 
 export function ProjectPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user, logout } = useAuth()
+
+  const centerViewFromUrl = parseViewFromUrl(searchParams)
+  const [centerView, setCenterView] = useState<CenterView>(centerViewFromUrl)
+
+  // Sync view from URL when URL changes (e.g. back/forward)
+  useEffect(() => {
+    const v = parseViewFromUrl(searchParams)
+    setCenterView(v)
+  }, [searchParams])
+
+  const handleCenterViewChange = useCallback(
+    (v: CenterView) => {
+      setCenterView(v)
+      setSearchParams({ view: v }, { replace: true })
+    },
+    [setSearchParams]
+  )
 
   const initials =
     user?.name
@@ -190,7 +247,6 @@ export function ProjectPage() {
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<Project["status"] | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [centerView, setCenterView] = useState<"board" | "chat">("chat")
   const [headerTeamMembers, setHeaderTeamMembers] = useState<TeamMember[]>([])
 
   useEffect(() => {
@@ -418,7 +474,7 @@ export function ProjectPage() {
         projectId={id}
         templateId={project?.templateId}
         centerView={centerView}
-        onCenterViewChange={setCenterView}
+        onCenterViewChange={handleCenterViewChange}
       />
     </div>
   )

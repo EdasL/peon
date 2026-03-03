@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
+import { useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/use-auth"
 import { AuthLayout } from "@/components/layout/AuthLayout"
@@ -30,9 +31,33 @@ const NAV_ITEMS: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: "danger", label: "Danger Zone", icon: <Trash2 className="h-4 w-4" /> },
 ]
 
+const VALID_SECTIONS: Section[] = ["profile", "api-keys", "github", "danger"]
+
+function parseSectionFromUrl(searchParams: URLSearchParams): Section {
+  const s = searchParams.get("section")
+  if (s && VALID_SECTIONS.includes(s as Section)) return s as Section
+  return "profile"
+}
+
 export function SettingsPage() {
   const { user, refreshUser } = useAuth()
-  const [section, setSection] = useState<Section>("profile")
+  const [searchParams, setSearchParams] = useSearchParams()
+  const sectionFromUrl = parseSectionFromUrl(searchParams)
+  const [section, setSection] = useState<Section>(sectionFromUrl)
+
+  // Sync section from URL when URL changes (e.g. back/forward)
+  useEffect(() => {
+    const s = parseSectionFromUrl(searchParams)
+    setSection(s)
+  }, [searchParams])
+
+  const handleSectionChange = useCallback(
+    (s: Section) => {
+      setSection(s)
+      setSearchParams({ section: s }, { replace: true })
+    },
+    [setSearchParams]
+  )
   const [oauthConnections, setOauthConnections] = useState<api.OAuthConnection[]>([])
   const [keysLoading, setKeysLoading] = useState(true)
 
@@ -153,7 +178,7 @@ export function SettingsPage() {
           {NAV_ITEMS.map((item) => (
             <button
               key={item.id}
-              onClick={() => setSection(item.id)}
+              onClick={() => handleSectionChange(item.id)}
               className={`w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
                 section === item.id
                   ? "bg-accent text-accent-foreground"

@@ -28,6 +28,7 @@ import { PROVIDER_REGISTRY_ALIASES, resolveModelRef } from "./model-resolver";
 import { OpenClawWsClient, type OpenClawEvent } from "./openclaw-ws-client";
 import { getOpenClawProcess } from "./openclaw-process";
 import { getOpenClawSessionContext } from "./session-context";
+import { ensureProjectAgent } from "./agent-registry";
 
 const logger = createLogger("worker");
 
@@ -383,12 +384,18 @@ Use it when the user references past discussions or you need context.`);
     const finalInstructions = instructionParts.filter(Boolean).join("\n\n");
 
     // Write OpenClaw config files (SOUL.md, skills, agents config)
+    const pmeta = this.config.platformMetadata as Record<string, unknown> | undefined;
+    const teamMembers = Array.isArray(pmeta?.teamMembers)
+      ? (pmeta.teamMembers as Array<{ roleName: string; displayName: string; systemPrompt: string }>)
+      : undefined;
     await writeOpenClawConfig({
       workspaceDir,
       gatewayInstructions: context.gatewayInstructions,
       customInstructions: finalInstructions,
       providerConfig: pc,
       cliBackends: pc.cliBackends,
+      openclawAgentId: (pmeta?.openclawAgentId as string) ?? "master",
+      teamMembers,
     });
 
     // Credential injection — the real API key or OAuth token is passed via env vars.
@@ -515,8 +522,18 @@ Use it when the user references past discussions or you need context.`);
         });
       }, HEARTBEAT_INTERVAL_MS);
 
+      // Ensure per-project agent exists if this message targets a project
+      const meta = this.config.platformMetadata as Record<string, unknown> | undefined;
+      const openclawAgentId = (meta?.openclawAgentId as string) ?? "master";
+      if (openclawAgentId !== "master" && meta?.projectId && meta?.projectName) {
+        await ensureProjectAgent(
+          meta.projectId as string,
+          meta.projectName as string,
+        );
+      }
+
       // Send message to OpenClaw and process streaming events
-      const sessionKey = `agent:main:peon:${this.config.conversationId}`;
+      const sessionKey = `agent:${openclawAgentId}:peon:${this.config.conversationId}`;
       const events = this.wsClient.sendMessage({
         message: effectivePrompt,
         sessionKey,
@@ -617,12 +634,18 @@ Use it when the user references past discussions or you need context.`);
 
       case "tool_start": {
         logger.info(`[openclaw:tool] Starting: ${event.name}`);
-        onDelta(`\n> Running ${event.name}...\n`);
-        const activityText = buildToolActivityText(event.name, event.input ?? {});
+        const input = event.input ?? {};
+        const activityText = buildToolActivityText(event.name, input);
+        const label = activityText || `Running ${event.name}`;
+        onDelta(`\n> ${label}...\n`);
+        const filePath = (input.file_path ?? input.path) as string | undefined;
+        const command = input.command as string | undefined;
         this.postAgentActivity({
           type: "tool_start",
           tool: event.name,
           ...(activityText && { text: activityText }),
+          ...(filePath && { filePath }),
+          ...(command && { command }),
         });
         break;
       }
@@ -654,6 +677,8 @@ Use it when the user references past discussions or you need context.`);
     tool?: string;
     text?: string;
     message?: string;
+    filePath?: string;
+    command?: string;
   }): void {
     const gatewayUrl = process.env.DISPATCHER_URL;
     const workerToken = process.env.WORKER_TOKEN;
@@ -667,7 +692,7 @@ Use it when the user references past discussions or you need context.`);
       },
       body: JSON.stringify({
         ...event,
-        agentName: this.config.agentId ?? "agent",
+        agentName: "lead",
         timestamp: Date.now(),
       }),
       signal: AbortSignal.timeout(3000),

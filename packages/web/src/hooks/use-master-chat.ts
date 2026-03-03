@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react"
-import type { ChatMessage } from "@/lib/api"
+import type { MasterChatMessage } from "@/lib/api"
 import * as api from "@/lib/api"
 
 const STALE_THRESHOLD_MS = 30_000
 const BACKOFF_INITIAL_MS = 1_000
 const BACKOFF_MAX_MS = 30_000
 
-export function useChat(projectId: string) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+export function useMasterChat() {
+  const [messages, setMessages] = useState<MasterChatMessage[]>([])
   const [sending, setSending] = useState(false)
   const [streamingContent, setStreamingContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -31,20 +31,18 @@ export function useChat(projectId: string) {
     (isReconnect: boolean) => {
       if (cancelledRef.current) return
 
-      // Close any existing connection
       if (eventSourceRef.current) {
         eventSourceRef.current.close()
         eventSourceRef.current = null
       }
 
-      const es = new EventSource(`/api/projects/${projectId}/chat/stream`, {
+      const es = new EventSource("/api/chat/stream", {
         withCredentials: true,
       })
       eventSourceRef.current = es
 
       es.onopen = () => {
         if (cancelledRef.current) return
-        // Reset backoff on successful open
         backoffRef.current = BACKOFF_INITIAL_MS
         lastEventTimeRef.current = Date.now()
         setConnected(true)
@@ -52,19 +50,12 @@ export function useChat(projectId: string) {
 
         if (isReconnect) {
           api
-            .getChatHistory(projectId)
+            .getMasterChatHistory()
             .then((d) => {
-              if (cancelledRef.current) return
-              setMessages(d.messages)
-              // Only clear streaming if the response was already persisted
-              // (last message is from the assistant). Otherwise keep showing
-              // partial content so the user doesn't see a jarring loss.
-              const lastMsg = d.messages[d.messages.length - 1]
-              if (lastMsg?.role === "assistant") {
-                setStreamingContent(null)
-              }
+              if (!cancelledRef.current) setMessages(d.messages)
             })
             .catch(() => {})
+          setStreamingContent(null)
         }
       }
 
@@ -74,7 +65,6 @@ export function useChat(projectId: string) {
         es.close()
         eventSourceRef.current = null
 
-        // Schedule reconnect with exponential backoff
         clearReconnectTimer()
         const delay = backoffRef.current
         backoffRef.current = Math.min(backoffRef.current * 2, BACKOFF_MAX_MS)
@@ -92,7 +82,7 @@ export function useChat(projectId: string) {
 
       es.addEventListener("message", (e) => {
         markEvent()
-        const msg = JSON.parse(e.data) as ChatMessage
+        const msg = JSON.parse(e.data) as MasterChatMessage
         if (msg.role === "assistant") {
           setStreamingContent(null)
         }
@@ -116,21 +106,18 @@ export function useChat(projectId: string) {
         }
       })
 
-      // Mark any other event types as activity
       es.addEventListener("task_update", markEvent)
       es.addEventListener("agent_activity", markEvent)
-      es.addEventListener("project_status", markEvent)
     },
-    [projectId],
+    [],
   )
 
   useEffect(() => {
     cancelledRef.current = false
 
-    // Load history
     setLoading(true)
     api
-      .getChatHistory(projectId)
+      .getMasterChatHistory()
       .then((d) => {
         if (!cancelledRef.current) {
           setMessages(d.messages)
@@ -147,10 +134,8 @@ export function useChat(projectId: string) {
         if (!cancelledRef.current) setLoading(false)
       })
 
-    // Initial SSE connection
     connectSSE(false)
 
-    // Stale-connection detector: if no event in 30s, treat as disconnected and reconnect
     staleCheckRef.current = setInterval(() => {
       if (cancelledRef.current) return
       const elapsed = Date.now() - lastEventTimeRef.current
@@ -179,18 +164,18 @@ export function useChat(projectId: string) {
         eventSourceRef.current = null
       }
     }
-  }, [projectId, connectSSE])
+  }, [connectSSE])
 
   const send = useCallback(
     async (content: string) => {
       setSending(true)
       setError(null)
 
-      // Optimistic insert — show the message immediately
       const optimisticId = `optimistic-${Date.now()}`
-      const optimisticMsg: ChatMessage = {
+      const optimisticMsg: MasterChatMessage = {
         id: optimisticId,
-        projectId,
+        userId: null,
+        projectId: null,
         role: "user",
         content,
         createdAt: new Date().toISOString(),
@@ -198,18 +183,14 @@ export function useChat(projectId: string) {
       setMessages((prev) => [...prev, optimisticMsg])
 
       try {
-        const { message } = await api.sendChatMessage(projectId, content)
-        // Replace optimistic message with server-confirmed one (also dedup if SSE arrived first)
+        const { message } = await api.sendMasterChatMessage(content)
         setMessages((prev) => {
           if (prev.some((m) => m.id === message.id)) {
             return prev.filter((m) => m.id !== optimisticId)
           }
           return prev.map((m) => (m.id === optimisticId ? message : m))
         })
-        // Show typing indicator immediately — replaced by real content when SSE events arrive
-        setStreamingContent("Thinking...")
       } catch (err: unknown) {
-        // Remove optimistic message on failure
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId))
         const msg = err instanceof Error ? err.message : "Failed to send message"
         setError(msg)
@@ -217,7 +198,7 @@ export function useChat(projectId: string) {
         setSending(false)
       }
     },
-    [projectId],
+    [],
   )
 
   return { messages, send, sending, streamingContent, loading, error, connected }

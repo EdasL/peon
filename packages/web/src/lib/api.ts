@@ -70,11 +70,20 @@ export const disconnectOAuth = (provider: string) =>
 export const deleteAccount = () =>
   request<{ ok: boolean }>("/api/user", { method: "DELETE" })
 
-// Chat
+// Chat (project-scoped)
 export const getChatHistory = (projectId: string) =>
   request<{ messages: ChatMessage[] }>(`/api/projects/${projectId}/chat`)
 export const sendChatMessage = (projectId: string, content: string) =>
   request<{ message: ChatMessage }>(`/api/projects/${projectId}/chat`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  })
+
+// Master chat (global orchestrator)
+export const getMasterChatHistory = () =>
+  request<{ messages: MasterChatMessage[] }>("/api/chat")
+export const sendMasterChatMessage = (content: string) =>
+  request<{ message: MasterChatMessage }>("/api/chat", {
     method: "POST",
     body: JSON.stringify({ content }),
   })
@@ -265,6 +274,15 @@ export interface OAuthConnection {
 export interface ChatMessage {
   id: string
   projectId: string
+  role: "user" | "assistant"
+  content: string
+  createdAt: string
+}
+
+export interface MasterChatMessage {
+  id: string
+  userId: string | null
+  projectId: null
   role: "user" | "assistant"
   content: string
   createdAt: string

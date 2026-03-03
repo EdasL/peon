@@ -435,16 +435,16 @@ export class OpenClawWsClient {
     }
 
     if (frame.type === "event" && frame.event) {
-      const parsed = this.parseEvent(frame);
-      if (parsed && this.eventListener) {
-        const done =
-          parsed.type === "turn_end" || parsed.type === "error";
-        this.eventListener(parsed, done);
+      const events = this.parseEvent(frame);
+      for (const evt of events) {
+        if (!this.eventListener) break;
+        const done = evt.type === "turn_end" || evt.type === "error";
+        this.eventListener(evt, done);
       }
     }
   }
 
-  private parseEvent(frame: WsFrame): OpenClawEvent | null {
+  private parseEvent(frame: WsFrame): OpenClawEvent[] {
     const data = frame.data ?? frame.payload ?? {};
 
     if (frame.event === "chat") {
@@ -456,7 +456,7 @@ export class OpenClawWsClient {
     }
 
     logger.debug(`Unhandled event type: ${frame.event}`);
-    return null;
+    return [];
   }
 
   /**
@@ -468,40 +468,47 @@ export class OpenClawWsClient {
    * incremental deltas. We track the last seen length and emit only
    * the new portion.
    */
-  private parseChatEvent(data: Record<string, unknown>): OpenClawEvent | null {
+  private extractTextDelta(data: Record<string, unknown>): OpenClawEvent | null {
+    const msg = data.message as Record<string, unknown> | undefined;
+    const content = msg?.content as Array<Record<string, unknown>> | undefined;
+    const fullText = content?.[0]?.text as string | undefined;
+    if (fullText && fullText.length > this.chatAccumulatedLen) {
+      const delta = fullText.slice(this.chatAccumulatedLen);
+      this.chatAccumulatedLen = fullText.length;
+      return { type: "text_delta", delta };
+    }
+    return null;
+  }
+
+  private parseChatEvent(data: Record<string, unknown>): OpenClawEvent[] {
     const state = data.state as string | undefined;
 
     if (state === "delta") {
-      const msg = data.message as Record<string, unknown> | undefined;
-      const content = msg?.content as Array<Record<string, unknown>> | undefined;
-      const fullText = content?.[0]?.text as string | undefined;
-      if (fullText) {
-        const prev = this.chatAccumulatedLen;
-        if (fullText.length > prev) {
-          this.chatAccumulatedLen = fullText.length;
-          return { type: "text_delta", delta: fullText.slice(prev) };
-        }
-      }
-      return null;
+      const evt = this.extractTextDelta(data);
+      return evt ? [evt] : [];
     }
 
     if (state === "final") {
-      return { type: "turn_end" };
+      const events: OpenClawEvent[] = [];
+      const trailing = this.extractTextDelta(data);
+      if (trailing) events.push(trailing);
+      events.push({ type: "turn_end" });
+      return events;
     }
 
     if (state === "error") {
-      return {
+      return [{
         type: "error",
         message: (data.errorMessage as string) ?? "Agent error",
-      };
+      }];
     }
 
     if (state === "aborted") {
-      return { type: "turn_end" };
+      return [{ type: "turn_end" }];
     }
 
     logger.debug(`Unhandled chat event state: ${state}`);
-    return null;
+    return [];
   }
 
   /**
@@ -511,50 +518,50 @@ export class OpenClawWsClient {
    * Text streaming comes via "chat" events — the "agent" assistant stream
    * carries accumulated text so we skip it to avoid duplication.
    */
-  private parseAgentEvent(payload: Record<string, unknown>): OpenClawEvent | null {
+  private parseAgentEvent(payload: Record<string, unknown>): OpenClawEvent[] {
     const stream = payload.stream as string | undefined;
     const evtData = payload.data as Record<string, unknown> | undefined;
 
     if (stream === "tool" && evtData) {
       const phase = evtData.phase as string | undefined;
       if (phase === "start" || !phase) {
-        return {
+        return [{
           type: "tool_start",
           name: (evtData.name as string) ?? "unknown",
           input: (evtData.input as Record<string, unknown>) ?? {},
-        };
+        }];
       }
       if (phase === "end" || phase === "result") {
-        return {
+        return [{
           type: "tool_end",
           name: (evtData.name as string) ?? "unknown",
           result: (evtData.result as string) ?? "",
-        };
+        }];
       }
     }
 
     if (stream === "lifecycle" && evtData) {
       const phase = evtData.phase as string | undefined;
       if (phase === "end") {
-        return { type: "turn_end" };
+        return [{ type: "turn_end" }];
       }
       if (phase === "error") {
-        return {
+        return [{
           type: "error",
           message: (evtData.error as string) ?? "Agent lifecycle error",
-        };
+        }];
       }
     }
 
     if (stream === "error") {
-      return {
+      return [{
         type: "error",
         message: (evtData?.reason as string) ?? "Agent error",
-      };
+      }];
     }
 
     logger.debug(`Unhandled agent event stream: ${stream}`);
-    return null;
+    return [];
   }
 
   // -------------------------------------------------------------------------

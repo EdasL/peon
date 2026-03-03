@@ -51,6 +51,10 @@ export interface AgentActivityEvent {
   message?: string
   /** Agent identity (e.g., "lead", "frontend", "backend") */
   agentName?: string
+  /** File path associated with the tool call (Read, Write, Edit, Grep, Glob) */
+  filePath?: string
+  /** Shell command (Bash tool) */
+  command?: string
   timestamp: number
 }
 
@@ -139,6 +143,8 @@ export function createAgentActivityRoutes(): Hono {
       ...(body.text && { text: body.text.slice(0, 200) }),
       ...(body.message && { message: body.message.slice(0, 500) }),
       ...(body.agentName && { agentName: body.agentName.slice(0, 50) }),
+      ...(body.filePath && { filePath: String(body.filePath).slice(0, 300) }),
+      ...(body.command && { command: String(body.command).slice(0, 300) }),
     }
 
     broadcastToProject(projectId, "agent_activity", event)

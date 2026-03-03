@@ -62,6 +62,7 @@ function toolVerb(tool: string): string {
     case "multiedit":
       return "Editing"
     case "bash":
+    case "exec":
       return "Running"
     case "grep":
       return "Searching"
@@ -95,7 +96,8 @@ function toolLabel(tool: string, opts?: { filePath?: string; command?: string; t
     case "write": return "Creating file"
     case "edit":
     case "multiedit": return "Editing file"
-    case "bash": return "Running command"
+    case "bash":
+    case "exec": return "Running command"
     case "grep": return "Searching codebase"
     case "glob": return "Scanning files"
     case "webbrowser":
@@ -338,7 +340,8 @@ export function useAgentActivity(projectId: string, templateAgentNames?: string[
               updated[idx] = { ...updated[idx], status: "working", activeForm: label }
               return updated
             }
-            return prev.map((a) => ({ ...a, status: "working" as const, activeForm: label }))
+            // Unknown agent — add as new entry rather than marking all agents working
+            return [...prev, { name: agentName, status: "working" as const, currentTask: null, activeForm: label }]
           })
           setLastToolAction({ text: label, at: Date.now() })
           addFeedEvent({
@@ -370,7 +373,13 @@ export function useAgentActivity(projectId: string, templateAgentNames?: string[
           setAgents((prev) => {
             if (prev.length === 0)
               return [{ name: agentName, status: "error", currentTask: null, activeForm: data.message ?? null }]
-            return prev.map((a) => ({ ...a, status: "error" as const, activeForm: data.message ?? a.activeForm }))
+            const idx = prev.findIndex((a) => a.name === agentName)
+            if (idx >= 0) {
+              const updated = [...prev]
+              updated[idx] = { ...updated[idx], status: "error", activeForm: data.message ?? null }
+              return updated
+            }
+            return [...prev, { name: agentName, status: "error" as const, currentTask: null, activeForm: data.message ?? null }]
           })
           addFeedEvent({
             timestamp: ts,

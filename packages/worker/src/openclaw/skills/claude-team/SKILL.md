@@ -6,12 +6,13 @@ that can read, write, edit, and execute code in the project's workspace.
 ## Tools
 
 ### DelegateToProject
-Send a coding task to a project's Claude Code team. The team will execute the
-task in the project's workspace directory and stream progress back.
+Send a coding task to your team. The lead session spawns teammates automatically.
 
 **Parameters:**
 - `projectId` (required): The project identifier (maps to /workspace/projects/{projectId})
 - `task` (required): The coding task to delegate (natural language description)
+- `teamMembers` (required in practice): Array of team members from your "Your Team" configuration. Each has `roleName`, `displayName`, and `systemPrompt`. Always include the full team so the lead can spawn the right teammates.
+- `role` (optional): Primary role for this delegation (default: "lead")
 - `allowedTools` (optional): Comma-separated list of allowed tools (default: Read,Edit,Write,Bash,Grep,Glob)
 
 **Returns:** The result text from the Claude Code team, or an error message.
@@ -32,12 +33,43 @@ Get the final result from a completed team task.
 
 **Returns:** The team's output text, or an error if still running.
 
-## Usage
+### CreateProjectTasks
+Create tasks on the project's kanban board before delegating. Tasks appear in the
+Todo column and move to In Progress / Done as the team works on them.
+
+**Parameters:**
+- `projectId` (required): The project identifier
+- `tasks` (required): Array of `{ subject, description?, owner? }`
+
+**Returns:** Confirmation with created task IDs.
+
+## Recommended Workflow
 
 ```
 1. User sends: "Add a login page to project-alpha"
-2. Orchestrator calls: DelegateToProject(projectId="project-alpha", task="Add a login page with email/password form")
-3. Claude Code team executes in /workspace/projects/project-alpha/
-4. Progress streams back to the orchestrator
-5. Orchestrator reports the result to the user
+2. Orchestrator asks clarifying questions if needed (scope, tech stack, requirements)
+3. User confirms the plan
+4. Orchestrator calls: CreateProjectTasks(
+     projectId="project-alpha",
+     tasks=[
+       { subject: "Create login form component", description: "..." , owner: "frontend" },
+       { subject: "Add auth API endpoint", description: "...", owner: "backend" },
+       { subject: "Write login tests", description: "...", owner: "qa" }
+     ]
+   )
+5. Tasks appear on the board in the Todo column
+6. Orchestrator calls: DelegateToProject(
+     projectId="project-alpha",
+     task="Implement the login feature as planned in the task board",
+     teamMembers=[{roleName: "lead", ...}, {roleName: "frontend", ...}, ...]
+   )
+7. Lead session spawns teammates, coordinates the work
+8. Tasks move to In Progress then Done as work completes
+9. Orchestrator reports the result to the user
 ```
+
+## Important
+
+Always pass the configured team from your "Your Team" section as `teamMembers`.
+Do not invent new roles — only use the roles the user configured.
+Always create tasks on the board before delegating so the user can track progress.

@@ -40,10 +40,12 @@ export async function ensureLobuAgent(
  * Bridges the user's API keys from Postgres into Lobu's AgentSettingsStore
  * so the orchestrator can inject them into workers via the proxy pattern.
  *
- * Bridges both Anthropic and OpenAI keys. Always upserts credentials so
- * changes to API keys in settings are picked up on every call.
+ * Checks three credential sources (in order):
+ * 1. API keys in Postgres `apiKeys` table (manual keys from settings)
+ * 2. OAuth profiles already stored in Redis (e.g. Claude Code login)
+ * 3. System-level env vars (ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN)
  *
- * Returns true if at least one credential was bridged, false if no keys found.
+ * Returns true if at least one credential source is available.
  */
 export async function bridgeCredentials(
   userId: string,
@@ -65,7 +67,7 @@ export async function bridgeCredentials(
     profilesManager
   )
 
-  // Fetch all API keys for this user
+  // Fetch all API keys for this user from Postgres
   const userKeys = await db.query.apiKeys.findMany({
     where: eq(apiKeys.userId, userId),
   })
@@ -74,11 +76,6 @@ export async function bridgeCredentials(
     { userId, lobuAgentId, keyCount: userKeys.length, providers: userKeys.map(k => k.provider) },
     "bridgeCredentials: fetched user API keys from DB"
   )
-
-  if (userKeys.length === 0) {
-    logger.warn({ userId, lobuAgentId }, "No API keys found for user")
-    return false
-  }
 
   let bridgedCount = 0
 
@@ -93,7 +90,6 @@ export async function bridgeCredentials(
         { userId, lobuAgentId, keyPreview, label: key.label },
         "bridgeCredentials: upserting Anthropic key into Redis"
       )
-      // "anthropic" in apiKeys table maps to "claude" in the module registry
       await catalogService.installProvider(lobuAgentId, "claude")
       await profilesManager.upsertProfile({
         agentId: lobuAgentId,
@@ -109,7 +105,6 @@ export async function bridgeCredentials(
       )
       bridgedCount++
     } else if (key.provider === "openai") {
-      // "openai" in apiKeys table maps to "openai" in the module registry
       await catalogService.installProvider(lobuAgentId, "openai")
       await profilesManager.upsertProfile({
         agentId: lobuAgentId,
@@ -127,5 +122,38 @@ export async function bridgeCredentials(
     }
   }
 
-  return bridgedCount > 0
+  if (bridgedCount > 0) {
+    return true
+  }
+
+  // No keys in Postgres — check if OAuth profiles already exist in Redis
+  // (e.g. user authenticated via Claude Code OAuth login)
+  const hasClaudeProfile = await profilesManager.hasProviderProfiles(lobuAgentId, "claude")
+  const hasOpenAiProfile = await profilesManager.hasProviderProfiles(lobuAgentId, "openai")
+
+  if (hasClaudeProfile || hasOpenAiProfile) {
+    logger.info(
+      { userId, lobuAgentId, hasClaudeProfile, hasOpenAiProfile },
+      "bridgeCredentials: found existing OAuth profiles in Redis"
+    )
+    return true
+  }
+
+  // Last resort — check for system-level env var keys
+  const hasSystemKey = !!(
+    process.env.ANTHROPIC_AUTH_TOKEN ||
+    process.env.CLAUDE_CODE_OAUTH_TOKEN ||
+    process.env.ANTHROPIC_API_KEY
+  )
+
+  if (hasSystemKey) {
+    logger.info(
+      { userId, lobuAgentId },
+      "bridgeCredentials: using system-level credentials"
+    )
+    return true
+  }
+
+  logger.warn({ userId, lobuAgentId }, "No credentials found (DB, OAuth profiles, or system env)")
+  return false
 }

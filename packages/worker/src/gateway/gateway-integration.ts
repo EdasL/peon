@@ -149,6 +149,7 @@ export class HttpWorkerTransport implements WorkerTransport {
   }
 
   async signalCompletion(): Promise<void> {
+    const accumulated = this.accumulatedStreamContent.join("");
     await this.sendResponse({
       messageId: this.originalMessageTs,
       channelId: this.channelId,
@@ -160,6 +161,7 @@ export class HttpWorkerTransport implements WorkerTransport {
       processedMessageIds: this.processedMessageIds,
       botResponseId: this.botResponseTs,
       moduleData: this.moduleData,
+      content: accumulated || undefined,
     });
   }
 

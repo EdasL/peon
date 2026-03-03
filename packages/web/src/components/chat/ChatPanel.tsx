@@ -6,6 +6,22 @@ import { Loader2, MessageSquare, Send, X, RefreshCw } from "lucide-react"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { cn } from "@/lib/utils"
 
+const THINKING_SENTINEL = "Thinking..."
+
+function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-[3px] py-1">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="size-1.5 rounded-full bg-zinc-400 animate-bounce"
+          style={{ animationDelay: `${i * 150}ms`, animationDuration: "0.8s" }}
+        />
+      ))}
+    </span>
+  )
+}
+
 function formatTime(iso: string): string {
   try {
     const d = new Date(iso)
@@ -152,7 +168,11 @@ export function ChatPanel({ projectId }: { projectId: string }) {
                 </div>
                 <div className="flex flex-col items-start max-w-[80%]">
                   <div className="rounded-xl rounded-bl-sm px-3.5 py-2 text-sm bg-zinc-800/80 text-zinc-100 leading-relaxed">
-                    <MarkdownMessage content={streamingContent + "▍"} />
+                    {streamingContent === THINKING_SENTINEL ? (
+                      <TypingDots />
+                    ) : (
+                      <MarkdownMessage content={streamingContent + "▍"} />
+                    )}
                   </div>
                 </div>
               </div>
@@ -164,7 +184,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
       {/* Input */}
       <div className="p-3 border-t border-border/40">
-        <div className="flex gap-2 items-end">
+        <div className="flex gap-2 items-start">
           <div className="flex-1 relative">
             <textarea
               value={input}
@@ -195,7 +215,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
             size="icon"
             onClick={handleSend}
             disabled={sending || !input.trim()}
-            className="h-9 w-9 flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-800 disabled:text-zinc-600"
+            className="h-[36px] min-h-[36px] w-[36px] flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-800 disabled:text-zinc-600"
           >
             {sending ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

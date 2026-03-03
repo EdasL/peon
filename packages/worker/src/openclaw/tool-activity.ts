@@ -32,7 +32,9 @@ export function buildToolActivityText(
     case "Write":
       return shortPath ? `Writing ${shortPath}` : "Writing file";
 
-    case "Bash": {
+    case "Bash":
+    case "exec":
+    case "Exec": {
       const cmd = (input.command as string | undefined) ?? "";
       return cmd ? `Running ${cmd.slice(0, 100)}` : "Running command";
     }

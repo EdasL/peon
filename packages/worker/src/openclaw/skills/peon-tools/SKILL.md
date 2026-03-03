@@ -16,9 +16,15 @@ to interact with the user through the platform (Slack, WhatsApp, Telegram, Web).
 - **GenerateAudio** — Text-to-speech generation
 - **GetChannelHistory** — Fetch previous messages from the conversation thread
 - **AskUserQuestion** — Post a question with clickable button options
+- **CreateProjectTasks** — Create tasks on a project's kanban board (Todo column) before delegating work. Use this to break a user request into well-defined tasks that the user can see and track.
+- **DelegateToProject** — Send a coding task to your team. Always include the full configured team as teamMembers.
+- **CheckTeamStatus** — Check if a Claude Code team is still working
+- **GetTeamResult** — Get the result from a completed team task
 
 ## Notes
 
 - UploadUserFile is the primary way to share generated content with users
 - GetSettingsLinkForDomain should be called when network requests fail with 403
 - AskUserQuestion ends the current session; the user's response arrives as a new message
+- When calling DelegateToProject, always pass teamMembers from your "Your Team" configuration
+- Before delegating, use CreateProjectTasks to add planned tasks to the board so the user can track progress

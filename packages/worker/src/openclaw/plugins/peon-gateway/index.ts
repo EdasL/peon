@@ -416,6 +416,74 @@ async function getChannelHistory(
 }
 
 // ---------------------------------------------------------------------------
+// CreateProjectTasks — orchestrator tool to pre-create tasks on the board
+// before delegating to the team.
+// ---------------------------------------------------------------------------
+
+interface TaskInput {
+  subject: string;
+  description?: string;
+  owner?: string;
+}
+
+async function createProjectTasks(
+  _id: string,
+  params: { projectId: string; tasks: TaskInput[] },
+): Promise<ToolResult> {
+  const g = gw();
+  if (!g.gatewayUrl || !g.workerToken) {
+    return text("Error: gateway not configured");
+  }
+  if (!params.tasks?.length) {
+    return text("Error: at least one task is required");
+  }
+
+  const created: string[] = [];
+  const errors: string[] = [];
+
+  for (const t of params.tasks) {
+    const id = `peon-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const body = {
+      id,
+      subject: t.subject,
+      description: t.description ?? "",
+      status: "pending",
+      owner: t.owner ?? null,
+      boardColumn: "todo",
+      updatedAt: Date.now(),
+    };
+
+    try {
+      const res = await fetch(`${g.gatewayUrl}/internal/tasks`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${g.workerToken}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        created.push(id);
+      } else {
+        errors.push(`${t.subject}: ${res.statusText}`);
+      }
+    } catch (err) {
+      errors.push(`${t.subject}: ${String(err)}`);
+    }
+  }
+
+  const lines = [`Created ${created.length}/${params.tasks.length} tasks on the board.`];
+  if (created.length > 0) {
+    lines.push("Task IDs: " + created.join(", "));
+  }
+  if (errors.length > 0) {
+    lines.push("Errors: " + errors.join("; "));
+  }
+  return text(lines.join("\n"));
+}
+
+// ---------------------------------------------------------------------------
 // Task sync helpers — forward Claude Code's TaskCreate/TaskUpdate/TaskList
 // tool calls to the gateway's internal task API so they appear in the board.
 // ---------------------------------------------------------------------------
@@ -500,7 +568,8 @@ async function postSubagentActivity(
   agentName: string,
   type: "tool_start" | "tool_end" | "turn_end",
   tool?: string,
-  text?: string
+  text?: string,
+  extra?: { filePath?: string; command?: string },
 ): Promise<void> {
   const g = gw();
   if (!g.gatewayUrl || !g.workerToken) return;
@@ -511,6 +580,8 @@ async function postSubagentActivity(
     timestamp: Date.now(),
     ...(tool && { tool }),
     ...(text && { text }),
+    ...(extra?.filePath && { filePath: extra.filePath }),
+    ...(extra?.command && { command: extra.command }),
   };
 
   try {
@@ -529,8 +600,14 @@ async function postSubagentActivity(
 }
 
 // ---------------------------------------------------------------------------
-// DelegateToProject (Claude Code team management)
+// DelegateToProject (Claude Code Agent Teams management)
 // ---------------------------------------------------------------------------
+
+interface TeamMember {
+  roleName: string;
+  displayName: string;
+  systemPrompt: string;
+}
 
 interface TeamProcess {
   sessionName: string;
@@ -547,9 +624,37 @@ function getProjectWorkspace(projectId: string): string {
   return join(homedir(), "projects", projectId);
 }
 
+/**
+ * Build a prompt prefix that tells Claude Code to create an Agent Team
+ * and spawn teammates with their specific role prompts.
+ */
+function buildTeamSpawnPrompt(members: TeamMember[]): string {
+  const nonLead = members.filter((m) => m.roleName !== "lead");
+  if (nonLead.length === 0) return "";
+
+  const spawnLines = nonLead.map((m) => {
+    const escapedPrompt = m.systemPrompt.replace(/"/g, '\\"');
+    return `  - ${m.displayName} (role: ${m.roleName}): "${escapedPrompt}"`;
+  }).join("\n");
+
+  return `You are the team lead. Create an agent team and spawn the following teammates:
+
+${spawnLines}
+
+Each teammate is an independent Claude Code session. They coordinate through the shared task list and can message each other directly. You assign tasks and review results.
+
+`;
+}
+
 async function delegateToProject(
   _id: string,
-  params: { projectId: string; task: string; allowedTools?: string }
+  params: {
+    projectId: string;
+    task: string;
+    allowedTools?: string;
+    role?: string;
+    teamMembers?: TeamMember[];
+  }
 ): Promise<ToolResult> {
   const projectDir = getProjectWorkspace(params.projectId);
   await mkdir(projectDir, { recursive: true });
@@ -557,7 +662,6 @@ async function delegateToProject(
   const claudeDir = join(projectDir, ".claude");
   await mkdir(claudeDir, { recursive: true });
 
-  // Check if CLAUDE.md exists at either conventional location
   const claudeMdRoot = join(projectDir, "CLAUDE.md");
   const claudeMdDot = join(claudeDir, "CLAUDE.md");
   const hasCLAUDEmd =
@@ -565,7 +669,6 @@ async function delegateToProject(
     await stat(claudeMdDot).then(() => true, () => false);
 
   if (!hasCLAUDEmd) {
-    // Try claude init --yes for a richer bootstrap; fall back to minimal file
     const initResult = spawnSync("claude", ["init", "--yes"], {
       cwd: projectDir,
       stdio: "pipe",
@@ -588,8 +691,14 @@ async function delegateToProject(
   }
 
   const sessionName = `peon-${params.projectId}`;
-  const subagentName = `delegate:${params.projectId}`;
+  const subagentName = params.role || "lead";
   const allowedTools = params.allowedTools || "Read,Edit,Write,Bash,Grep,Glob";
+
+  // Prepend Agent Team spawn instructions if team members are provided
+  const teamSpawnPrompt = params.teamMembers?.length
+    ? buildTeamSpawnPrompt(params.teamMembers)
+    : "";
+  const fullTask = teamSpawnPrompt + params.task;
 
   const team: TeamProcess = {
     sessionName,
@@ -601,27 +710,23 @@ async function delegateToProject(
   };
   activeTeams.set(params.projectId, team);
 
-  // Run tmux-based Claude Code launch in a non-blocking async task
-  // so we can return status to the caller while the agent runs
   (async () => {
     try {
       await createSession(sessionName, projectDir);
 
-      // Build the claude command with --dangerously-skip-permissions and stream-json output
       const claudeCmd = [
         "claude",
         "--dangerously-skip-permissions",
         "--output-format", "stream-json",
         "--allowedTools", allowedTools,
-        "-p", params.task,
+        "-p", fullTask,
       ].join(" ");
 
       await sendKeys(sessionName, claudeCmd);
 
-      // Poll pane output for completion, parsing stream-json lines
       let lastPaneLength = 0;
       const pollInterval = 200;
-      const maxWaitMs = 10 * 60 * 1000; // 10 minutes
+      const maxWaitMs = 10 * 60 * 1000;
       const start = Date.now();
 
       while (Date.now() - start < maxWaitMs) {
@@ -654,7 +759,12 @@ async function delegateToProject(
                 }
                 if (!SILENT_TOOLS.has(toolName)) {
                   const activityText = buildToolActivityText(toolName, toolInput);
-                  postSubagentActivity(subagentName, "tool_start", toolName, activityText).catch(() => {});
+                  const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
+                  const command = toolInput.command as string | undefined;
+                  postSubagentActivity(subagentName, "tool_start", toolName, activityText, {
+                    ...(filePath && { filePath }),
+                    ...(command && { command }),
+                  }).catch(() => {});
                 }
               } else if (ev.type === "tool_result") {
                 const toolId = (ev.tool_use_id as string | undefined) ?? "";
@@ -809,9 +919,16 @@ export default function register(api: any): void {
   });
 
   api.registerTool({
+    name: "CreateProjectTasks",
+    description: "Create tasks on a project's kanban board before delegating work. Use this to break down a user request into well-defined tasks that appear in the Todo column.",
+    parameters: { type: "object", properties: { projectId: { type: "string", description: "Project identifier" }, tasks: { type: "array", description: "Tasks to create on the board", items: { type: "object", properties: { subject: { type: "string", description: "Short task title" }, description: { type: "string", description: "Detailed description of what needs to be done" }, owner: { type: "string", description: "Team member role to assign (e.g. 'frontend', 'backend')" } }, required: ["subject"] } } }, required: ["projectId", "tasks"] },
+    execute: createProjectTasks,
+  });
+
+  api.registerTool({
     name: "DelegateToProject",
-    description: "Send a coding task to a project's Claude Code team. Returns the result when done.",
-    parameters: { type: "object", properties: { projectId: { type: "string", description: "Project identifier (maps to ~/projects/{id})" }, task: { type: "string", description: "Coding task (natural language)" }, allowedTools: { type: "string", description: 'Comma-separated tools (default: "Read,Edit,Write,Bash,Grep,Glob")' } }, required: ["projectId", "task"] },
+    description: "Send a coding task to a project's Claude Code Agent Team. The lead session spawns teammates if teamMembers are provided. Returns the result when done.",
+    parameters: { type: "object", properties: { projectId: { type: "string", description: "Project identifier (maps to ~/projects/{id})" }, task: { type: "string", description: "Coding task (natural language)" }, allowedTools: { type: "string", description: 'Comma-separated tools (default: "Read,Edit,Write,Bash,Grep,Glob")' }, role: { type: "string", description: "Team role performing this task (e.g. 'backend', 'frontend', 'qa')" }, teamMembers: { type: "array", description: "Team members to spawn as Agent Team teammates. Each has roleName, displayName, systemPrompt.", items: { type: "object", properties: { roleName: { type: "string" }, displayName: { type: "string" }, systemPrompt: { type: "string" } }, required: ["roleName", "displayName", "systemPrompt"] } } }, required: ["projectId", "task"] },
     execute: delegateToProject,
   });
 

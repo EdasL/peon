@@ -36,6 +36,13 @@
       "when": 1772600000000,
       "tag": "0004_team_builder",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1772700000000,
+      "tag": "0005_master_chat",
+      "breakpoints": true
     }
   ]
 }

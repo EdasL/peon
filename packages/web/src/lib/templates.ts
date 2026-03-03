@@ -1,4 +1,4 @@
-/** Canonical template definitions — used by onboarding, dashboard, and project pages */
+/** Canonical template definitions -- used by onboarding, dashboard, and project pages */
 
 export interface TemplateAgent {
   role: string
@@ -13,6 +13,19 @@ export interface Template {
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "fullteam",
+    name: "Full Team",
+    desc: "All core roles for large projects",
+    agents: [
+      { role: "Lead", color: "bg-blue-500" },
+      { role: "Frontend", color: "bg-emerald-500" },
+      { role: "Backend", color: "bg-violet-500" },
+      { role: "Designer", color: "bg-pink-500" },
+      { role: "Infra", color: "bg-orange-500" },
+      { role: "QA", color: "bg-amber-500" },
+    ],
+  },
   {
     id: "fullstack",
     name: "Full Stack",
@@ -31,6 +44,7 @@ export const TEMPLATES: Template[] = [
     agents: [
       { role: "Lead", color: "bg-blue-500" },
       { role: "Backend", color: "bg-violet-500" },
+      { role: "Infra", color: "bg-orange-500" },
       { role: "QA", color: "bg-amber-500" },
     ],
   },

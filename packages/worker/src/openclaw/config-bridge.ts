@@ -26,6 +26,12 @@ function getOpenClawHome(): string {
   return path.join(os.homedir(), ".openclaw");
 }
 
+export interface TeamMemberInfo {
+  roleName: string;
+  displayName: string;
+  systemPrompt: string;
+}
+
 export interface ConfigBridgeInput {
   /** The workspace root directory (e.g., /workspace) — used for provider state only */
   workspaceDir: string;
@@ -35,6 +41,10 @@ export interface ConfigBridgeInput {
   customInstructions: string;
   /** Provider config from session context */
   providerConfig: ProviderConfig;
+  /** OpenClaw agent id — "master" for orchestrator, "project-<id>" for project agents */
+  openclawAgentId?: string;
+  /** Configured team members for the active project */
+  teamMembers?: TeamMemberInfo[];
   /** CLI backends for coding agents */
   cliBackends?: Array<{
     providerId: string;
@@ -56,25 +66,32 @@ export async function writeOpenClawConfig(
   input: ConfigBridgeInput
 ): Promise<void> {
   const openclawDir = getOpenClawHome();
-  const workspaceDir = path.join(openclawDir, "workspace");
+  const agentId = input.openclawAgentId ?? "master";
+
+  // For master agent, SOUL.md goes in the default workspace.
+  // For project agents, SOUL.md goes in their agent-specific directory.
+  const soulDir = agentId === "master"
+    ? path.join(openclawDir, "workspace")
+    : path.join(openclawDir, "agents", agentId, "agent");
+
   const skillsDir = path.join(openclawDir, "skills");
   const gatewaySkillsDir = path.join(skillsDir, "gateway-skills");
   const peonToolsDir = path.join(skillsDir, "peon-tools");
 
-  await fs.mkdir(workspaceDir, { recursive: true });
+  await fs.mkdir(soulDir, { recursive: true });
   await fs.mkdir(gatewaySkillsDir, { recursive: true });
   await fs.mkdir(peonToolsDir, { recursive: true });
 
   // Write all config files in parallel
   await Promise.all([
-    writeSoulMd(workspaceDir, input),
+    writeSoulMd(soulDir, input),
     updateOpenClawAgentsConfig(openclawDir, input.providerConfig),
     writeGatewaySkill(gatewaySkillsDir, input.gatewayInstructions),
     writePeonToolsSkill(peonToolsDir),
     writeSessionContext(openclawDir),
   ]);
 
-  logger.info(`OpenClaw config written to ${openclawDir}`);
+  logger.info(`OpenClaw config written to ${openclawDir} (agent=${agentId})`);
 }
 
 /**
@@ -87,23 +104,39 @@ async function writeSoulMd(
 ): Promise<void> {
   const parts: string[] = [];
 
-  parts.push(`# Peon Agent
+  parts.push(`# Peon
 
-You are a helpful AI coding assistant. You help users with software projects — writing code, answering questions, debugging, and managing tasks.
+You are Peon, an AI team orchestrator. You manage a team of AI coding agents that build and maintain software projects. Users talk to you; you coordinate the team to get work done.
 
 ## How You Work
 
-- **Direct work**: Use your built-in tools (Read, Edit, Write, Bash, Grep, Glob) to accomplish coding tasks directly in the workspace.
-- **Project delegation**: When a project has been set up via DelegateToProject, you can send coding tasks to a dedicated Claude Code team that works in the project's directory. Use this for larger tasks in established projects.
-- **Conversation**: For questions, planning, and discussion, respond directly.
+1. **Understand** — Read the user's request carefully. If the request is ambiguous or underspecified, ask focused clarifying questions (scope, tech stack choices, acceptance criteria, constraints). Keep it to 2-3 questions max per round.
+2. **Plan** — Break the coding request into concrete, well-defined tasks. Each task should have a clear subject and description of what needs to be done.
+3. **Propose** — Present the task plan to the user as a numbered list. Wait for their confirmation or adjustments before proceeding.
+4. **Create** — Once confirmed, use CreateProjectTasks to add the tasks to the project's kanban board. They appear in the Todo column.
+5. **Delegate** — Call DelegateToProject with the full task breakdown and configured team. Always pass teamMembers so the lead can spawn the right teammates.
+6. **Report** — When the team finishes, summarize what was done, what changed, and any issues.
+
+### When to Skip Planning
+
+Not every message needs the full planning flow. Skip straight to action for:
+- Simple questions or clarifications — respond directly.
+- Non-coding tasks (explanations, reviews, advice) — respond directly.
+- Small follow-up tweaks to previous work — delegate directly without re-planning.
+- Single-task requests that are already well-defined — create one task and delegate.
 
 ## Key Rules
 
-- Be action-oriented. When the user asks you to do something, do it. Do not narrate what you would do or reflect on your own tools — just execute.
-- Never discuss your own architecture, tool availability, or internal processes unless the user explicitly asks.
-- If a task can be done directly with your tools, do it directly. Only use DelegateToProject when there is an established project that benefits from a dedicated Claude Code team.
-- Maintain context across messages — you are the persistent brain.
+- Be action-oriented. When the user asks you to do something, do it — don't narrate or reflect on your tools.
+- Never discuss your own architecture, tool availability, or internal processes unless explicitly asked.
+- When delegating, always include the full configured team as teamMembers in the DelegateToProject call.
+- Always create tasks on the board before delegating so the user can track progress visually.
+- Maintain context across messages — you are the persistent brain that remembers everything.
 `);
+
+  if (input.teamMembers?.length) {
+    parts.push(buildTeamSection(input.teamMembers));
+  }
 
   if (input.customInstructions) {
     parts.push(input.customInstructions);
@@ -114,6 +147,24 @@ You are a helpful AI coding assistant. You help users with software projects —
     parts.join("\n\n"),
     "utf-8"
   );
+}
+
+/**
+ * Build the "Your Team" SOUL.md section from configured team members.
+ * Constrains the orchestrator to only use these roles when delegating.
+ */
+function buildTeamSection(members: TeamMemberInfo[]): string {
+  const lines = members.map((m) => {
+    const firstLine = (m.systemPrompt.split("\n")[0] ?? "").slice(0, 120);
+    return `- **${m.displayName}** (role: ${m.roleName}) — ${firstLine}`;
+  });
+
+  return `## Your Team
+
+When delegating work via DelegateToProject, ALWAYS pass the full team below as teamMembers.
+Only use the roles listed here — do not invent new roles.
+
+${lines.join("\n")}`;
 }
 
 /**
@@ -200,7 +251,8 @@ These tools integrate with the Peon gateway to provide user-facing capabilities.
 - **GenerateAudio** — Text-to-speech generation
 - **GetChannelHistory** — Fetch previous messages in the thread
 - **AskUserQuestion** — Post a question with button options
-- **DelegateToProject** — Send a coding task to a project's Claude Code team (use when a project directory exists)
+- **CreateProjectTasks** — Create tasks on a project's kanban board (Todo column). Use this to break down a user request into trackable tasks before delegating. Pass projectId and an array of { subject, description?, owner? }.
+- **DelegateToProject** — Send a coding task to your team. ALWAYS include the full configured team as teamMembers (from the "Your Team" section in your instructions). The lead session spawns teammates automatically.
 - **CheckTeamStatus** — Check if a Claude Code team is still working
 - **GetTeamResult** — Get the result from a completed team task
 `;

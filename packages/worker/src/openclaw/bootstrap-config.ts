@@ -27,11 +27,11 @@ interface BootstrapResult {
   authToken: string;
 }
 
-function getConfigDir(): string {
+export function getConfigDir(): string {
   return path.join(os.homedir(), ".openclaw");
 }
 
-function getConfigPath(): string {
+export function getConfigPath(): string {
   return path.join(getConfigDir(), "openclaw.json");
 }
 
@@ -68,6 +68,14 @@ export async function writeBootstrapConfig(
       defaults: {
         model: "anthropic/claude-sonnet-4-20250514",
       },
+      list: [
+        {
+          id: "master",
+          default: true,
+          workspace: "/workspace",
+          name: "Orchestrator",
+        },
+      ],
     },
     channels: {},
     skills: {
@@ -80,7 +88,9 @@ export async function writeBootstrapConfig(
         paths: [PLUGIN_DIR],
       },
     },
-    tools: {},
+    tools: {
+      agentToAgent: { enabled: true, allow: ["*"] },
+    },
   };
 
   // Write config and SOUL.md in parallel
@@ -88,7 +98,7 @@ export async function writeBootstrapConfig(
     fs.writeFile(getConfigPath(), JSON.stringify(config, null, 2), "utf-8"),
     fs.writeFile(
       path.join(workspaceDir, "SOUL.md"),
-      "# OpenClaw Agent\n\nBootstrap placeholder — replaced at session start.\n",
+      "# Peon\n\nBootstrap placeholder — replaced at session start.\n",
       "utf-8"
     ),
   ]);

@@ -4,7 +4,6 @@ import { toast } from "sonner"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { AuthLayout } from "@/components/layout/AuthLayout"
 import {
   Dialog,
@@ -16,13 +15,13 @@ import {
 } from "@/components/ui/dialog"
 import { Loader2, Check, ExternalLink, Github, LogIn } from "lucide-react"
 import * as api from "@/lib/api"
-import { suggestTeam } from "@/lib/team-suggestions"
+import { getDefaultTeam } from "@/lib/team-suggestions"
 import type { SuggestedMember } from "@/lib/team-suggestions"
 import { TeamEditor } from "@/components/onboarding/TeamEditor"
 
-type Step = "apikey" | "name-repo" | "goal" | "team"
+type Step = "apikey" | "github" | "repo" | "team"
 
-const ALL_STEPS: Step[] = ["apikey", "name-repo", "goal", "team"]
+const ALL_STEPS: Step[] = ["apikey", "github", "repo", "team"]
 
 function ProgressDots({ steps, current }: { steps: Step[]; current: Step }) {
   const currentIndex = steps.indexOf(current)
@@ -67,14 +66,11 @@ export function OnboardingPage() {
   const [repos, setRepos] = useState<api.GithubRepo[]>([])
   const [reposLoading, setReposLoading] = useState(false)
   const [reposLoaded, setReposLoaded] = useState(false)
-  const [repoUrl, setRepoUrl] = useState("")
   const [selectedRepo, setSelectedRepo] = useState<api.GithubRepo | null>(null)
   const [reposError, setReposError] = useState<string | null>(null)
 
   // Form state
-  const [projectName, setProjectName] = useState("")
-  const [goal, setGoal] = useState("")
-  const [members, setMembers] = useState<SuggestedMember[]>([])
+  const [members, setMembers] = useState<SuggestedMember[]>(() => getDefaultTeam())
   const [launching, setLaunching] = useState(false)
   const [launchError, setLaunchError] = useState<string | null>(null)
 
@@ -100,18 +96,24 @@ export function OnboardingPage() {
   const hasAnyKey = existingKeys.length > 0
   const hasGithub = !!(user?.githubId || githubStatus === "connected")
 
-  const steps: Step[] = hasAnyKey
-    ? ["name-repo", "goal", "team"]
-    : ALL_STEPS
+  const computeSteps = useCallback((): Step[] => {
+    const s: Step[] = []
+    if (!hasAnyKey) s.push("apikey")
+    if (!hasGithub) s.push("github")
+    s.push("repo", "team")
+    return s
+  }, [hasAnyKey, hasGithub])
+
+  const steps = computeSteps()
 
   const initialStep = useCallback((): Step => {
     if (!hasAnyKey) return "apikey"
-    return "name-repo"
-  }, [hasAnyKey])
+    if (!hasGithub) return "github"
+    return "repo"
+  }, [hasAnyKey, hasGithub])
 
   const [step, setStep] = useState<Step>("apikey")
 
-  // Once keys load, set correct initial step
   useEffect(() => {
     if (keysLoaded) {
       setStep(initialStep())
@@ -119,9 +121,9 @@ export function OnboardingPage() {
     }
   }, [keysLoaded, initialStep])
 
-  // Load repos if GitHub connected and on name-repo step
+  // Load repos when on the repo step
   useEffect(() => {
-    if (hasGithub && step === "name-repo" && !reposLoaded && !reposLoading) {
+    if (step === "repo" && hasGithub && !reposLoaded && !reposLoading) {
       setReposLoading(true)
       api
         .getGithubRepos()
@@ -136,7 +138,7 @@ export function OnboardingPage() {
         })
         .finally(() => setReposLoading(false))
     }
-  }, [hasGithub, step, reposLoaded, reposLoading])
+  }, [step, hasGithub, reposLoaded, reposLoading])
 
   const transitionTo = (next: Step) => {
     setVisible(false)
@@ -178,7 +180,7 @@ export function OnboardingPage() {
         if (prev.some((k) => k.provider === "anthropic")) return prev
         return [...prev, { id: "oauth", provider: "anthropic", label: "Claude subscription", createdAt: "" }]
       })
-      transitionTo("name-repo")
+      transitionTo(hasGithub ? "repo" : "github")
     } catch {
       // toast shown by api layer
     } finally {
@@ -188,24 +190,16 @@ export function OnboardingPage() {
 
   const selectRepo = (repo: api.GithubRepo) => {
     setSelectedRepo(repo)
-    setProjectName(repo.name)
-    setRepoUrl("")
-  }
-
-  const handleSuggestTeam = () => {
-    const suggested = suggestTeam(goal)
-    setMembers(suggested)
-    transitionTo("team")
   }
 
   const launch = async () => {
+    if (!selectedRepo) return
     setLaunching(true)
     setLaunchError(null)
     try {
-      const resolvedRepoUrl = selectedRepo?.htmlUrl || (repoUrl.trim() || undefined)
       const { project } = await api.createProject({
-        name: projectName.trim() || selectedRepo?.name || undefined,
-        repoUrl: resolvedRepoUrl,
+        name: selectedRepo.name,
+        repoUrl: selectedRepo.htmlUrl,
         team: {
           name: "Default Team",
           members: members.map((m) => ({
@@ -275,13 +269,13 @@ export function OnboardingPage() {
             </div>
           )}
 
-          {/* Step: Name + Repo */}
-          {step === "name-repo" && (
+          {/* Step: Connect GitHub */}
+          {step === "github" && (
             <div className="space-y-6">
               <div className="text-center space-y-1">
-                <h1 className="text-2xl font-semibold tracking-tight">Name your project</h1>
+                <h1 className="text-2xl font-semibold tracking-tight">Connect GitHub</h1>
                 <p className="text-sm text-muted-foreground">
-                  Give it a name and optionally link a repo.
+                  Link your GitHub account to select a repository.
                 </p>
               </div>
 
@@ -291,152 +285,104 @@ export function OnboardingPage() {
                 </div>
               )}
 
-              {/* Project name */}
-              <div className="space-y-1.5">
-                <Label htmlFor="project-name" className="text-sm font-medium">
-                  Project name <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="project-name"
-                  placeholder="e.g. my-app"
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                  autoFocus
-                  className="text-sm"
-                />
+              <div className="space-y-3">
+                <Button
+                  className="w-full"
+                  size="lg"
+                  onClick={connectGithub}
+                >
+                  <Github className="h-4 w-4" />
+                  Connect GitHub
+                </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                  Grants access to your repositories so the team can work on your code
+                </p>
               </div>
-
-              {/* Repo section */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Repository <span className="text-muted-foreground font-normal">(optional)</span></span>
-                  {!hasGithub && (
-                    <button
-                      onClick={connectGithub}
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <Github className="h-3.5 w-3.5" />
-                      Connect GitHub
-                    </button>
-                  )}
-                </div>
-
-                {hasGithub ? (
-                  reposLoading ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground p-3">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading repos...
-                    </div>
-                  ) : repos.length > 0 ? (
-                    <div className="max-h-44 overflow-y-auto space-y-1.5 rounded-lg border border-border p-1">
-                      {repos.map((repo) => (
-                        <button
-                          key={repo.fullName}
-                          onClick={() => selectRepo(repo)}
-                          className={[
-                            "w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between transition-colors",
-                            selectedRepo?.fullName === repo.fullName
-                              ? "bg-primary text-primary-foreground"
-                              : "hover:bg-muted",
-                          ].join(" ")}
-                        >
-                          <span className="font-medium truncate">{repo.fullName}</span>
-                          <span className="flex items-center gap-1.5 shrink-0 ml-2">
-                            {repo.private && (
-                              <span
-                                className={[
-                                  "text-xs px-1.5 py-0.5 rounded",
-                                  selectedRepo?.fullName === repo.fullName
-                                    ? "bg-primary-foreground/20 text-primary-foreground"
-                                    : "bg-muted text-muted-foreground",
-                                ].join(" ")}
-                              >
-                                Private
-                              </span>
-                            )}
-                            {selectedRepo?.fullName === repo.fullName && (
-                              <Check className="h-3.5 w-3.5" />
-                            )}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground p-2">
-                      {reposError ? (
-                        <span className="text-destructive">{reposError}</span>
-                      ) : (
-                        "No repos found."
-                      )}
-                    </p>
-                  )
-                ) : (
-                  <Input
-                    placeholder="https://github.com/you/your-repo (optional)"
-                    value={repoUrl}
-                    onChange={(e) => {
-                      setRepoUrl(e.target.value)
-                      setSelectedRepo(null)
-                    }}
-                    className="text-sm"
-                  />
-                )}
-
-                {selectedRepo && (
-                  <button
-                    onClick={() => {
-                      setSelectedRepo(null)
-                      setProjectName("")
-                    }}
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Clear selection
-                  </button>
-                )}
-              </div>
-
-              <Button
-                className="w-full"
-                disabled={!projectName.trim()}
-                onClick={() => transitionTo("goal")}
-              >
-                Next
-              </Button>
             </div>
           )}
 
-          {/* Step: Goal */}
-          {step === "goal" && (
+          {/* Step: Select Repository (mandatory) */}
+          {step === "repo" && (
             <div className="space-y-6">
               <div className="text-center space-y-1">
-                <h1 className="text-2xl font-semibold tracking-tight">What do you want to build?</h1>
+                <h1 className="text-2xl font-semibold tracking-tight">Select a repository</h1>
                 <p className="text-sm text-muted-foreground">
-                  Describe your goal and we'll suggest a team.
+                  Choose the repo your team will work on.
                 </p>
               </div>
 
-              <div className="space-y-1.5">
-                <textarea
-                  value={goal}
-                  onChange={(e) => setGoal(e.target.value)}
-                  placeholder="e.g. I want to build a React app with a Postgres backend"
-                  rows={4}
-                  autoFocus
-                  className="w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
+              {reposLoading ? (
+                <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-8">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading repositories...
+                </div>
+              ) : repos.length > 0 ? (
+                <>
+                  <div className="max-h-64 overflow-y-auto space-y-1.5 rounded-lg border border-border p-1">
+                    {repos.map((repo) => (
+                      <button
+                        key={repo.fullName}
+                        onClick={() => selectRepo(repo)}
+                        className={[
+                          "w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between transition-colors",
+                          selectedRepo?.fullName === repo.fullName
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-muted",
+                        ].join(" ")}
+                      >
+                        <span className="font-medium truncate">{repo.fullName}</span>
+                        <span className="flex items-center gap-1.5 shrink-0 ml-2">
+                          {repo.private && (
+                            <span
+                              className={[
+                                "text-xs px-1.5 py-0.5 rounded",
+                                selectedRepo?.fullName === repo.fullName
+                                  ? "bg-primary-foreground/20 text-primary-foreground"
+                                  : "bg-muted text-muted-foreground",
+                              ].join(" ")}
+                            >
+                              Private
+                            </span>
+                          )}
+                          {selectedRepo?.fullName === repo.fullName && (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
 
-              <div className="space-y-2">
-                <Button className="w-full" onClick={handleSuggestTeam}>
-                  Suggest team
-                </Button>
-                <button
-                  onClick={() => transitionTo("name-repo")}
-                  className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
-                >
-                  Back
-                </button>
-              </div>
+                  {selectedRepo && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        Selected: <span className="text-foreground font-medium">{selectedRepo.name}</span>
+                      </span>
+                      <button
+                        onClick={() => setSelectedRepo(null)}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-sm text-muted-foreground py-4 text-center">
+                  {reposError ? (
+                    <span className="text-destructive">{reposError}</span>
+                  ) : (
+                    "No repositories found. Create a repo on GitHub first."
+                  )}
+                </div>
+              )}
+
+              <Button
+                className="w-full"
+                disabled={!selectedRepo}
+                onClick={() => transitionTo("team")}
+              >
+                Next
+              </Button>
             </div>
           )}
 
@@ -444,9 +390,9 @@ export function OnboardingPage() {
           {step === "team" && (
             <div className="space-y-6">
               <div className="text-center space-y-1">
-                <h1 className="text-2xl font-semibold tracking-tight">Your team</h1>
+                <h1 className="text-2xl font-semibold tracking-tight">Build your team</h1>
                 <p className="text-sm text-muted-foreground">
-                  Edit roles, prompts, or add members.
+                  Customize roles and prompts, or add more members.
                 </p>
               </div>
 
@@ -475,7 +421,7 @@ export function OnboardingPage() {
                   )}
                 </Button>
                 <button
-                  onClick={() => transitionTo("goal")}
+                  onClick={() => transitionTo("repo")}
                   className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
                 >
                   Back

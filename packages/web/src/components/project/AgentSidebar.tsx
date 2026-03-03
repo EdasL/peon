@@ -1,8 +1,11 @@
-import { getTemplate } from "@/lib/templates"
+import { useState } from "react"
 import { cn } from "@/lib/utils"
+import { getAgentColor, getAgentDisplayName } from "@/lib/agent-utils"
 import type { AgentState } from "@/hooks/use-agent-activity"
 import type { TeamMember } from "@/lib/api"
+import * as api from "@/lib/api"
 import { useNavigate } from "react-router-dom"
+import { Plus, X, Check } from "lucide-react"
 
 interface AgentSidebarProps {
   agents: AgentState[]
@@ -11,48 +14,23 @@ interface AgentSidebarProps {
   currentToolAction: string | null
   templateId?: string
   teamMembers?: TeamMember[]
+  teamId?: string | null
+  onTeamChange?: () => void
   feedCount: number
 }
 
-function getAgentColor(agentName: string, teamMembers?: TeamMember[], templateId?: string): string {
-  // Try DB team members first
-  if (teamMembers?.length) {
-    const match = teamMembers.find(
-      (m) => m.roleName.toLowerCase() === agentName.toLowerCase()
-    )
-    if (match) return match.color
-  }
-  // Fall back to template
-  if (templateId) {
-    const tmpl = getTemplate(templateId)
-    if (tmpl) {
-      const match = tmpl.agents.find(
-        (a) => a.role.toLowerCase() === agentName.toLowerCase()
-      )
-      if (match) return match.color
-    }
-  }
-  const colorMap: Record<string, string> = {
-    lead: "bg-blue-500",
-    "team-lead": "bg-blue-500",
-    frontend: "bg-emerald-500",
-    backend: "bg-violet-500",
-    qa: "bg-amber-500",
-    designer: "bg-pink-500",
-    mobile: "bg-cyan-500",
-  }
-  return colorMap[agentName.toLowerCase()] ?? "bg-zinc-500"
-}
-
-function getAgentDisplayName(agentName: string, teamMembers?: TeamMember[]): string {
-  if (teamMembers?.length) {
-    const match = teamMembers.find(
-      (m) => m.roleName.toLowerCase() === agentName.toLowerCase()
-    )
-    if (match) return match.displayName
-  }
-  return agentName
-}
+const MEMBER_COLORS = [
+  "bg-blue-500",
+  "bg-emerald-500",
+  "bg-violet-500",
+  "bg-amber-500",
+  "bg-pink-500",
+  "bg-cyan-500",
+  "bg-rose-500",
+  "bg-teal-500",
+  "bg-indigo-500",
+  "bg-orange-500",
+]
 
 function StatusPulse({ status }: { status: AgentState["status"] }) {
   return (
@@ -72,12 +50,19 @@ function AgentCard({
   templateId,
   teamMembers,
   currentToolAction,
+  memberId,
+  teamId,
+  onRemove,
 }: {
   agent: AgentState
   templateId?: string
   teamMembers?: TeamMember[]
   currentToolAction: string | null
+  memberId?: string
+  teamId?: string | null
+  onRemove?: () => void
 }) {
+  const [confirming, setConfirming] = useState(false)
   const displayName = getAgentDisplayName(agent.name, teamMembers)
   const initials = displayName
     .split(/[-_\s]/)
@@ -95,10 +80,20 @@ function AgentCard({
   const isToolAction =
     agent.status === "working" && currentToolAction != null && !agent.activeForm
 
+  const handleRemoveClick = () => {
+    if (!confirming) {
+      setConfirming(true)
+      setTimeout(() => setConfirming(false), 3000)
+      return
+    }
+    onRemove?.()
+    setConfirming(false)
+  }
+
   return (
     <div
       className={cn(
-        "rounded-md border px-2.5 py-2 transition-colors",
+        "group rounded-md border px-2.5 py-2 transition-colors relative",
         agent.status === "working"
           ? "border-emerald-800/40 bg-emerald-950/20"
           : agent.status === "error"
@@ -106,8 +101,22 @@ function AgentCard({
             : "border-border/30 bg-zinc-900/40"
       )}
     >
+      {memberId && teamId && onRemove && (
+        <button
+          onClick={handleRemoveClick}
+          className={cn(
+            "absolute top-1.5 right-1.5 size-4 rounded-full flex items-center justify-center transition-all",
+            confirming
+              ? "bg-red-600 text-white opacity-100"
+              : "text-zinc-700 opacity-0 group-hover:opacity-100 hover:text-red-400"
+          )}
+          title={confirming ? "Click again to confirm removal" : "Remove member"}
+        >
+          <X className="size-2.5" />
+        </button>
+      )}
+
       <div className="flex items-start gap-2">
-        {/* Colored avatar */}
         <div
           className={cn(
             "flex size-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white mt-px",
@@ -154,6 +163,99 @@ function AgentCard({
   )
 }
 
+function AddMemberForm({
+  teamId,
+  existingColors,
+  onDone,
+}: {
+  teamId: string
+  existingColors: string[]
+  onDone: () => void
+}) {
+  const [roleName, setRoleName] = useState("")
+  const [displayName, setDisplayName] = useState("")
+  const [systemPrompt, setSystemPrompt] = useState("")
+  const [color, setColor] = useState(
+    () => MEMBER_COLORS.find((c) => !existingColors.includes(c)) ?? MEMBER_COLORS[0]
+  )
+  const [saving, setSaving] = useState(false)
+
+  const canSubmit = roleName.trim().length > 0 && displayName.trim().length > 0
+
+  const handleSubmit = async () => {
+    if (!canSubmit || saving) return
+    setSaving(true)
+    try {
+      await api.addTeamMember(teamId, {
+        roleName: roleName.trim(),
+        displayName: displayName.trim(),
+        systemPrompt: systemPrompt.trim() || `You are the ${displayName.trim()} on this team.`,
+        color,
+      })
+      onDone()
+    } catch {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-border/50 bg-zinc-900/60 p-2.5 space-y-2">
+      <input
+        type="text"
+        placeholder="Role (e.g. devops)"
+        value={roleName}
+        onChange={(e) => setRoleName(e.target.value)}
+        className="w-full bg-zinc-800/80 border border-border/30 rounded px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-zinc-600"
+        autoFocus
+      />
+      <input
+        type="text"
+        placeholder="Display name"
+        value={displayName}
+        onChange={(e) => setDisplayName(e.target.value)}
+        className="w-full bg-zinc-800/80 border border-border/30 rounded px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-zinc-600"
+      />
+      <textarea
+        placeholder="System prompt (optional)"
+        value={systemPrompt}
+        onChange={(e) => setSystemPrompt(e.target.value)}
+        rows={2}
+        className="w-full bg-zinc-800/80 border border-border/30 rounded px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-zinc-600 resize-none"
+      />
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-zinc-600 mr-1">Color</span>
+        {MEMBER_COLORS.map((c) => (
+          <button
+            key={c}
+            onClick={() => setColor(c)}
+            className={cn(
+              "size-4 rounded-full transition-all",
+              c,
+              color === c ? "ring-2 ring-white/50 scale-110" : "opacity-50 hover:opacity-80"
+            )}
+          />
+        ))}
+      </div>
+      <div className="flex items-center gap-1.5 pt-0.5">
+        <button
+          onClick={handleSubmit}
+          disabled={!canSubmit || saving}
+          className="flex items-center gap-1 rounded bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 px-2 py-1 text-[11px] font-medium text-zinc-200 transition-colors"
+        >
+          <Check className="size-3" />
+          {saving ? "Adding..." : "Add"}
+        </button>
+        <button
+          onClick={onDone}
+          className="rounded px-2 py-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function AgentSidebar({
   agents,
   loading,
@@ -161,11 +263,31 @@ export function AgentSidebar({
   currentToolAction,
   templateId,
   teamMembers,
+  teamId,
+  onTeamChange,
   feedCount,
 }: AgentSidebarProps) {
   const navigate = useNavigate()
+  const [showAddForm, setShowAddForm] = useState(false)
   const workingCount = agents.filter((a) => a.status === "working").length
   const hasTeam = (teamMembers && teamMembers.length > 0) || !!templateId
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!teamId) return
+    try {
+      await api.deleteTeamMember(teamId, memberId)
+      onTeamChange?.()
+    } catch { /* silent */ }
+  }
+
+  const handleAddDone = () => {
+    setShowAddForm(false)
+    onTeamChange?.()
+  }
+
+  const memberMap = new Map(
+    (teamMembers ?? []).map((m) => [m.roleName.toLowerCase(), m])
+  )
 
   return (
     <aside className="flex h-full w-[220px] flex-shrink-0 flex-col border-r border-border/40 bg-zinc-950">
@@ -189,11 +311,28 @@ export function AgentSidebar({
               {workingCount} active
             </span>
           )}
+          {teamId && (
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="size-5 rounded flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
+              title="Add team member"
+            >
+              <Plus className="size-3" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Agent cards */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+        {showAddForm && teamId && (
+          <AddMemberForm
+            teamId={teamId}
+            existingColors={(teamMembers ?? []).map((m) => m.color)}
+            onDone={handleAddDone}
+          />
+        )}
+
         {agents.length === 0 && !hasTeam ? (
           <div className="px-2 py-6 text-center space-y-3">
             <p className="text-[11px] text-zinc-600 leading-relaxed">
@@ -213,15 +352,21 @@ export function AgentSidebar({
             </p>
           </div>
         ) : (
-          agents.map((agent) => (
-            <AgentCard
-              key={agent.name}
-              agent={agent}
-              templateId={templateId}
-              teamMembers={teamMembers}
-              currentToolAction={currentToolAction}
-            />
-          ))
+          agents.map((agent) => {
+            const member = memberMap.get(agent.name.toLowerCase())
+            return (
+              <AgentCard
+                key={agent.name}
+                agent={agent}
+                templateId={templateId}
+                teamMembers={teamMembers}
+                currentToolAction={currentToolAction}
+                memberId={member?.id}
+                teamId={teamId}
+                onRemove={member ? () => handleRemoveMember(member.id) : undefined}
+              />
+            )
+          })
         )}
       </div>
 

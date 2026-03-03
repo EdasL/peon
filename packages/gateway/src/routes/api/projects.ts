@@ -271,7 +271,7 @@ projectsRouter.post("/:id/restart", async (c) => {
       const containerResult = await ensureUserContainer(session.userId, services)
       if (containerResult.error) {
         const message = containerResult.error === "no-api-key"
-          ? "No API key found — add an Anthropic key in settings"
+          ? "No API key found — log in with Claude Code or add an API key in settings"
           : containerResult.error
         await db.update(projects).set({ status: "error", updatedAt: new Date() }).where(eq(projects.id, project.id))
         broadcastToProject(project.id, "project_status", { status: "error", message })

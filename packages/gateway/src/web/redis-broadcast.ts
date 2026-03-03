@@ -87,11 +87,42 @@ export function subscribeClient(
   projectId: string,
   send: (event: string, data: string) => void
 ): () => void {
-  const channel = `peon:project:${projectId}`
+  return subscribeToChannel(`peon:project:${projectId}`, send)
+}
 
+/**
+ * Broadcast an event to all SSE clients watching a user's master chat.
+ */
+export function broadcastToUser(userId: string, event: string, data: unknown): void {
+  const channel = `peon:user:${userId}`
+  const json = JSON.stringify(data)
+  const payload = JSON.stringify({ event, data: json })
+
+  if (publisher) {
+    publisher.publish(channel, payload).catch((err) => {
+      logger.error(`Failed to publish to ${channel}:`, err)
+    })
+  } else {
+    deliverLocally(channel, event, json)
+  }
+}
+
+/**
+ * Subscribe an SSE client to a user's master chat broadcast channel.
+ */
+export function subscribeUserClient(
+  userId: string,
+  send: (event: string, data: string) => void
+): () => void {
+  return subscribeToChannel(`peon:user:${userId}`, send)
+}
+
+function subscribeToChannel(
+  channel: string,
+  send: (event: string, data: string) => void
+): () => void {
   if (!channelListeners.has(channel)) {
     channelListeners.set(channel, new Set())
-    // Subscribe to Redis channel if available
     if (subscriber) {
       subscriber.subscribe(channel).catch((err) => {
         logger.error(`Failed to subscribe to ${channel}:`, err)
