@@ -20,6 +20,7 @@ import { projectsRouter } from "../routes/api/projects.js";
 import { keysRouter } from "../routes/api/keys.js";
 import { userRouter } from "../routes/api/user.js";
 import { chatRouter } from "../web/chat-routes.js";
+import { initBroadcast } from "../web/redis-broadcast.js";
 
 const logger = createLogger("gateway-startup");
 
@@ -1069,6 +1070,12 @@ export async function startGateway(
     coreServices.getGrantStore() ?? undefined
   );
   logger.info("Orchestrator configured with core services");
+
+  // Initialize Redis pub/sub for multi-instance SSE broadcasts
+  const redisUrl = process.env.QUEUE_URL
+  if (redisUrl) {
+    initBroadcast(redisUrl)
+  }
 
   // Setup server on port 8080 (single port for all HTTP traffic)
   setupServer(

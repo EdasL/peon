@@ -7,8 +7,10 @@ import { chatMessages, projects, users } from "../db/schema.js"
 import { eq, and, asc } from "drizzle-orm"
 import { getPeonPlatform } from "../peon/platform.js"
 
-// In-memory SSE clients per project (production: use Redis pub/sub)
-const sseClients = new Map<string, Set<(event: string, data: string) => void>>()
+// Import broadcast functions from Redis pub/sub module
+import { broadcastToProject, subscribeClient } from "./redis-broadcast.js"
+// Re-export for other modules that import from chat-routes
+export { broadcastToProject, subscribeClient }
 
 // Active project mapping: conversationId (lobuAgentId) → projectId
 // Updated every time a user sends a chat message, so agent activity events
@@ -21,15 +23,6 @@ export function setActiveProject(conversationId: string, projectId: string) {
 
 export function getActiveProject(conversationId: string): string | undefined {
   return activeProjectMap.get(conversationId)
-}
-
-export function broadcastToProject(projectId: string, event: string, data: unknown) {
-  const clients = sseClients.get(projectId)
-  if (!clients) return
-  const json = JSON.stringify(data)
-  for (const send of clients) {
-    send(event, json)
-  }
 }
 
 const chatRouter = new Hono()
@@ -51,9 +44,8 @@ chatRouter.get("/:id/chat/stream", async (c) => {
       stream.writeSSE({ event, data })
     }
 
-    // Register client
-    if (!sseClients.has(projectId)) sseClients.set(projectId, new Set())
-    sseClients.get(projectId)!.add(send)
+    // Subscribe to project broadcasts via Redis pub/sub
+    const unsubscribe = subscribeClient(projectId, send)
 
     // Send heartbeat
     const heartbeat = setInterval(() => {
@@ -65,7 +57,7 @@ chatRouter.get("/:id/chat/stream", async (c) => {
     stream.onAbort(() => {
       aborted = true
       clearInterval(heartbeat)
-      sseClients.get(projectId)?.delete(send)
+      unsubscribe()
     })
 
     // Keep alive until client disconnects

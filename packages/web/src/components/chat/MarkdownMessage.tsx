@@ -1,0 +1,49 @@
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+
+export function MarkdownMessage({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+        em: ({ children }) => <em className="italic">{children}</em>,
+        ul: ({ children }) => <ul className="list-disc pl-4 mb-2 last:mb-0">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 last:mb-0">{children}</ol>,
+        li: ({ children }) => <li className="mb-0.5">{children}</li>,
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80">
+            {children}
+          </a>
+        ),
+        code: ({ className, children }) => {
+          const isBlock = className?.includes("language-")
+          if (isBlock) {
+            return (
+              <pre className="my-2 rounded-md bg-zinc-900 p-3 overflow-x-auto">
+                <code className="text-xs font-mono text-zinc-100">{children}</code>
+              </pre>
+            )
+          }
+          return (
+            <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs font-mono text-zinc-200">
+              {children}
+            </code>
+          )
+        },
+        pre: ({ children }) => <>{children}</>,
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-2 border-primary/30 pl-3 my-2 text-muted-foreground italic">
+            {children}
+          </blockquote>
+        ),
+        h1: ({ children }) => <h1 className="text-base font-bold mb-1 mt-2">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-sm font-bold mb-1 mt-2">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2">{children}</h3>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  )
+}

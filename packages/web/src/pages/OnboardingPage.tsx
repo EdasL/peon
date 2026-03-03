@@ -5,15 +5,44 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { AuthLayout } from "@/components/layout/AuthLayout"
-import { Loader2, Check, Github, ExternalLink } from "lucide-react"
+import { Loader2, Check, Github, ExternalLink, Users } from "lucide-react"
 import * as api from "@/lib/api"
 
 type Step = "apikey" | "repo-template" | "launch"
 
 const TEMPLATES = [
-  { id: "fullstack", name: "Full Stack", desc: "Designer + Backend + Mobile + QA" },
-  { id: "backend", name: "Backend Only", desc: "Backend developer + QA" },
-  { id: "mobile", name: "Mobile Only", desc: "Designer + Mobile + QA" },
+  {
+    id: "fullstack",
+    name: "Full Stack",
+    desc: "A complete team for web applications",
+    agents: [
+      { role: "Lead", color: "bg-blue-500" },
+      { role: "Frontend", color: "bg-emerald-500" },
+      { role: "Backend", color: "bg-violet-500" },
+      { role: "QA", color: "bg-amber-500" },
+    ],
+  },
+  {
+    id: "backend",
+    name: "Backend Only",
+    desc: "Focused on server-side development",
+    agents: [
+      { role: "Lead", color: "bg-blue-500" },
+      { role: "Backend", color: "bg-violet-500" },
+      { role: "QA", color: "bg-amber-500" },
+    ],
+  },
+  {
+    id: "mobile",
+    name: "Mobile",
+    desc: "Native and cross-platform mobile apps",
+    agents: [
+      { role: "Lead", color: "bg-blue-500" },
+      { role: "Designer", color: "bg-pink-500" },
+      { role: "Mobile", color: "bg-cyan-500" },
+      { role: "QA", color: "bg-amber-500" },
+    ],
+  },
 ]
 
 function ProgressDots({ steps, current }: { steps: Step[]; current: Step }) {
@@ -26,7 +55,7 @@ function ProgressDots({ steps, current }: { steps: Step[]; current: Step }) {
           className={[
             "h-2 rounded-full transition-all duration-300",
             i < currentIndex
-              ? "w-6 bg-primary"
+              ? "w-6 bg-primary/50"
               : i === currentIndex
               ? "w-6 bg-primary"
               : "w-2 bg-muted-foreground/30",
@@ -371,11 +400,26 @@ export function OnboardingPage() {
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-sm">{t.name}</span>
-                        {selectedTemplate === t.id && (
-                          <Check className="h-4 w-4 text-primary shrink-0" />
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">{t.agents.length}</span>
+                          {selectedTemplate === t.id && (
+                            <Check className="h-4 w-4 text-primary ml-1" />
+                          )}
+                        </div>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">{t.desc}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        {t.agents.map((a) => (
+                          <span
+                            key={a.role}
+                            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                          >
+                            <span className={`h-2 w-2 rounded-full ${a.color}`} />
+                            {a.role}
+                          </span>
+                        ))}
+                      </div>
                     </button>
                   ))}
                 </div>

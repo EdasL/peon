@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, MessageSquare, Send, X } from "lucide-react"
+import { MarkdownMessage } from "./MarkdownMessage"
 
 function formatTime(iso: string): string {
   try {
@@ -55,11 +56,11 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
       {/* Error banner */}
       {visibleError && (
-        <div className="flex items-start gap-2 bg-red-50 border-b border-red-200 px-4 py-2 text-xs text-red-700">
+        <div className="flex items-start gap-2 bg-red-950/30 border-b border-red-800/30 px-4 py-2 text-xs text-red-400">
           <span className="flex-1">{visibleError}</span>
           <button
             onClick={() => setDismissedError(visibleError)}
-            className="shrink-0 text-red-500 hover:text-red-700"
+            className="shrink-0 text-red-500 hover:text-red-300"
             aria-label="Dismiss error"
           >
             <X className="h-3.5 w-3.5" />
@@ -93,7 +94,11 @@ export function ChatPanel({ projectId }: { projectId: string }) {
                     msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
                   }`}
                 >
-                  {msg.content}
+                  {msg.role === "assistant" ? (
+                    <MarkdownMessage content={msg.content} />
+                  ) : (
+                    msg.content
+                  )}
                 </div>
                 {msg.createdAt && (
                   <span className="mt-1 text-[10px] text-muted-foreground px-1">
@@ -105,7 +110,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
             {streamingContent && (
               <div className="flex flex-col items-start">
                 <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-muted">
-                  {streamingContent}
+                  <MarkdownMessage content={streamingContent} />
                   <span className="animate-pulse">|</span>
                 </div>
               </div>
