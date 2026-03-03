@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/use-auth"
 import { AuthLayout } from "@/components/layout/AuthLayout"
@@ -8,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -36,8 +34,7 @@ const PROVIDERS = ["anthropic", "openai"] as const
 type Provider = (typeof PROVIDERS)[number]
 
 export function SettingsPage() {
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
+  const { user } = useAuth()
   const [section, setSection] = useState<Section>("profile")
   const [keys, setKeys] = useState<api.ApiKeyInfo[]>([])
   const [keysLoading, setKeysLoading] = useState(true)

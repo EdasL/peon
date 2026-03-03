@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { Toaster } from "sonner"
 import { AuthCtx, useAuthProvider } from "@/hooks/use-auth"
 import { useAuth } from "@/hooks/use-auth"
+import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { LandingPage } from "@/pages/LandingPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { OnboardingPage } from "@/pages/OnboardingPage"
@@ -22,14 +23,16 @@ export default function App() {
   return (
     <AuthCtx.Provider value={auth}>
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={auth.user ? <Navigate to="/dashboard" /> : <LandingPage />} />
-          <Route path="/login" element={auth.user ? <Navigate to="/dashboard" /> : <LoginPage />} />
-          <Route path="/onboarding" element={<AuthGuard><OnboardingPage /></AuthGuard>} />
-          <Route path="/dashboard" element={<AuthGuard><DashboardPage /></AuthGuard>} />
-          <Route path="/project/:id" element={<AuthGuard><ProjectPage /></AuthGuard>} />
-          <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/" element={auth.user ? <Navigate to="/dashboard" /> : <LandingPage />} />
+            <Route path="/login" element={auth.user ? <Navigate to="/dashboard" /> : <LoginPage />} />
+            <Route path="/onboarding" element={<AuthGuard><OnboardingPage /></AuthGuard>} />
+            <Route path="/dashboard" element={<AuthGuard><DashboardPage /></AuthGuard>} />
+            <Route path="/project/:id" element={<AuthGuard><ProjectPage /></AuthGuard>} />
+            <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
+          </Routes>
+        </ErrorBoundary>
       </BrowserRouter>
       <Toaster theme="dark" position="bottom-right" richColors />
     </AuthCtx.Provider>

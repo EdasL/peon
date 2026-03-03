@@ -148,8 +148,6 @@ export class UnifiedThreadResponseConsumer {
     // Handle error
     if (data.error) {
       await renderer.handleError(data, sessionKey);
-      // Also complete session on error
-      await renderer.handleCompletion(data, sessionKey);
       return;
     }
 
