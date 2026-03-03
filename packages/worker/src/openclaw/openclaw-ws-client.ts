@@ -471,8 +471,19 @@ export class OpenClawWsClient {
   private extractTextDelta(data: Record<string, unknown>): OpenClawEvent | null {
     const msg = data.message as Record<string, unknown> | undefined;
     const content = msg?.content as Array<Record<string, unknown>> | undefined;
-    const fullText = content?.[0]?.text as string | undefined;
-    if (fullText && fullText.length > this.chatAccumulatedLen) {
+    if (!content?.length) return null;
+
+    // Concatenate ALL text-type content blocks. After tool calls, new text
+    // appears at later indices (e.g. content[3]) — reading only content[0]
+    // loses all text generated between and after tool invocations.
+    let fullText = "";
+    for (const item of content) {
+      if (item.type === "text" && typeof item.text === "string") {
+        fullText += item.text;
+      }
+    }
+
+    if (fullText.length > this.chatAccumulatedLen) {
       const delta = fullText.slice(this.chatAccumulatedLen);
       this.chatAccumulatedLen = fullText.length;
       return { type: "text_delta", delta };
