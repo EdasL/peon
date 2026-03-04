@@ -17,7 +17,7 @@ function StatusDot({ status }: { status: AgentStatus }) {
   if (status === "working") {
     return (
       <span
-        className="inline-block size-2 rounded-full bg-emerald-500 shrink-0"
+        className="inline-block size-[6px] rounded-full bg-[#22C55E] shrink-0"
         title="Working"
       />
     )
@@ -25,15 +25,15 @@ function StatusDot({ status }: { status: AgentStatus }) {
   if (status === "error") {
     return (
       <span
-        className="inline-block size-2 rounded-full bg-red-500 shrink-0"
+        className="inline-block size-[6px] rounded-full bg-[#EF4444] shrink-0"
         title="Error"
       />
     )
   }
-  // idle
+  // idle — hollow grey
   return (
     <span
-      className="inline-block size-2 rounded-full border border-emerald-500 shrink-0"
+      className="inline-block size-[6px] rounded-full border border-[#C8C5BC] shrink-0"
       title="Idle"
     />
   )
@@ -71,7 +71,6 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
     fetchMembers()
   }, [fetchMembers])
 
-  // Listen for agent_status SSE events
   useEffect(() => {
     if (!projectId) return
 
@@ -95,7 +94,6 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
     return () => es.close()
   }, [projectId])
 
-  // Also listen via OpenClaw subscribe for agent.state events
   useEffect(() => {
     if (!ocContext.subscribe || ocContext.connectionState !== "connected") return
 
@@ -126,10 +124,8 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
   )
 
   const getStatus = (member: TeamMember): AgentStatus => {
-    // Check by roleName (lowercase)
     const byRole = agentStates[member.roleName.toLowerCase()]
     if (byRole) return byRole.status
-    // Check by id
     const byId = agentStates[member.id]
     if (byId) return byId.status
     return "idle"
@@ -141,7 +137,7 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
         compact ? "flex flex-col max-h-[65vh]" : "h-full flex flex-col min-h-0"
       }
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
         <span className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground">
           Team
         </span>
@@ -151,7 +147,7 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
         {loading && !members.length ? (
           <div className="space-y-1 p-2">
             {Array.from({ length: 3 }, (_, i) => (
-              <div key={i} className="h-7 bg-zinc-800/50 rounded animate-pulse" />
+              <div key={i} className="h-8 bg-muted rounded-sm animate-pulse" />
             ))}
           </div>
         ) : !members.length ? (
@@ -165,7 +161,7 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
               return (
                 <div
                   key={member.id}
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-300"
+                  className="flex items-center gap-2.5 px-3 h-8 text-xs"
                 >
                   <StatusDot status={status} />
                   <span className="truncate font-mono text-[11px]">
@@ -178,14 +174,14 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
         )}
       </div>
 
-      {/* Footer: [+] and [↻] */}
-      <div className="flex items-center justify-end gap-1 px-3 py-2 border-t border-border/60 mt-auto">
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-1 px-3 py-2 border-t border-border mt-auto">
         <button
           type="button"
           onClick={() => setSpawnOpen(true)}
           aria-label="Add agent"
           title="Add agent"
-          className="bg-transparent border border-border/60 text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground rounded-sm"
+          className="bg-transparent border border-border text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-[#C8C5BC] rounded-sm"
         >
           <Plus size={14} />
         </button>
@@ -194,7 +190,7 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
           onClick={fetchMembers}
           aria-label="Refresh team"
           title="Refresh team"
-          className="bg-transparent border border-border/60 text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground rounded-sm"
+          className="bg-transparent border border-border text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-[#C8C5BC] rounded-sm"
         >
           <RefreshCw size={12} />
         </button>

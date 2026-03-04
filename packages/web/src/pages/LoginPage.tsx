@@ -1,24 +1,19 @@
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
-      <Card className="w-[400px]">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">peon.work</CardTitle>
-          <CardDescription>
-            Launch AI agent teams for your projects
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <a href="/api/auth/google">
-            <Button className="w-full" size="lg">
-              Sign in with Google
-            </Button>
-          </a>
-        </CardContent>
-      </Card>
+      <div className="w-[360px] text-center">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-2">peon.work</h1>
+        <p className="text-sm text-muted-foreground mb-8">
+          Launch AI agent teams for your projects
+        </p>
+        <a href="/api/auth/google">
+          <Button className="w-full" size="lg">
+            Sign in with Google
+          </Button>
+        </a>
+      </div>
     </div>
   )
 }

@@ -36,15 +36,15 @@ function timeAgo(dateStr: string): string {
 function statusDot(status: api.Project["status"]) {
   switch (status) {
     case "running":
-      return <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" title="Running" />
+      return <span className="inline-block size-[6px] rounded-full bg-[#22C55E]" title="Running" />
     case "creating":
-      return <span className="inline-block h-2 w-2 rounded-full bg-amber-400 animate-pulse" title="Creating" />
+      return <span className="inline-block size-[6px] rounded-full bg-amber-400 animate-pulse" title="Creating" />
     case "stopped":
-      return <span className="inline-block h-2 w-2 rounded-full border border-zinc-500" title="Stopped" />
+      return <span className="inline-block size-[6px] rounded-full border border-[#C8C5BC]" title="Stopped" />
     case "error":
-      return <span className="inline-block h-2 w-2 rounded-full bg-red-500" title="Error" />
+      return <span className="inline-block size-[6px] rounded-full bg-[#EF4444]" title="Error" />
     default:
-      return <span className="inline-block h-2 w-2 rounded-full border border-zinc-600" />
+      return <span className="inline-block size-[6px] rounded-full border border-[#C8C5BC]" />
   }
 }
 
@@ -65,8 +65,8 @@ function statusLabel(status: api.Project["status"]) {
 
 function ProjectCardSkeleton() {
   return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border/30">
-      <Skeleton className="h-2 w-2 rounded-full" />
+    <div className="flex items-center gap-3 px-3 py-3 rounded-sm border border-border">
+      <Skeleton className="size-[6px] rounded-full" />
       <div className="flex-1">
         <Skeleton className="h-4 w-32 mb-1" />
         <Skeleton className="h-3 w-20" />
@@ -134,7 +134,7 @@ export function DashboardPage() {
         <div className="w-full max-w-[640px]">
           {/* Section header */}
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-zinc-100">Your Projects</h2>
+            <h2 className="text-lg font-semibold">Your Projects</h2>
             <Button
               size="sm"
               className="h-8 gap-1.5 text-xs"
@@ -155,11 +155,11 @@ export function DashboardPage() {
               </>
             ) : projects.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="flex size-12 items-center justify-center rounded-full bg-zinc-800 mb-4">
-                  <FolderOpen className="h-6 w-6 text-zinc-500" />
+                <div className="flex size-12 items-center justify-center rounded-sm bg-muted mb-4">
+                  <FolderOpen className="h-6 w-6 text-muted-foreground" />
                 </div>
-                <p className="text-sm text-zinc-400 mb-1">No projects yet.</p>
-                <p className="text-xs text-zinc-600 mb-5">
+                <p className="text-sm text-muted-foreground mb-1">No projects yet.</p>
+                <p className="text-xs text-muted-foreground/60 mb-5">
                   Create your first project.
                 </p>
                 <Button
@@ -179,33 +179,33 @@ export function DashboardPage() {
                   <Card
                     key={p.id}
                     className={cn(
-                      "cursor-pointer transition-colors relative group px-4 py-3",
-                      "hover:border-primary/40 hover:bg-zinc-900/50"
+                      "cursor-pointer transition-colors relative group px-3 py-3",
+                      "hover:border-[#C8C5BC] hover:bg-[#EEECEA]"
                     )}
                     onClick={() => navigate(`/project/${p.id}`)}
                   >
                     <div className="flex items-center gap-3">
                       {statusDot(p.status)}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-zinc-200 truncate">
+                        <p className="text-sm font-medium truncate">
                           {p.name}
                         </p>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[11px] text-zinc-500">
+                          <span className="text-[11px] text-muted-foreground">
                             {statusLabel(p.status)}
                           </span>
                           {agentCount > 0 && (
-                            <span className="text-[11px] text-zinc-600">
+                            <span className="text-[11px] text-muted-foreground/60">
                               {agentCount} agent{agentCount !== 1 ? "s" : ""}
                             </span>
                           )}
                         </div>
                       </div>
-                      <span className="text-[11px] text-zinc-600 shrink-0">
+                      <span className="text-[11px] text-muted-foreground/60 shrink-0">
                         {timeAgo(p.updatedAt)}
                       </span>
                       <button
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-destructive/10 text-zinc-600 hover:text-destructive"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-sm hover:bg-destructive/5 text-muted-foreground hover:text-destructive cursor-pointer"
                         onClick={(e) => {
                           e.stopPropagation()
                           setDeletingId(p.id)

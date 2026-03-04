@@ -356,7 +356,7 @@ export const SessionNode = memo(function SessionNode({
 
         {isUnread && (
           <span
-            className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0"
+            className="w-1.5 h-1.5 rounded-full bg-[#22C55E] shrink-0"
             aria-label="Unread"
           />
         )}

@@ -22,13 +22,13 @@ export function MarkdownMessage({ content }: { content: string }) {
           const isBlock = className?.includes("language-")
           if (isBlock) {
             return (
-              <pre className="my-2 rounded-md bg-zinc-900 p-3 overflow-x-auto max-w-full min-w-0">
-                <code className="text-xs font-mono text-zinc-100">{children}</code>
+              <pre className="my-2 rounded-sm bg-[#1A1916] p-3 overflow-x-auto max-w-full min-w-0">
+                <code className="text-xs font-mono text-[#F7F6F2]">{children}</code>
               </pre>
             )
           }
           return (
-            <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs font-mono text-zinc-200">
+            <code className="rounded-sm bg-muted px-1.5 py-0.5 text-xs font-mono">
               {children}
             </code>
           )

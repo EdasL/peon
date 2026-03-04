@@ -40,10 +40,10 @@ export function AppHeader() {
           <button
             onClick={() => navigate("/dashboard")}
             className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm transition-colors",
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm text-sm transition-colors",
               isActive("/dashboard")
-                ? "bg-zinc-800 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
           >
             <LayoutDashboard className="h-3.5 w-3.5" />
@@ -52,10 +52,10 @@ export function AppHeader() {
           <button
             onClick={() => navigate("/settings")}
             className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm transition-colors",
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm text-sm transition-colors",
               isActive("/settings")
-                ? "bg-zinc-800 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
           >
             <Settings className="h-3.5 w-3.5" />

@@ -36,13 +36,13 @@ import {
 
 function ProjectSkeleton() {
   return (
-    <div className="h-screen flex flex-col bg-zinc-950">
-      <header className="border-b border-border/40 px-4 py-2 flex items-center gap-3">
-        <Skeleton className="h-8 w-8 rounded-md" />
+    <div className="h-screen flex flex-col bg-background">
+      <header className="border-b border-border px-4 py-2 flex items-center gap-3">
+        <Skeleton className="h-8 w-8 rounded-sm" />
         <Skeleton className="h-4 w-36" />
       </header>
       <div className="flex-1 flex min-h-0">
-        <div className="w-[220px] border-r border-border/40 p-2 space-y-2">
+        <div className="w-[220px] border-r border-border p-2 space-y-2">
           <Skeleton className="h-3 w-16 mx-1 mt-1" />
           <Skeleton className="h-14 w-full rounded-md" />
           <Skeleton className="h-14 w-full rounded-md" />
@@ -84,7 +84,7 @@ function ProjectBody({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left panel: Sessions */}
         {leftOpen && (
-          <div className="w-[240px] flex-shrink-0 border-r border-border/40 flex flex-col min-h-0 bg-zinc-950/50">
+          <div className="w-[240px] flex-shrink-0 border-r border-border flex flex-col min-h-0 bg-background/50">
             <div className="flex-1 min-h-0 overflow-auto">
               <TeamPanel />
             </div>
@@ -93,10 +93,10 @@ function ProjectBody({
 
         {/* Center content area */}
         <div className="flex flex-col flex-1 min-w-0 h-full">
-          <div className="flex items-center gap-1 border-b border-border/40 px-3 py-1.5 bg-zinc-950 flex-shrink-0">
+          <div className="flex items-center gap-1 border-b border-border px-3 py-1.5 bg-background flex-shrink-0">
             <button
               onClick={() => setLeftOpen(!leftOpen)}
-              className="text-zinc-500 hover:text-zinc-300 p-1 rounded transition-colors mr-1"
+              className="text-muted-foreground hover:text-foreground p-1 rounded-sm transition-colors mr-1"
               title={leftOpen ? "Close left panel" : "Open left panel"}
             >
               {leftOpen ? <PanelLeftClose className="size-3.5" /> : <PanelLeftOpen className="size-3.5" />}
@@ -104,10 +104,10 @@ function ProjectBody({
 
             <button
               onClick={() => setCenterView("chat")}
-              className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-medium transition-colors ${
                 centerView === "chat"
-                  ? "bg-zinc-800 text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-300"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <MessageSquare className="size-3.5" />
@@ -115,10 +115,10 @@ function ProjectBody({
             </button>
             <button
               onClick={() => setCenterView("board")}
-              className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-medium transition-colors ${
                 centerView === "board"
-                  ? "bg-zinc-800 text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-300"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <LayoutGrid className="size-3.5" />
@@ -256,14 +256,14 @@ export function ProjectPage() {
 
   if (status === "error") {
     return (
-      <div className="h-screen flex flex-col items-center justify-center bg-zinc-950 p-6">
+      <div className="h-screen flex flex-col items-center justify-center bg-background p-6">
         <div className="w-full max-w-md">
-          <div className="bg-red-950/20 border border-red-900/30 rounded-lg p-6">
+          <div className="bg-red-50 border border-red-200 rounded-sm p-6">
             <div className="flex items-start gap-3 mb-4">
-              <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
               <div>
-                <h2 className="text-sm font-semibold text-red-300">Project failed to start</h2>
-                <p className="text-xs text-red-400/80 mt-1">
+                <h2 className="text-sm font-semibold text-destructive">Project failed to start</h2>
+                <p className="text-xs text-destructive/80 mt-1">
                   {statusMessage ?? "Check that your API key is valid and try again."}
                 </p>
               </div>
@@ -272,7 +272,7 @@ export function ProjectPage() {
               <Button
                 size="sm"
                 onClick={handleRestart}
-                className="bg-red-600 hover:bg-red-700 text-white border-0"
+                className="bg-destructive hover:bg-destructive/90 text-white border-0"
               >
                 <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                 Restart
@@ -281,7 +281,7 @@ export function ProjectPage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate("/dashboard")}
-                className="text-zinc-400 hover:text-zinc-200"
+                className="text-muted-foreground hover:text-foreground"
               >
                 Back to Dashboard
               </Button>
@@ -297,16 +297,16 @@ export function ProjectPage() {
 
   return (
     <OpenClawProvider projectId={isRunning ? id : null}>
-      <div className="h-screen flex flex-col bg-zinc-950 overflow-hidden">
+      <div className="h-screen flex flex-col bg-background overflow-hidden">
         {status === "stopped" && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-amber-950/30 border-b border-amber-800/30 text-amber-400 text-xs flex-shrink-0">
+          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-700 text-xs flex-shrink-0">
             <Power className="h-3.5 w-3.5" />
             <span className="flex-1">
               {statusMessage ?? "Container is stopped. Activity data is from the last session."}
             </span>
             <button
               onClick={handleRestart}
-              className="px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/50 text-amber-300 font-medium transition-colors"
+              className="px-2 py-0.5 rounded-sm bg-amber-100 hover:bg-amber-200 text-amber-800 font-medium transition-colors cursor-pointer"
             >
               Restart
             </button>
@@ -314,17 +314,17 @@ export function ProjectPage() {
         )}
 
         {/* Header */}
-        <header className="flex-shrink-0 border-b border-border/40 px-3 py-2 flex items-center gap-2 bg-zinc-950">
+        <header className="flex-shrink-0 border-b border-border px-3 py-2 flex items-center gap-2 bg-background">
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-zinc-500 hover:text-zinc-300"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
             onClick={() => navigate("/dashboard")}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
 
-          <h1 className="font-semibold text-sm text-zinc-100">
+          <h1 className="font-semibold text-sm text-foreground">
             {project?.name ?? "Project"}
           </h1>
 
@@ -335,8 +335,8 @@ export function ProjectPage() {
             </span>
           )}
           {status === "stopped" && (
-            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-500">
-              <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" />
+            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-sm bg-muted text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#C8C5BC]" />
               Stopped
             </span>
           )}
@@ -350,7 +350,7 @@ export function ProjectPage() {
                   title={m.displayName}
                 />
               ))}
-              <span className="text-[11px] text-zinc-600">{headerTeamMembers.length} members</span>
+              <span className="text-[11px] text-muted-foreground/60">{headerTeamMembers.length} members</span>
             </div>
           ) : tmpl ? (
             <div className="flex items-center gap-1.5 ml-1">
@@ -361,14 +361,14 @@ export function ProjectPage() {
                   title={a.role}
                 />
               ))}
-              <span className="text-[11px] text-zinc-600">{tmpl.name}</span>
+              <span className="text-[11px] text-muted-foreground/60">{tmpl.name}</span>
             </div>
           ) : null}
 
           <div className="ml-auto flex items-center gap-1">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-zinc-700">
+                <button className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <Avatar size="sm">
                     {user?.avatarUrl && (
                       <AvatarImage src={user.avatarUrl} alt={user.name} />

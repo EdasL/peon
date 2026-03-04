@@ -14,7 +14,7 @@ function TypingDots() {
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="size-1.5 rounded-full bg-zinc-400 animate-bounce"
+          className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce"
           style={{ animationDelay: `${i * 150}ms`, animationDuration: "0.8s" }}
         />
       ))}
@@ -56,22 +56,22 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   const visibleError = error && error !== dismissedError ? error : null
 
   return (
-    <div className="flex flex-col h-full min-w-0 overflow-hidden bg-zinc-950">
+    <div className="flex flex-col h-full min-w-0 overflow-hidden bg-background">
       {/* Header */}
-      <div className="px-4 py-2.5 border-b border-border/40 flex items-center justify-between">
+      <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <MessageSquare className="h-3.5 w-3.5 text-zinc-500" />
-          <h3 className="text-sm font-medium text-zinc-200">Team Lead</h3>
+          <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+          <h3 className="text-sm font-medium">Team Lead</h3>
         </div>
         <div className="flex items-center gap-1.5">
           {connected ? (
-            <span className="flex items-center gap-1.5 text-[10px] text-zinc-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <span className="size-1.5 rounded-full bg-[#22C55E]" />
               live
             </span>
           ) : (
             <span className="flex items-center gap-1.5 text-[10px] text-amber-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
             </span>
           )}
         </div>
@@ -79,11 +79,11 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
       {/* Error banner */}
       {visibleError && (
-        <div className="flex items-start gap-2 bg-red-950/30 border-b border-red-800/30 px-4 py-2 text-xs text-red-400">
+        <div className="flex items-start gap-2 bg-red-50 border-b border-red-200 px-4 py-2 text-xs text-destructive">
           <span className="flex-1">{visibleError}</span>
           <button
             onClick={() => setDismissedError(visibleError)}
-            className="shrink-0 text-red-500 hover:text-red-300"
+            className="shrink-0 text-destructive hover:text-destructive/70 cursor-pointer"
             aria-label="Dismiss error"
           >
             <X className="h-3.5 w-3.5" />
@@ -91,29 +91,29 @@ export function ChatPanel({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {/* Reconnection banner (only after first successful connection) */}
+      {/* Reconnection banner */}
       {hasConnectedOnce && !connected && (
-        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-3 py-1.5 text-xs text-amber-400">
+        <div className="flex items-center gap-2 bg-amber-50 border-b border-amber-200 px-3 py-1.5 text-xs text-amber-700">
           <RefreshCw className="h-3 w-3 animate-spin" />
           <span>Reconnecting to server...</span>
         </div>
       )}
 
-      {/* Messages */}
+      {/* Messages — flat, no bubbles */}
       <ScrollArea className="flex-1 min-h-0 min-w-0">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-5 w-5 animate-spin text-zinc-700" />
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/40" />
           </div>
         ) : (
-          <div className="px-4 py-3 space-y-4 min-w-0 overflow-hidden">
+          <div className="min-w-0 overflow-hidden">
             {messages.length === 0 && !streamingContent && (
               <div className="flex flex-col items-center justify-center py-16 text-center">
-                <MessageSquare className="h-8 w-8 text-zinc-800 mb-3" />
-                <p className="text-sm text-zinc-600">
+                <MessageSquare className="h-8 w-8 text-muted-foreground/30 mb-3" />
+                <p className="text-sm text-muted-foreground">
                   Describe a feature or bug to get started
                 </p>
-                <p className="text-xs text-zinc-700 mt-1">
+                <p className="text-xs text-muted-foreground/60 mt-1">
                   Your team will pick up the work automatically
                 </p>
               </div>
@@ -122,58 +122,42 @@ export function ChatPanel({ projectId }: { projectId: string }) {
               <div
                 key={msg.id}
                 className={cn(
-                  "flex gap-2.5",
-                  msg.role === "user" ? "flex-row-reverse" : "flex-row"
+                  "px-4 py-3 border-b border-border/50",
+                  msg.role === "assistant" && "bg-muted/30"
                 )}
               >
-                {/* Avatar */}
-                {msg.role === "assistant" && (
-                  <div className="flex size-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-900/60 text-[10px] font-bold text-blue-300 mt-0.5">
-                    TL
-                  </div>
-                )}
-
-                <div
-                  className={cn(
-                    "flex flex-col max-w-[80%] min-w-0",
-                    msg.role === "user" ? "items-end" : "items-start"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "rounded-xl px-3.5 py-2 text-sm leading-relaxed break-words",
-                      msg.role === "user"
-                        ? "bg-blue-600 text-white rounded-br-sm"
-                        : "bg-zinc-800/80 text-zinc-100 rounded-bl-sm"
-                    )}
-                  >
-                    {msg.role === "assistant" ? (
-                      <MarkdownMessage content={msg.content} />
-                    ) : (
-                      msg.content
-                    )}
-                  </div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    {msg.role === "user" ? "You" : "Team Lead"}
+                  </span>
                   {msg.createdAt && (
-                    <span className="mt-1 text-[10px] text-zinc-600 px-1">
+                    <span className="text-[10px] text-muted-foreground/50">
                       {formatTime(msg.createdAt)}
                     </span>
+                  )}
+                </div>
+                <div className="text-sm leading-relaxed break-words">
+                  {msg.role === "assistant" ? (
+                    <MarkdownMessage content={msg.content} />
+                  ) : (
+                    msg.content
                   )}
                 </div>
               </div>
             ))}
             {streamingContent && (
-              <div className="flex gap-2.5">
-                <div className="flex size-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-900/60 text-[10px] font-bold text-blue-300 mt-0.5">
-                  TL
+              <div className="px-4 py-3 bg-muted/30">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    Team Lead
+                  </span>
                 </div>
-                <div className="flex flex-col items-start max-w-[80%] min-w-0">
-                  <div className="rounded-xl rounded-bl-sm px-3.5 py-2 text-sm bg-zinc-800/80 text-zinc-100 leading-relaxed break-words">
-                    {streamingContent === THINKING_SENTINEL ? (
-                      <TypingDots />
-                    ) : (
-                      <MarkdownMessage content={streamingContent + "▍"} />
-                    )}
-                  </div>
+                <div className="text-sm leading-relaxed break-words">
+                  {streamingContent === THINKING_SENTINEL ? (
+                    <TypingDots />
+                  ) : (
+                    <MarkdownMessage content={streamingContent + "▍"} />
+                  )}
                 </div>
               </div>
             )}
@@ -182,15 +166,14 @@ export function ChatPanel({ projectId }: { projectId: string }) {
         )}
       </ScrollArea>
 
-      {/* Input */}
-      <div className="p-3 border-t border-border/40">
+      {/* Input — flat, border only */}
+      <div className="p-3 border-t border-border">
         <div className="flex gap-2 items-start">
           <div className="flex-1 relative">
             <textarea
               value={input}
               onChange={(e) => {
                 setInput(e.target.value)
-                // Auto-resize
                 e.target.style.height = "auto"
                 e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"
               }}
@@ -204,8 +187,8 @@ export function ChatPanel({ projectId }: { projectId: string }) {
               disabled={sending}
               rows={1}
               className={cn(
-                "w-full resize-none rounded-lg border border-border/40 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600",
-                "focus:outline-none focus:ring-1 focus:ring-zinc-600 focus:border-zinc-600",
+                "w-full resize-none rounded-sm border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/60",
+                "focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-[#C8C5BC]",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
                 "min-h-[36px] max-h-[120px] leading-relaxed"
               )}
@@ -215,7 +198,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
             size="icon"
             onClick={handleSend}
             disabled={sending || !input.trim()}
-            className="h-[36px] min-h-[36px] w-[36px] flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-800 disabled:text-zinc-600"
+            className="h-[36px] min-h-[36px] w-[36px] flex-shrink-0"
           >
             {sending ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -224,7 +207,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
             )}
           </Button>
         </div>
-        <p className="mt-1 text-[10px] text-zinc-700">
+        <p className="mt-1 text-[10px] text-muted-foreground/50">
           Enter to send, Shift+Enter for new line
         </p>
       </div>
