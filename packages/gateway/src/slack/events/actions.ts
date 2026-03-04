@@ -394,7 +394,7 @@ export class ActionHandler {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "*Welcome to Lobu!* 👋\n\nYour AI coding assistant is ready to help.",
+            text: "*Welcome to Peon!* 👋\n\nYour AI coding assistant is ready to help.",
           },
         },
         {

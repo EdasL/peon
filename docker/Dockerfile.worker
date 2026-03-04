@@ -38,6 +38,7 @@ RUN apt-get update && apt-get install -y \
     && pip3 install matplotlib \
     && ln -sf /bin/bash /bin/sh \
     && npm install -g --ignore-scripts openclaw@latest \
+    && npm install -g clawhub@latest \
     && npm install -g @anthropic-ai/claude-code@latest
 
 # Create a non-root user with home directory (no sudo - use Nix for system packages)

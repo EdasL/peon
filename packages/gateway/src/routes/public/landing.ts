@@ -143,10 +143,10 @@ function renderLandingPage(options: {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Lobu Gateway</title>
+    <title>Peon Gateway</title>
   </head>
   <body>
-    <h1>Lobu Gateway</h1>
+    <h1>Peon Gateway</h1>
     <ul>
       <li><a href="${docsUrl}">API Documentation</a></li>
       <li><a href="${githubUrl}" target="_blank" rel="noreferrer">GitHub</a></li>

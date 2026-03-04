@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { createLogger } from "@lobu/core";
 import { requireAuth, getSession } from "../../auth/middleware.js";
-import { ensureLobuAgent, bridgeCredentials } from "../../peon/agent-helper.js";
+import { ensurePeonAgent, bridgeCredentials } from "../../peon/agent-helper.js";
 import { getPeonPlatform } from "../../peon/platform.js";
 import { ClaudeOAuthClient } from "../../auth/oauth/claude-client.js";
 import { createClaudeOAuthStateStore } from "../../auth/oauth/state-store.js";
@@ -26,7 +26,7 @@ claudeOAuthRouter.use("*", requireAuth);
 claudeOAuthRouter.post("/web-init", async (c) => {
   try {
     const { userId } = getSession(c);
-    const agentId = await ensureLobuAgent(userId);
+    const agentId = await ensurePeonAgent(userId);
 
     logger.info({ userId, agentId }, "Initializing Claude OAuth web flow");
 

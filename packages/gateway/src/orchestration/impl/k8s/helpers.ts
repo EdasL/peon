@@ -9,7 +9,7 @@ import {
 import { BASE_WORKER_LABELS } from "../../deployment-utils";
 import {
   IMAGE_PULL_FAILURE_REASONS,
-  LOBU_FINALIZER,
+  PEON_FINALIZER,
   WORKER_SECURITY,
 } from "./deployment";
 
@@ -26,7 +26,7 @@ export async function runImagePullPreflight(
   serviceAccountName: string,
   imagePullSecrets: Array<{ name: string }> | undefined
 ): Promise<void> {
-  const podName = `lobu-worker-image-preflight-${Date.now().toString(36)}`;
+  const podName = `peon-worker-image-preflight-${Date.now().toString(36)}`;
   const timeoutMs = 45_000;
   const startMs = Date.now();
 
@@ -37,9 +37,9 @@ export async function runImagePullPreflight(
       name: podName,
       namespace,
       labels: {
-        "app.kubernetes.io/name": "lobu",
+        "app.kubernetes.io/name": "peon",
         "app.kubernetes.io/component": "worker-image-preflight",
-        "lobu/managed-by": "orchestrator",
+        "peon/managed-by": "orchestrator",
       },
     },
     spec: {
@@ -279,9 +279,9 @@ export async function createPVC(
       labels: {
         ...BASE_WORKER_LABELS,
         "app.kubernetes.io/component": "worker-storage",
-        "lobu.io/agent-id": agentId,
+        "peon.io/agent-id": agentId,
       },
-      finalizers: [LOBU_FINALIZER],
+      finalizers: [PEON_FINALIZER],
     },
     spec: {
       accessModes: ["ReadWriteOnce"],
@@ -296,9 +296,9 @@ export async function createPVC(
 
   // Create child span for PVC setup (linked to parent via traceparent)
   const span = createChildSpan("pvc_setup", traceparent, {
-    "lobu.pvc_name": pvcName,
-    "lobu.agent_id": agentId,
-    "lobu.pvc_size": pvcSize,
+    "peon.pvc_name": pvcName,
+    "peon.agent_id": agentId,
+    "peon.pvc_size": pvcSize,
   });
 
   logger.info({ traceparent, pvcName, agentId, size: pvcSize }, "Creating PVC");
@@ -320,7 +320,7 @@ export async function createPVC(
       body: k8sError.body,
     });
     if (k8sError.statusCode === 409) {
-      span?.setAttribute("lobu.pvc_exists", true);
+      span?.setAttribute("peon.pvc_exists", true);
       span?.setStatus({ code: SpanStatusCode.OK });
       span?.end();
       logger.info(`PVC ${pvcName} already exists (reusing)`);
@@ -474,7 +474,7 @@ export async function waitForWorkerReady(
 }
 
 /**
- * Remove the lobu.io/cleanup finalizer from a deployment or PVC.
+ * Remove the peon.io/cleanup finalizer from a deployment or PVC.
  * No-ops if the finalizer is already absent.
  */
 export async function removeFinalizerFromResource(
@@ -501,12 +501,12 @@ export async function removeFinalizerFromResource(
       currentFinalizers = (resource as any).body?.metadata?.finalizers;
     }
 
-    if (!currentFinalizers || !currentFinalizers.includes(LOBU_FINALIZER)) {
+    if (!currentFinalizers || !currentFinalizers.includes(PEON_FINALIZER)) {
       return; // Finalizer not present, nothing to do
     }
 
     const updatedFinalizers = currentFinalizers.filter(
-      (f) => f !== LOBU_FINALIZER
+      (f) => f !== PEON_FINALIZER
     );
     const patch = {
       metadata: {
@@ -590,7 +590,7 @@ export async function cleanupOrphanedPvcFinalizers(
       const deletionTimestamp = pvc.metadata?.deletionTimestamp;
       const finalizers = pvc.metadata?.finalizers;
 
-      if (name && deletionTimestamp && finalizers?.includes(LOBU_FINALIZER)) {
+      if (name && deletionTimestamp && finalizers?.includes(PEON_FINALIZER)) {
         logger.info(`Removing orphaned finalizer from Terminating PVC ${name}`);
         await removeFinalizerFromResource(
           appsV1Api,

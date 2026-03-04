@@ -8,7 +8,7 @@ services:
     volumes:
       - redis-data:/data
     networks:
-      - lobu-internal
+      - peon-internal
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -23,7 +23,7 @@ services:
       dockerfile: docker/Dockerfile.worker
       args:
         NODE_ENV: production
-    image: lobu-worker:latest
+    image: peon-worker:latest
     # This service only builds the image, doesn't run continuously
     command: echo "Worker image built successfully"
     profiles:
@@ -41,7 +41,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - lobu-public
+      - peon-public
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U peon"]
@@ -53,7 +53,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.gateway
-    image: lobu-gateway:latest
+    image: peon-gateway:latest
     environment:
       # Docker context overrides (gateway loads mounted .env file via dotenv)
       NODE_ENV: development
@@ -62,9 +62,9 @@ services:
       PORT: 8080
       QUEUE_URL: redis://redis:6379
       DATABASE_URL: postgresql://peon:peon_dev@postgres:5432/peon
-      LOBU_MCP_SERVERS_URL: ${LOBU_MCP_SERVERS_URL:-examples/mcp/oauth.json}
+      PEON_MCP_SERVERS_URL: ${PEON_MCP_SERVERS_URL:-examples/mcp/oauth.json}
       # Host project path for worker bind mounts (Docker-in-Docker)
-      LOBU_DEV_PROJECT_PATH: ${PWD}
+      PEON_DEV_PROJECT_PATH: ${PWD}
     volumes:
       # Mount Docker socket
       - /var/run/docker.sock:/var/run/docker.sock
@@ -84,8 +84,8 @@ services:
       - "8080:8080"
       - "8118:8118" # HTTP proxy for workers
     networks:
-      - lobu-public   # Internet access
-      - lobu-internal # Internal services (redis, workers)
+      - peon-public   # Internet access
+      - peon-internal # Internal services (redis, workers)
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -117,11 +117,11 @@ volumes:
 
 networks:
   # Public network with internet access (gateway only)
-  lobu-public:
+  peon-public:
     driver: bridge
 
   # Internal network - no direct internet access
   # Workers use this network and can only reach internet via gateway's proxy
-  lobu-internal:
+  peon-internal:
     internal: true
     driver: bridge

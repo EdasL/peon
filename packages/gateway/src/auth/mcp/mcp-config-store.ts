@@ -13,7 +13,7 @@ const logger = createLogger("mcp-config-store");
 export class McpConfigStore {
   private configs: Map<string, AgentMcpConfig> = new Map();
   private redisClient: any = null;
-  private readonly REDIS_PREFIX = "lobu:mcp:config:";
+  private readonly REDIS_PREFIX = "peon:mcp:config:";
   private readonly REDIS_TTL = 24 * 60 * 60; // 24 hours
 
   /**

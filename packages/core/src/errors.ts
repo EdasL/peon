@@ -1,5 +1,5 @@
 /**
- * Base error class for all lobu errors
+ * Base error class for all peon errors
  */
 export abstract class BaseError extends Error {
   abstract readonly name: string;

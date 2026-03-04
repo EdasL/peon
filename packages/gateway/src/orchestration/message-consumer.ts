@@ -141,7 +141,7 @@ export class MessageConsumer {
       const redis = this.queue.getRedisClient();
       this.systemMessageLimiter = new SystemMessageLimiter(
         redis,
-        "lobu:sysmsg"
+        "peon:sysmsg"
       );
     }
     return this.systemMessageLimiter;
@@ -170,10 +170,10 @@ export class MessageConsumer {
 
     // Create child span for queue processing (linked to message_received span)
     const queueSpan = createChildSpan("queue_processing", traceparent, {
-      "lobu.trace_id": traceId,
-      "lobu.job_id": jobId,
-      "lobu.user_id": data?.userId || "unknown",
-      "lobu.conversation_id": data?.conversationId || "unknown",
+      "peon.trace_id": traceId,
+      "peon.job_id": jobId,
+      "peon.user_id": data?.userId || "unknown",
+      "peon.conversation_id": data?.conversationId || "unknown",
     });
 
     // Get traceparent to pass to worker (for further context propagation)
@@ -254,7 +254,7 @@ export class MessageConsumer {
 
         // Reset suppression so each new user message re-triggers the auth prompt
         // (the lock still prevents concurrent sends within lockTtlSeconds)
-        await this.queue.getRedisClient().del(`lobu:sysmsg:sent:${dedupeKey}`);
+        await this.queue.getRedisClient().del(`peon:sysmsg:sent:${dedupeKey}`);
 
         let didSend = false;
         try {

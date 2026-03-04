@@ -1,6 +1,6 @@
 /**
  * Peon Platform Adapter
- * Bridges peon.work's Postgres-based chat + SSE system with Lobu's
+ * Bridges peon.work's Postgres-based chat + SSE system with Peon's
  * queue-based orchestration pipeline.
  */
 

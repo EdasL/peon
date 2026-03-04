@@ -9,7 +9,7 @@ Transform the local femrun-kanban tool into a hosted multi-user platform where n
 
 ## Foundation
 
-Fork **Lobu** (Apache 2.0) — a production-quality multi-tenant Claude Code platform with Docker container orchestration, network isolation, multi-provider auth, and a module system. This provides weeks of security and infrastructure work out of the box.
+Fork **Peon** (Apache 2.0) — a production-quality multi-tenant Claude Code platform with Docker container orchestration, network isolation, multi-provider auth, and a module system. This provides weeks of security and infrastructure work out of the box.
 
 ## Onboarding Flow
 
@@ -84,7 +84,7 @@ Users can manage multiple teams across multiple repos:
                     │   GCP Compute Engine VM   │
                     │                           │
                     │  ┌─────────────────────┐  │
-                    │  │   Lobu Gateway       │  │
+                    │  │   Peon Gateway       │  │
                     │  │   (Hono API)         │  │
                     │  │   + Postgres         │  │
                     │  │   + Redis            │  │
@@ -117,7 +117,7 @@ Users can manage multiple teams across multiple repos:
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | Frontend | React + Vite (Vercel) | Dashboard, chat, onboarding |
-| API Gateway | Lobu Gateway (Hono) | Auth, routing, container orchestration |
+| API Gateway | Peon Gateway (Hono) | Auth, routing, container orchestration |
 | Database | Postgres | Users, teams, API keys, chat history |
 | State/Queue | Redis + BullMQ | Job queue, real-time state, SSE |
 | Containers | Docker + Dockerode | One per team, network-isolated |
@@ -159,7 +159,7 @@ Users can manage multiple teams across multiple repos:
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Foundation | Fork Lobu | Production-quality container orchestration, auth, security — saves weeks |
+| Foundation | Fork Peon | Production-quality container orchestration, auth, security — saves weeks |
 | Deployment | GCP Compute Engine | Full Docker control, predictable cost, no vendor lock-in |
 | Frontend hosting | Vercel free tier | Zero cost, great DX, CDN |
 | Auth provider | Google OAuth | Widest reach for non-technical users |

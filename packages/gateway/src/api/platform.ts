@@ -234,7 +234,7 @@ export class ApiPlatform implements PlatformAdapter {
       channelId: agentId,
       teamId: "api",
       agentId: agentId, // agentId is the isolation boundary
-      botId: "lobu-api",
+      botId: "peon-api",
       platform: "api",
       messageText: message,
       platformMetadata,

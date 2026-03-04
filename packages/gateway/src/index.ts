@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 /**
- * Main entry point for Lobu Gateway
+ * Main entry point for Peon Gateway
  * Exports types and utilities for other packages (like @lobu/slack)
  */
 

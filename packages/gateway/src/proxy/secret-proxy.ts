@@ -7,8 +7,8 @@ import type { ProviderUpstreamConfig } from "../modules/module-system";
 
 const logger = createLogger("secret-proxy");
 
-const PLACEHOLDER_PREFIX = "lobu_secret_";
-const REDIS_KEY_PREFIX = "lobu:secret:";
+const PLACEHOLDER_PREFIX = "peon_secret_";
+const REDIS_KEY_PREFIX = "peon:secret:";
 
 export interface SecretMapping {
   agentId: string;
@@ -105,8 +105,8 @@ export class SecretProxy {
 
   /**
    * Resolve a placeholder token to its real value via Redis.
-   * Handles both plain (`lobu_secret_<uuid>`) and prefixed
-   * (`sk-ant-oat01-lobu_secret_<uuid>`) placeholders.
+   * Handles both plain (`peon_secret_<uuid>`) and prefixed
+   * (`sk-ant-oat01-peon_secret_<uuid>`) placeholders.
    */
   private async resolveSecret(placeholder: string): Promise<string | null> {
     const prefixIdx = placeholder.indexOf(PLACEHOLDER_PREFIX);

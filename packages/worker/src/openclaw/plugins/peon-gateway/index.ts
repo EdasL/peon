@@ -705,6 +705,8 @@ async function delegateToProject(
          await stat(claudeMdDot).then(() => true, () => false));
 
       if (!initSucceeded) {
+        const stderr = initResult.stderr?.toString() || "";
+        console.error(`[DelegateToProject] claude init failed for ${params.projectId} (exit=${initResult.status}): ${stderr}`);
         await writeFile(claudeMdDot, `# Project: ${params.projectId}\n\nManaged project workspace.\n`, "utf-8");
       }
     }
@@ -718,10 +720,10 @@ async function delegateToProject(
   const sessionName = `peon-${params.projectId}`;
   const subagentName = params.role || "lead";
   const allowedTools = params.allowedTools || "Read,Edit,Write,Bash,Grep,Glob";
+  const hasTeam = !!(params.teamMembers?.length && params.teamMembers.length > 0);
 
-  // Prepend Agent Team spawn instructions if team members are provided
-  const teamSpawnPrompt = params.teamMembers?.length
-    ? buildTeamSpawnPrompt(params.teamMembers)
+  const teamSpawnPrompt = hasTeam
+    ? buildTeamSpawnPrompt(params.teamMembers!)
     : "";
   const fullTask = teamSpawnPrompt + params.task;
 
@@ -739,95 +741,201 @@ async function delegateToProject(
     try {
       await createSession(sessionName, projectDir);
 
-      const claudeCmd = [
-        "claude",
-        "--dangerously-skip-permissions",
-        "--output-format", "stream-json",
-        "--allowedTools", allowedTools,
-        "-p", fullTask,
-      ].join(" ");
+      if (hasTeam) {
+        // --- Interactive mode for Agent Teams ---
+        // Agent Teams require an interactive Claude session (no -p flag).
+        // --teammate-mode in-process keeps all teammates in the same
+        // terminal, avoiding nested tmux conflicts.
+        const claudeCmd = [
+          "claude",
+          "--dangerously-skip-permissions",
+          "--teammate-mode", "in-process",
+          "--allowedTools", allowedTools,
+        ].join(" ");
 
-      await sendKeys(sessionName, claudeCmd);
+        await sendKeys(sessionName, claudeCmd);
 
-      let lastPaneLength = 0;
-      const pollInterval = 200;
-      const maxWaitMs = 10 * 60 * 1000;
-      const start = Date.now();
-
-      while (Date.now() - start < maxWaitMs) {
-        if (!await hasSession(sessionName)) {
-          team.completed = true;
-          team.exitCode = 0;
-          break;
-        }
-
-        const pane = await capturePane(sessionName).catch(() => "");
-        if (pane.length > lastPaneLength) {
-          const newText = pane.slice(lastPaneLength);
-          lastPaneLength = pane.length;
-          team.output += newText;
-
-          // Parse stream-json events from new output
-          for (const line of newText.split("\n")) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            try {
-              const ev = JSON.parse(trimmed) as Record<string, unknown>;
-
-              if (ev.type === "tool_use" && typeof ev.name === "string") {
-                const toolName = ev.name;
-                const toolInput = (ev.input && typeof ev.input === "object")
-                  ? ev.input as Record<string, unknown>
-                  : {};
-                if (TASK_TOOL_NAMES.has(toolName)) {
-                  syncTaskToGateway(toolName, toolInput).catch(() => {});
-                }
-                if (!SILENT_TOOLS.has(toolName)) {
-                  const activityText = buildToolActivityText(toolName, toolInput);
-                  const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
-                  const command = toolInput.command as string | undefined;
-                  postSubagentActivity(subagentName, "tool_start", toolName, activityText, {
-                    ...(filePath && { filePath }),
-                    ...(command && { command }),
-                  }).catch(() => {});
-                }
-              } else if (ev.type === "tool_result") {
-                const toolId = (ev.tool_use_id as string | undefined) ?? "";
-                if (toolId) {
-                  postSubagentActivity(subagentName, "tool_end").catch(() => {});
-                }
-              } else if (ev.type === "message" && (ev as Record<string, unknown>).stop_reason === "end_turn") {
-                postSubagentActivity(subagentName, "turn_end").catch(() => {});
-                // Claude finished — session will exit on its own
-                team.completed = true;
-                team.exitCode = 0;
-              } else if (ev.type === "result") {
-                team.completed = true;
-                team.exitCode = 0;
-              }
-            } catch { /* not JSON — terminal output, ignore */ }
+        // Wait for Claude's interactive prompt to appear before sending the task.
+        const readyTimeout = 60_000;
+        const readyStart = Date.now();
+        let ready = false;
+        while (Date.now() - readyStart < readyTimeout) {
+          const pane = await capturePane(sessionName).catch(() => "");
+          // Claude shows a ">" prompt or "Type your message" when ready
+          if (pane.includes(">") || pane.includes("Type your") || pane.includes("Claude")) {
+            ready = true;
+            break;
           }
+          if (!await hasSession(sessionName)) break;
+          await new Promise((r) => setTimeout(r, 500));
         }
 
-        if (team.completed) break;
-        await new Promise((r) => setTimeout(r, pollInterval));
+        if (!ready) {
+          console.error(`[DelegateToProject] Claude did not become ready within ${readyTimeout}ms for ${params.projectId}`);
+          team.completed = true;
+          team.exitCode = 1;
+          team.output += "\nError: Claude Code did not start within timeout";
+          await killSession(sessionName).catch(() => {});
+          return;
+        }
+
+        // Send the task text into the interactive prompt
+        await sendKeys(sessionName, fullTask);
+
+        // Poll pane output for interactive-mode activity signals
+        let lastPaneLength = 0;
+        const pollInterval = 500;
+        const maxWaitMs = 30 * 60 * 1000; // 30 min for team tasks
+        const start = Date.now();
+        let idleCount = 0;
+
+        while (Date.now() - start < maxWaitMs) {
+          if (!await hasSession(sessionName)) {
+            team.completed = true;
+            team.exitCode = 0;
+            break;
+          }
+
+          const pane = await capturePane(sessionName).catch(() => "");
+          if (pane.length > lastPaneLength) {
+            const newText = pane.slice(lastPaneLength);
+            lastPaneLength = pane.length;
+            team.output += newText;
+            idleCount = 0;
+
+            // Try to parse any stream-json lines that leak through
+            for (const line of newText.split("\n")) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              try {
+                const ev = JSON.parse(trimmed) as Record<string, unknown>;
+                if (ev.type === "tool_use" && typeof ev.name === "string") {
+                  const toolName = ev.name;
+                  const toolInput = (ev.input && typeof ev.input === "object")
+                    ? ev.input as Record<string, unknown>
+                    : {};
+                  if (TASK_TOOL_NAMES.has(toolName)) {
+                    syncTaskToGateway(toolName, toolInput).catch(() => {});
+                  }
+                  if (!SILENT_TOOLS.has(toolName)) {
+                    const activityText = buildToolActivityText(toolName, toolInput);
+                    const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
+                    const command = toolInput.command as string | undefined;
+                    postSubagentActivity(subagentName, "tool_start", toolName, activityText, {
+                      ...(filePath && { filePath }),
+                      ...(command && { command }),
+                    }).catch(() => {});
+                  }
+                } else if (ev.type === "tool_result") {
+                  postSubagentActivity(subagentName, "tool_end").catch(() => {});
+                } else if (ev.type === "result") {
+                  team.completed = true;
+                  team.exitCode = 0;
+                }
+              } catch { /* not JSON — terminal output, expected in interactive mode */ }
+            }
+          } else {
+            idleCount++;
+          }
+
+          if (team.completed) break;
+          await new Promise((r) => setTimeout(r, pollInterval));
+        }
+      } else {
+        // --- Print mode for solo tasks (no team) ---
+        // Uses -p with stream-json for structured output parsing.
+        const claudeCmd = [
+          "claude",
+          "--dangerously-skip-permissions",
+          "--output-format", "stream-json",
+          "--allowedTools", allowedTools,
+          "-p", fullTask,
+        ].join(" ");
+
+        await sendKeys(sessionName, claudeCmd);
+
+        let lastPaneLength = 0;
+        const pollInterval = 200;
+        const maxWaitMs = 10 * 60 * 1000;
+        const start = Date.now();
+
+        while (Date.now() - start < maxWaitMs) {
+          if (!await hasSession(sessionName)) {
+            team.completed = true;
+            team.exitCode = 0;
+            break;
+          }
+
+          const pane = await capturePane(sessionName).catch(() => "");
+          if (pane.length > lastPaneLength) {
+            const newText = pane.slice(lastPaneLength);
+            lastPaneLength = pane.length;
+            team.output += newText;
+
+            for (const line of newText.split("\n")) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              try {
+                const ev = JSON.parse(trimmed) as Record<string, unknown>;
+
+                if (ev.type === "tool_use" && typeof ev.name === "string") {
+                  const toolName = ev.name;
+                  const toolInput = (ev.input && typeof ev.input === "object")
+                    ? ev.input as Record<string, unknown>
+                    : {};
+                  if (TASK_TOOL_NAMES.has(toolName)) {
+                    syncTaskToGateway(toolName, toolInput).catch(() => {});
+                  }
+                  if (!SILENT_TOOLS.has(toolName)) {
+                    const activityText = buildToolActivityText(toolName, toolInput);
+                    const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
+                    const command = toolInput.command as string | undefined;
+                    postSubagentActivity(subagentName, "tool_start", toolName, activityText, {
+                      ...(filePath && { filePath }),
+                      ...(command && { command }),
+                    }).catch(() => {});
+                  }
+                } else if (ev.type === "tool_result") {
+                  const toolId = (ev.tool_use_id as string | undefined) ?? "";
+                  if (toolId) {
+                    postSubagentActivity(subagentName, "tool_end").catch(() => {});
+                  }
+                } else if (ev.type === "message" && (ev as Record<string, unknown>).stop_reason === "end_turn") {
+                  postSubagentActivity(subagentName, "turn_end").catch(() => {});
+                  team.completed = true;
+                  team.exitCode = 0;
+                } else if (ev.type === "result") {
+                  team.completed = true;
+                  team.exitCode = 0;
+                }
+              } catch { /* not JSON — terminal output, ignore */ }
+            }
+          }
+
+          if (team.completed) break;
+          await new Promise((r) => setTimeout(r, pollInterval));
+        }
       }
 
       if (!team.completed) {
-        // Timed out
         team.completed = true;
         team.exitCode = 1;
+        team.output += `\nError: Timed out after ${hasTeam ? "30" : "10"} minutes`;
+        console.error(`[DelegateToProject] Timed out for ${params.projectId} (mode=${hasTeam ? "team" : "solo"})`);
       }
     } catch (err) {
       team.completed = true;
       team.exitCode = 1;
-      team.output += `\nError: ${err instanceof Error ? err.message : String(err)}`;
+      const errMsg = err instanceof Error ? err.message : String(err);
+      team.output += `\nError: ${errMsg}`;
+      console.error(`[DelegateToProject] Error for ${params.projectId}:`, errMsg);
     } finally {
       await killSession(sessionName).catch(() => {});
     }
   })();
 
-  return text(`Delegated task to project "${params.projectId}" (tmux session: ${sessionName}). Use CheckTeamStatus to poll and GetTeamResult when done.`);
+  const mode = hasTeam ? "Agent Team (interactive)" : "solo (stream-json)";
+  return text(`Delegated task to project "${params.projectId}" (tmux session: ${sessionName}, mode: ${mode}). Use CheckTeamStatus to poll and GetTeamResult when done.`);
 }
 
 async function checkTeamStatus(
@@ -848,6 +956,8 @@ async function getTeamResult(
   const team = activeTeams.get(params.projectId);
   if (!team) return text(`No team found for "${params.projectId}".`);
   if (!team.completed) return text(`Team still running. Use CheckTeamStatus.`);
+
+  // Try to extract a structured result from stream-json output
   let resultText = "";
   for (const line of team.output.split("\n")) {
     const trimmed = line.trim();
@@ -855,10 +965,21 @@ async function getTeamResult(
     try {
       const ev = JSON.parse(trimmed);
       if (ev.type === "result" && typeof ev.result === "string") resultText = ev.result;
-    } catch { /* not JSON */ }
+    } catch { /* not JSON — expected for interactive mode output */ }
   }
+
+  // For interactive/team mode, return the raw terminal output if no
+  // structured result was found (stream-json isn't used in team mode).
+  if (!resultText && team.output.length > 0) {
+    const maxLen = 4000;
+    const trimmed = team.output.length > maxLen
+      ? "...(truncated)\n" + team.output.slice(-maxLen)
+      : team.output;
+    resultText = `[Terminal output]\n${trimmed}`;
+  }
+
   activeTeams.delete(params.projectId);
-  return text(resultText || `Team completed with exit code ${team.exitCode}. No text result captured.`);
+  return text(resultText || `Team completed with exit code ${team.exitCode}. No output captured.`);
 }
 
 // ---------------------------------------------------------------------------

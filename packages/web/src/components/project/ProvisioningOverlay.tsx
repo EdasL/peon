@@ -1,32 +1,36 @@
 import { useEffect, useState, useRef } from "react"
-import { Loader2, Check, AlertCircle, Server, FolderCog, Users, Rocket } from "lucide-react"
+import { Loader2, Check, AlertCircle, Server, FolderCog, Cpu, Rocket } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Project } from "@/lib/api"
 
 interface ProvisioningStep {
+  key: string
   label: string
   icon: React.ReactNode
 }
 
 const STEPS: ProvisioningStep[] = [
-  { label: "Provisioning your private environment", icon: <Server className="h-4 w-4" /> },
-  { label: "Configuring workspace", icon: <FolderCog className="h-4 w-4" /> },
-  { label: "Setting up team agents", icon: <Users className="h-4 w-4" /> },
-  { label: "Ready to go!", icon: <Rocket className="h-4 w-4" /> },
+  { key: "container", label: "Provisioning environment", icon: <Server className="h-4 w-4" /> },
+  { key: "workspace", label: "Configuring workspace", icon: <FolderCog className="h-4 w-4" /> },
+  { key: "engine", label: "Starting AI engine", icon: <Cpu className="h-4 w-4" /> },
+  { key: "ready", label: "Ready to go!", icon: <Rocket className="h-4 w-4" /> },
 ]
 
-const STEP_DELAYS = [3000, 6000, 0]
+const STEP_INDEX: Record<string, number> = {}
+STEPS.forEach((s, i) => { STEP_INDEX[s.key] = i })
 
-const SKIP_TIMEOUT_MS = 45_000
+const SKIP_TIMEOUT_MS = 60_000
 
 export function ProvisioningOverlay({
   projectName,
   status,
+  bootStep,
   onReady,
   onBack,
 }: {
   projectName: string
   status: Project["status"]
+  bootStep: string | null
   onReady: () => void
   onBack: () => void
 }) {
@@ -34,22 +38,23 @@ export function ProvisioningOverlay({
   const [canSkip, setCanSkip] = useState(false)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
+  // Advance steps based on real boot progress events
   useEffect(() => {
-    let cumulative = 0
-    for (let i = 0; i < STEP_DELAYS.length; i++) {
-      const delay = STEP_DELAYS[i]
-      if (delay === 0) break
-      cumulative += delay
-      const targetStep = i + 1
-      const timer = setTimeout(() => {
-        setActiveStep((prev) => Math.max(prev, targetStep))
-      }, cumulative)
-      timersRef.current.push(timer)
+    if (!bootStep) return
+    const idx = STEP_INDEX[bootStep]
+    if (idx !== undefined) {
+      // Mark this step as the active one (all previous become complete)
+      setActiveStep((prev) => Math.max(prev, idx))
     }
+  }, [bootStep])
 
+  // Fallback: slowly advance step 0 after 8s if no boot_progress arrives
+  useEffect(() => {
+    const fallbackTimer = setTimeout(() => {
+      setActiveStep((prev) => (prev === 0 ? 0 : prev))
+    }, 8000)
     const skipTimer = setTimeout(() => setCanSkip(true), SKIP_TIMEOUT_MS)
-    timersRef.current.push(skipTimer)
-
+    timersRef.current.push(fallbackTimer, skipTimer)
     return () => timersRef.current.forEach(clearTimeout)
   }, [])
 
@@ -60,7 +65,6 @@ export function ProvisioningOverlay({
       return () => clearTimeout(timer)
     }
     if (status === "stopped") {
-      // Don't show "Ready!" for stopped — transition immediately
       onReady()
     }
   }, [status, onReady])
@@ -75,7 +79,7 @@ export function ProvisioningOverlay({
           <p className="text-sm text-muted-foreground">
             {isError
               ? "Something went wrong during setup"
-              : "This usually takes 15\u201330 seconds"}
+              : "This usually takes 30\u201360 seconds"}
           </p>
         </div>
 
@@ -86,7 +90,7 @@ export function ProvisioningOverlay({
 
             return (
               <div
-                key={i}
+                key={step.key}
                 className={`flex items-center gap-3 rounded-lg border px-4 py-3 transition-all duration-500 ${
                   isActive
                     ? "border-primary/50 bg-primary/5"

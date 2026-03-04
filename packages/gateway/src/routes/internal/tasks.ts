@@ -39,7 +39,7 @@ async function resolveProjectId(conversationId: string): Promise<string | null> 
   if (cached && cached.expiresAt > Date.now()) return cached.id
 
   const user = await db.query.users.findFirst({
-    where: eq(users.lobuAgentId, conversationId),
+    where: eq(users.peonAgentId, conversationId),
     columns: { id: true },
   })
   if (!user) {

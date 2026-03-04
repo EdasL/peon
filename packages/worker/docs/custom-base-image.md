@@ -1,6 +1,6 @@
 # Using @lobu/worker with Custom Base Images
 
-This guide explains how to install and run the Lobu worker in your own Docker base image.
+This guide explains how to install and run the Peon worker in your own Docker base image.
 
 ## Why Use a Custom Base Image?
 
@@ -12,7 +12,7 @@ This guide explains how to install and run the Lobu worker in your own Docker ba
 
 ## System Requirements
 
-The Lobu worker requires these system dependencies:
+The Peon worker requires these system dependencies:
 
 | Dependency | Version | Required For |
 |------------|---------|--------------|
@@ -48,7 +48,7 @@ RUN npm install -g @lobu/worker@^0.1.0
 WORKDIR /workspace
 
 # Run worker
-CMD ["lobu-worker"]
+CMD ["peon-worker"]
 ```
 
 ### Method 2: Using Bun (Recommended)
@@ -70,7 +70,7 @@ RUN curl -L https://claude.ai/install.sh | sh
 RUN bun add -g @lobu/worker@^0.1.0
 
 # Run worker
-CMD ["lobu-worker"]
+CMD ["peon-worker"]
 ```
 
 ### Method 3: Company Approved Base
@@ -98,7 +98,7 @@ RUN npm install -g @lobu/worker@^0.1.0
 # Your company's security/monitoring agents
 RUN /company/install-security-agents.sh
 
-CMD ["lobu-worker"]
+CMD ["peon-worker"]
 ```
 
 ### Method 4: Distroless (Minimal Attack Surface)
@@ -119,11 +119,11 @@ RUN npm install -g @lobu/worker@^0.1.0
 FROM gcr.io/distroless/nodejs20-debian12
 
 # Copy only runtime files from builder
-COPY --from=builder /usr/local/bin/lobu-worker /usr/local/bin/
+COPY --from=builder /usr/local/bin/peon-worker /usr/local/bin/
 COPY --from=builder /usr/local/bin/claude /usr/local/bin/
 COPY --from=builder /usr/local/lib/node_modules/@lobu/worker /usr/local/lib/node_modules/@lobu/worker
 
-CMD ["lobu-worker"]
+CMD ["peon-worker"]
 ```
 
 ## Environment Variables
@@ -182,14 +182,14 @@ COPY ./scripts /workspace/scripts
 RUN chmod +x /workspace/scripts/*.sh
 
 WORKDIR /workspace
-CMD ["lobu-worker"]
+CMD ["peon-worker"]
 ```
 
 ## Troubleshooting
 
 ### Worker won't start
 
-**Error:** `lobu-worker: command not found`
+**Error:** `peon-worker: command not found`
 - **Solution:** Ensure npm/bun installed the package globally, or use full path
 
 **Error:** `claude: command not found`
@@ -208,9 +208,9 @@ CMD ["lobu-worker"]
 **Error:** `EACCES: permission denied`
 - **Solution:** Run as root or add user to docker group:
   ```dockerfile
-  RUN addgroup -S lobu && adduser -S lobu -G lobu
-  RUN addgroup lobu docker
-  USER lobu
+  RUN addgroup -S peon && adduser -S peon -G peon
+  RUN addgroup peon docker
+  USER peon
   ```
 
 ## Compatibility Matrix
@@ -227,11 +227,11 @@ CMD ["lobu-worker"]
 
 ## Migration from Base Image
 
-If you're currently using `FROM ghcr.io/lobu-ai/lobu-worker-base`, here's how to migrate:
+If you're currently using `FROM ghcr.io/peon-ai/peon-worker-base`, here's how to migrate:
 
 **Before:**
 ```dockerfile
-FROM ghcr.io/lobu-ai/lobu-worker-base:0.1.0
+FROM ghcr.io/peon-ai/peon-worker-base:0.1.0
 RUN pip install pandas
 ```
 
@@ -251,11 +251,11 @@ RUN npm install -g @lobu/worker@^0.1.0
 # Your customizations (same as before!)
 RUN pip3 install pandas
 
-CMD ["lobu-worker"]
+CMD ["peon-worker"]
 ```
 
 ## Getting Help
 
-- [GitHub Issues](https://github.com/lobu-ai/lobu/issues)
+- [GitHub Issues](https://github.com/peon-ai/peon/issues)
 - [Compatibility Matrix](./compatibility-matrix.md)
 - [Base Image Quick Start](../README.md) (if custom base isn't needed)

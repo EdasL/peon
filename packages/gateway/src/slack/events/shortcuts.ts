@@ -105,8 +105,8 @@ export class ShortcutCommandHandler {
   private setupSlashCommands(): void {
     logger.info("Setting up slash command handlers...");
 
-    // Handle /lobu command with optional subcommands
-    this.app.command("/lobu", async ({ ack, body, client }) => {
+    // Handle /peon command with optional subcommands
+    this.app.command("/peon", async ({ ack, body, client }) => {
       await ack();
 
       const { user_id, channel_id, text } = body;
@@ -116,7 +116,7 @@ export class ShortcutCommandHandler {
       const isGroup = !channel_id.startsWith("D");
 
       logger.info(
-        `/lobu command received from user=${user_id}, channel=${channel_id}, subcommand=${subcommand || "(none)"}`
+        `/peon command received from user=${user_id}, channel=${channel_id}, subcommand=${subcommand || "(none)"}`
       );
 
       // Try shared command dispatcher for subcommands
@@ -161,7 +161,7 @@ export class ShortcutCommandHandler {
         type: "header",
         text: {
           type: "plain_text",
-          text: "Welcome to Lobu! 👋",
+          text: "Welcome to Peon! 👋",
           emoji: true,
         },
       },
@@ -202,7 +202,7 @@ export class ShortcutCommandHandler {
         thread_ts?: string;
       } = {
         channel: channelId,
-        text: "Welcome to Lobu! 👋",
+        text: "Welcome to Peon! 👋",
         blocks,
       };
 
@@ -217,7 +217,7 @@ export class ShortcutCommandHandler {
       await client.chat.postEphemeral({
         channel: channelId,
         user: userId,
-        text: "Welcome to Lobu! 👋",
+        text: "Welcome to Peon! 👋",
         blocks,
       });
     }

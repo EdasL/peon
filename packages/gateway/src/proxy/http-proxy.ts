@@ -434,7 +434,7 @@ async function handleConnect(
     logger.warn(`Proxy auth required for CONNECT to ${hostname}`);
     try {
       clientSocket.write(
-        'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="lobu-proxy"\r\n\r\n'
+        'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="peon-proxy"\r\n\r\n'
       );
       clientSocket.end();
     } catch {
@@ -584,7 +584,7 @@ async function handleProxyRequest(
     logger.warn(`Proxy auth required for ${req.method} ${hostname}`);
     res.writeHead(407, {
       "Content-Type": "text/plain",
-      "Proxy-Authenticate": 'Basic realm="lobu-proxy"',
+      "Proxy-Authenticate": 'Basic realm="peon-proxy"',
     });
     res.end("407 Proxy Authentication Required\n");
     return;

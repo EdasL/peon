@@ -2,19 +2,19 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Transform the local femrun-kanban tool into a hosted multi-user platform by forking Lobu, adding Google/GitHub OAuth, web chat with team lead agents, a live Kanban dashboard, and deploying to GCP + Vercel.
+**Goal:** Transform the local femrun-kanban tool into a hosted multi-user platform by forking Peon, adding Google/GitHub OAuth, web chat with team lead agents, a live Kanban dashboard, and deploying to GCP + Vercel.
 
-**Architecture:** Fork Lobu (Apache 2.0) as the backend — it provides Docker container orchestration, SSE worker communication, Redis state, and a module system. Add a new "web" platform adapter (alongside Lobu's existing Slack/Telegram adapters) that powers our chat UI. Add Postgres for user accounts and project metadata. Port our existing React Kanban frontend into a new `packages/web` package deployed to Vercel.
+**Architecture:** Fork Peon (Apache 2.0) as the backend — it provides Docker container orchestration, SSE worker communication, Redis state, and a module system. Add a new "web" platform adapter (alongside Peon's existing Slack/Telegram adapters) that powers our chat UI. Add Postgres for user accounts and project metadata. Port our existing React Kanban frontend into a new `packages/web` package deployed to Vercel.
 
-**Tech Stack:** Hono (Lobu gateway), React 19 + Vite + Tailwind v4 + shadcn/ui (frontend), Postgres via Drizzle ORM (user data), Redis + BullMQ (state/queue), Docker + Dockerode (container orchestration), Google OAuth + GitHub OAuth (auth), SSE (real-time), GCP Compute Engine (hosting), Vercel (frontend CDN).
+**Tech Stack:** Hono (Peon gateway), React 19 + Vite + Tailwind v4 + shadcn/ui (frontend), Postgres via Drizzle ORM (user data), Redis + BullMQ (state/queue), Docker + Dockerode (container orchestration), Google OAuth + GitHub OAuth (auth), SSE (real-time), GCP Compute Engine (hosting), Vercel (frontend CDN).
 
 **Ref:** Design doc at `docs/plans/2026-03-02-onboarding-design.md`
 
 ---
 
-## Task 1: Fork Lobu & Restructure Monorepo
+## Task 1: Fork Peon & Restructure Monorepo
 
-**Why:** We need Lobu's gateway/worker/core packages as our foundation. We'll clone the repo structure into our project, remove what we don't need (landing page, Slack/Telegram/WhatsApp adapters for now), and add our own `packages/web` frontend package.
+**Why:** We need Peon's gateway/worker/core packages as our foundation. We'll clone the repo structure into our project, remove what we don't need (landing page, Slack/Telegram/WhatsApp adapters for now), and add our own `packages/web` frontend package.
 
 **Files:**
 - Delete: `packages/landing/` (replaced by our frontend)
@@ -25,21 +25,21 @@
 - Modify: `docker/docker-compose.yml` (add Postgres service)
 - Create: `packages/gateway/src/db/` (Postgres connection + Drizzle schema)
 
-**Step 1: Clone Lobu into a fresh branch**
+**Step 1: Clone Peon into a fresh branch**
 
 ```bash
 git checkout -b feat/multiuser-platform
 ```
 
-Copy Lobu's packages into our repo:
+Copy Peon's packages into our repo:
 
 ```bash
 # From femrun-kanban root
-cp -r /tmp/lobu-inspect/packages/gateway packages/gateway
-cp -r /tmp/lobu-inspect/packages/worker packages/worker
-cp -r /tmp/lobu-inspect/packages/core packages/core
-cp -r /tmp/lobu-inspect/docker docker
-cp /tmp/lobu-inspect/tsconfig.json tsconfig.base.json
+cp -r /tmp/peon-inspect/packages/gateway packages/gateway
+cp -r /tmp/peon-inspect/packages/worker packages/worker
+cp -r /tmp/peon-inspect/packages/core packages/core
+cp -r /tmp/peon-inspect/docker docker
+cp /tmp/peon-inspect/tsconfig.json tsconfig.base.json
 ```
 
 **Step 2: Move existing frontend into packages/web**
@@ -53,7 +53,7 @@ mv components.json packages/web/
 mv tsconfig.json packages/web/tsconfig.json
 ```
 
-Keep `server/` for reference but it will be replaced by Lobu gateway.
+Keep `server/` for reference but it will be replaced by Peon gateway.
 
 **Step 3: Update root package.json**
 
@@ -146,7 +146,7 @@ export default defineConfig({
 })
 ```
 
-Note: Lobu gateway runs on port 3000 (not 3001 like our old server).
+Note: Peon gateway runs on port 3000 (not 3001 like our old server).
 
 **Step 6: Add Postgres to docker-compose.yml**
 
@@ -164,7 +164,7 @@ Add to `docker/docker-compose.yml` services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - lobu-public
+      - peon-public
 ```
 
 Add to volumes:
@@ -187,9 +187,9 @@ cd ../web && npm install
 
 ```bash
 git add -A
-git commit -m "feat: fork Lobu as platform foundation, restructure monorepo
+git commit -m "feat: fork Peon as platform foundation, restructure monorepo
 
-- Copy gateway/worker/core packages from Lobu (Apache 2.0)
+- Copy gateway/worker/core packages from Peon (Apache 2.0)
 - Move existing frontend to packages/web
 - Add Postgres to docker-compose
 - Update workspace config"
@@ -199,7 +199,7 @@ git commit -m "feat: fork Lobu as platform foundation, restructure monorepo
 
 ## Task 2: Postgres Schema & Database Layer
 
-**Why:** Lobu stores everything in Redis (ephemeral). We need persistent storage for user accounts, projects (teams), API keys, and chat history. Drizzle ORM gives us type-safe schema + migrations.
+**Why:** Peon stores everything in Redis (ephemeral). We need persistent storage for user accounts, projects (teams), API keys, and chat history. Drizzle ORM gives us type-safe schema + migrations.
 
 **Files:**
 - Create: `packages/gateway/src/db/connection.ts`
@@ -649,7 +649,7 @@ JWT_SECRET=change-this-in-production
 PUBLIC_URL=http://localhost:3000
 PUBLIC_FRONTEND_URL=http://localhost:5173
 
-# Lobu defaults
+# Peon defaults
 QUEUE_URL=redis://redis:6379
 DEPLOYMENT_MODE=docker
 ```
@@ -1030,7 +1030,7 @@ git commit -m "feat: project and API key management endpoints
 
 ## Task 6: Web Platform Adapter (Chat Backend)
 
-**Why:** Lobu routes messages from platforms (Slack, Telegram) to workers. We need a "web" platform adapter that accepts chat messages from our React frontend and routes them to the team lead agent running in the worker container. This is the bridge between the chat UI and the agent.
+**Why:** Peon routes messages from platforms (Slack, Telegram) to workers. We need a "web" platform adapter that accepts chat messages from our React frontend and routes them to the team lead agent running in the worker container. This is the bridge between the chat UI and the agent.
 
 **Files:**
 - Create: `packages/gateway/src/web/platform.ts`
@@ -1141,7 +1141,7 @@ chatRouter.post("/:id/chat", async (c) => {
   // Broadcast user message to SSE clients
   broadcastToProject(projectId, "message", userMsg)
 
-  // TODO: Route message to worker container via Lobu's job router
+  // TODO: Route message to worker container via Peon's job router
   // This will be wired in Task 8 (Container Launch & Agent Routing)
   // For now, echo back a placeholder
   const [assistantMsg] = await db.insert(chatMessages).values({
@@ -1835,7 +1835,7 @@ git commit -m "feat: frontend — auth, onboarding wizard, dashboard, chat panel
 
 ## Task 8: Container Launch & Agent Routing
 
-**Why:** When a user creates a project, we need to: (1) spin up a Docker container via Lobu's orchestrator, (2) clone their repo inside it, (3) start the team lead agent, (4) route chat messages from the web to the worker. This is the critical integration between our web platform and Lobu's container orchestration.
+**Why:** When a user creates a project, we need to: (1) spin up a Docker container via Peon's orchestrator, (2) clone their repo inside it, (3) start the team lead agent, (4) route chat messages from the web to the worker. This is the critical integration between our web platform and Peon's container orchestration.
 
 **Files:**
 - Create: `packages/gateway/src/web/project-launcher.ts`
@@ -1852,7 +1852,7 @@ import { projects, apiKeys } from "../db/schema.js"
 import { eq, and } from "drizzle-orm"
 import { decrypt } from "../services/encryption.js"
 
-// This function integrates with Lobu's existing orchestration layer.
+// This function integrates with Peon's existing orchestration layer.
 // It calls the deployment manager to create a Docker container for the project.
 
 interface LaunchConfig {
@@ -1886,20 +1886,20 @@ export async function launchProject(config: LaunchConfig) {
     envVars.OPENAI_API_KEY = config.apiKey.key
   }
 
-  // TODO: Call Lobu's orchestrator.createWorkerDeployment()
-  // This requires adapting Lobu's Orchestrator class to accept our project config.
-  // The exact integration depends on how much we refactor Lobu's Gateway class.
+  // TODO: Call Peon's orchestrator.createWorkerDeployment()
+  // This requires adapting Peon's Orchestrator class to accept our project config.
+  // The exact integration depends on how much we refactor Peon's Gateway class.
   //
   // For the MVP, we can use Dockerode directly:
   //
   // import Dockerode from "dockerode"
   // const docker = new Dockerode()
   // const container = await docker.createContainer({
-  //   Image: "lobu-worker:latest",
+  //   Image: "peon-worker:latest",
   //   name: deploymentName,
   //   Env: Object.entries(envVars).map(([k, v]) => `${k}=${v}`),
   //   HostConfig: {
-  //     NetworkMode: "lobu-internal",
+  //     NetworkMode: "peon-internal",
   //     Memory: 512 * 1024 * 1024, // 512MB
   //     CpuQuota: 100000, // 1 CPU
   //   },
@@ -1986,7 +1986,7 @@ git commit -m "feat: container launch and agent routing foundation
 
 ## Task 9: Kanban Task Sync from Worker
 
-**Why:** The Kanban board needs to show what agents are doing inside the worker container. We need to bridge Lobu's worker task events back to our frontend. The worker already sends responses via SSE → gateway. We need to parse agent task updates from these responses and broadcast them to the Kanban board.
+**Why:** The Kanban board needs to show what agents are doing inside the worker container. We need to bridge Peon's worker task events back to our frontend. The worker already sends responses via SSE → gateway. We need to parse agent task updates from these responses and broadcast them to the Kanban board.
 
 **Files:**
 - Create: `packages/gateway/src/web/task-sync.ts`
@@ -2099,7 +2099,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - lobu-public
+      - peon-public
     restart: unless-stopped
 
   redis:
@@ -2108,8 +2108,8 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - lobu-public
-      - lobu-internal
+      - peon-public
+      - peon-internal
     restart: unless-stopped
 
   gateway:
@@ -2130,28 +2130,28 @@ services:
       - postgres
       - redis
     networks:
-      - lobu-public
-      - lobu-internal
+      - peon-public
+      - peon-internal
     restart: unless-stopped
 
   worker:
     build:
       context: ..
       dockerfile: docker/Dockerfile.worker
-    image: lobu-worker:latest
+    image: peon-worker:latest
     profiles:
       - build-only
     networks:
-      - lobu-internal
+      - peon-internal
 
 volumes:
   postgres_data:
   redis_data:
 
 networks:
-  lobu-public:
+  peon-public:
     driver: bridge
-  lobu-internal:
+  peon-internal:
     driver: bridge
     internal: true
 ```
@@ -2230,7 +2230,7 @@ git commit -m "feat: production deployment — GCP + Vercel
 
 | Task | What | Key Deliverable |
 |------|------|-----------------|
-| 1 | Fork Lobu & restructure | Monorepo with gateway/worker/core/web packages |
+| 1 | Fork Peon & restructure | Monorepo with gateway/worker/core/web packages |
 | 2 | Postgres schema | Users, projects, API keys, chat messages tables |
 | 3 | Google OAuth | Sign-in flow + JWT sessions |
 | 4 | GitHub OAuth | Repo access + list repos |

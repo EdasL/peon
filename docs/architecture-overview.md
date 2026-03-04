@@ -12,7 +12,7 @@ Browser (localhost:5174)          Gateway (localhost:3000)           Infrastruct
 │  /dashboard         │          │  /api/keys/*         │          │   chat_msgs) │
 │  /project/:id       │          │  /api/projects/:id/  │          ├──────────────┤
 │    ├─ Board (left)  │          │    chat, tasks       │          │  Redis       │
-│    └─ Chat (right)  │          │                      │          │  (Lobu queue │
+│    └─ Chat (right)  │          │                      │          │  (Peon queue │
 └─────────────────────┘          └──────────────────────┘          │   + state)   │
                                                                     └──────────────┘
 ```
@@ -22,9 +22,9 @@ Browser (localhost:5174)          Gateway (localhost:3000)           Infrastruct
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 19, Vite, Tailwind v4, shadcn/ui, react-router-dom |
-| Backend | Hono (HTTP framework from Lobu), Bun runtime |
+| Backend | Hono (HTTP framework from Peon), Bun runtime |
 | Database | PostgreSQL 16 via Drizzle ORM |
-| Queue/State | Redis 7 (BullMQ, used by Lobu internally) |
+| Queue/State | Redis 7 (BullMQ, used by Peon internally) |
 | Auth | Google OAuth 2.0 → JWT sessions (httpOnly cookies) |
 | Encryption | AES-256-GCM for API keys and GitHub tokens at rest |
 | AI | Anthropic API (Claude Sonnet) called directly from gateway |
@@ -69,7 +69,7 @@ Browser (localhost:5174)          Gateway (localhost:3000)           Infrastruct
 
 ## What's Scaffolded But Not Wired
 
-The Lobu framework we forked has a full container orchestration system. Here's how the intended architecture works:
+The Peon framework we forked has a full container orchestration system. Here's how the intended architecture works:
 
 ```
 User message
@@ -103,7 +103,7 @@ In this model, each project gets its own Docker container with a persistent work
 
 ### OpenClaw (packages/worker/src/openclaw/)
 
-OpenClaw is the AI agent framework inside Lobu's worker containers:
+OpenClaw is the AI agent framework inside Peon's worker containers:
 
 - `worker.ts` — Main executor. Sets up workspace, tools, instructions, runs AI session
 - `processor.ts` — Processes streaming events from the AI model
@@ -117,7 +117,7 @@ It uses `@mariozechner/pi-coding-agent` under the hood — a full coding agent w
 ### Container Lifecycle (intended)
 
 1. User creates a project → `project-launcher.ts` generates a deployment name
-2. Orchestrator creates a Docker container (`lobu-worker:latest`) with env vars:
+2. Orchestrator creates a Docker container (`peon-worker:latest`) with env vars:
    - `PROJECT_ID`, `USER_ID`, `TEMPLATE_ID`
    - `ANTHROPIC_API_KEY` (from user's stored key)
    - `REPO_URL` (user's GitHub repo)
@@ -143,7 +143,7 @@ It uses `@mariozechner/pi-coding-agent` under the hood — a full coding agent w
 | Task persistence | **Not done** | In-memory only, resets on restart |
 | Docker container launch | **Scaffolded** | Code exists, not connected to project creation |
 | OpenClaw worker agent | **Exists** | Full agent in codebase, not invoked by our chat |
-| Message routing via Redis | **Exists** | Lobu infra works, not wired to our chat flow |
+| Message routing via Redis | **Exists** | Peon infra works, not wired to our chat flow |
 | Agent → task board sync | **Scaffolded** | `task-sync.ts` ready, no real data flowing |
 | Streaming responses | **Not done** | Chat is request/response, not streamed |
 | Multi-agent teams | **Not done** | Designed, not implemented |
@@ -205,4 +205,4 @@ Two paths forward:
 Keep calling Anthropic directly from the gateway. Add streaming, persist tasks to Postgres, and build features on top. Simpler, faster to ship, but limited to chat — no actual code editing or repo interaction.
 
 ### Path B: Wire up OpenClaw containers
-Connect the full Lobu orchestration pipeline. Each project gets a Docker container with a real coding agent that can clone repos, edit files, run tests, and push commits. More complex, but delivers the actual product vision.
+Connect the full Peon orchestration pipeline. Each project gets a Docker container with a real coding agent that can clone repos, edit files, run tests, and push commits. More complex, but delivers the actual product vision.

@@ -3,7 +3,7 @@
  *
  * Provides Docker container status queries and cleanup for Peon projects.
  * The Peon platform gives each user a single persistent worker container
- * whose name is derived from lobuAgentId (the canonical conversationId for
+ * whose name is derived from peonAgentId (the canonical conversationId for
  * the peon platform channel).
  */
 
@@ -37,28 +37,32 @@ function mapDockerStateToPeonStatus(
 /**
  * Derive the Docker container (deployment) name for a Peon user.
  *
- * Peon uses lobuAgentId as both channelId and conversationId on the "peon" platform.
+ * Peon uses peonAgentId as both channelId and conversationId on the "peon" platform.
  * This mirrors exactly what project-launcher.ts passes to the queue.
  */
 export function getPeonDeploymentName(
   userId: string,
-  lobuAgentId: string
+  peonAgentId: string
 ): string {
   return generateDeploymentName({
     userId,
     platform: "peon",
-    channelId: lobuAgentId,
-    conversationId: lobuAgentId,
+    channelId: peonAgentId,
+    conversationId: peonAgentId,
   })
 }
+
+export type ContainerStatus = "starting" | "running" | "stopped" | "not_found" | "error"
 
 /**
  * Query the Docker daemon for the actual state of the user's worker container.
  * Returns one of the Peon status values, or null if Docker is unavailable.
+ * "not_found" means the container doesn't exist in Docker (distinct from "stopped"
+ * which means the container exists but has exited).
  */
 export async function getContainerStatus(
   deploymentName: string
-): Promise<"starting" | "running" | "stopped" | "error" | null> {
+): Promise<ContainerStatus | null> {
   let docker: Docker
   try {
     docker = new Docker({ socketPath: "/var/run/docker.sock" })
@@ -72,9 +76,8 @@ export async function getContainerStatus(
     const info = await container.inspect()
     return mapDockerStateToPeonStatus(info.State.Status)
   } catch (err: any) {
-    // 404 → container does not exist → stopped
     if (err?.statusCode === 404 || err?.message?.includes("No such container")) {
-      return "stopped"
+      return "not_found"
     }
     logger.warn(`Could not inspect container ${deploymentName}:`, err)
     return null

@@ -9,7 +9,7 @@ export const users = pgTable("users", {
   googleId: text("google_id").unique(),
   githubId: text("github_id").unique(),
   githubAccessToken: text("github_access_token"),
-  lobuAgentId: text("lobu_agent_id"),
+  peonAgentId: text("peon_agent_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })

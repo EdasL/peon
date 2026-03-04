@@ -13,7 +13,7 @@
 **Current flow (`packages/gateway/src/web/chat-routes.ts` lines 88-153):**
 1. User sends message via `POST /api/projects/:id/chat`
 2. Message stored in Postgres
-3. `setActiveProject(lobuAgentId, projectId)` tracks which project is active
+3. `setActiveProject(peonAgentId, projectId)` tracks which project is active
 4. Message enqueued via `queueProducer.enqueueMessage({ messageText: content, ... })`
 5. OpenClaw receives raw `content` — no project context
 

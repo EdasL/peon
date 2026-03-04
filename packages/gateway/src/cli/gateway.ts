@@ -81,7 +81,7 @@ function setupServer(
   // Health endpoints
   app.get("/health", (c) => {
     const mode =
-      process.env.LOBU_MODE ||
+      process.env.PEON_MODE ||
       (process.env.DEPLOYMENT_MODE === "docker" ? "local" : "cloud");
 
     return c.json({
@@ -310,6 +310,15 @@ function setupServer(
     logger.info("Internal task routes enabled at :8080/internal/tasks");
   }
 
+  // Boot progress routes — workers report startup steps so the frontend
+  // can show real boot progress instead of fake timers
+  {
+    const { createBootProgressRoutes } = require("../routes/internal/boot-progress");
+    const bootProgressRouter = createBootProgressRoutes();
+    app.route("", bootProgressRouter);
+    logger.info("Boot progress routes enabled at :8080/internal/boot-progress");
+  }
+
   // Messaging routes (already Hono)
   if (platformRegistry) {
     const { createMessagingRoutes } = require("../routes/public/messaging");
@@ -473,7 +482,7 @@ function setupServer(
       const { createLandingRoutes } = require("../routes/public/landing");
       const landingRouter = createLandingRoutes({
         publicGatewayUrl: coreServices.getPublicGatewayUrl(),
-        githubUrl: "https://github.com/lobu-ai/lobu",
+        githubUrl: "https://github.com/peon-ai/peon",
       });
       app.route("", landingRouter);
       logger.info("Landing page enabled at :8080/");
@@ -634,12 +643,12 @@ function setupServer(
   app.doc("/api/docs/openapi.json", {
     openapi: "3.0.0",
     info: {
-      title: "Lobu API",
+      title: "Peon API",
       version: "1.0.0",
       description: `
 ## Overview
 
-The Lobu API allows you to create and interact with AI agents programmatically.
+The Peon API allows you to create and interact with AI agents programmatically.
 
 ## Authentication
 
@@ -966,7 +975,7 @@ export async function startGateway(
   whatsappConfig?: WhatsAppConfig | null,
   telegramConfig?: TelegramConfig | null
 ): Promise<void> {
-  logger.info("Starting Lobu Gateway");
+  logger.info("Starting Peon Gateway");
 
   // Run database migrations
   const { runMigrations } = await import("../db/migrate.js");
@@ -1061,7 +1070,7 @@ export async function startGateway(
   gateway.registerPlatform(apiPlatform);
   logger.info("API platform registered");
 
-  // Register Peon platform (peon.work chat → Lobu orchestration)
+  // Register Peon platform (peon.work chat → Peon orchestration)
   const { PeonPlatform, setPeonPlatform } = await import("../peon/platform.js");
   const peonPlatform = new PeonPlatform();
   gateway.registerPlatform(peonPlatform);
@@ -1109,7 +1118,7 @@ export async function startGateway(
     slackPlatform?.getExpressApp()
   );
 
-  logger.info("Lobu Gateway is running!");
+  logger.info("Peon Gateway is running!");
 
   // Setup graceful shutdown
   const cleanup = async () => {

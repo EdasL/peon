@@ -4,7 +4,7 @@ import { db } from "../../db/connection.js"
 import { apiKeys } from "../../db/schema.js"
 import { eq, and } from "drizzle-orm"
 import { encrypt } from "../../services/encryption.js"
-import { ensureLobuAgent, bridgeCredentials } from "../../peon/agent-helper.js"
+import { ensurePeonAgent, bridgeCredentials } from "../../peon/agent-helper.js"
 import { getPeonPlatform } from "../../peon/platform.js"
 import { AuthProfilesManager } from "../../auth/settings/auth-profiles-manager.js"
 
@@ -30,7 +30,7 @@ keysRouter.get("/", async (c) => {
   }> = []
 
   try {
-    const agentId = await ensureLobuAgent(session.userId)
+    const agentId = await ensurePeonAgent(session.userId)
     const agentSettingsStore = getPeonPlatform().getServices().getAgentSettingsStore()
     const profilesManager = new AuthProfilesManager(agentSettingsStore)
     const profile = await profilesManager.getBestProfile(agentId, "claude")
@@ -125,11 +125,11 @@ keysRouter.post("/", async (c) => {
     key = inserted
   }
 
-  // Re-bridge credentials to Lobu agent after adding/updating a key
+  // Re-bridge credentials to Peon agent after adding/updating a key
   try {
-    const lobuAgentId = await ensureLobuAgent(session.userId)
+    const peonAgentId = await ensurePeonAgent(session.userId)
     const services = getPeonPlatform().getServices()
-    await bridgeCredentials(session.userId, lobuAgentId, services)
+    await bridgeCredentials(session.userId, peonAgentId, services)
   } catch {
     // Non-fatal: key is saved, credential sync can be retried
   }
@@ -146,7 +146,7 @@ keysRouter.delete("/oauth/:provider", async (c) => {
   }
 
   const session = getSession(c)
-  const agentId = await ensureLobuAgent(session.userId)
+  const agentId = await ensurePeonAgent(session.userId)
   const agentSettingsStore = getPeonPlatform().getServices().getAgentSettingsStore()
   const profilesManager = new AuthProfilesManager(agentSettingsStore)
   await profilesManager.deleteProviderProfiles(agentId, "claude")

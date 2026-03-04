@@ -1,11 +1,11 @@
 {
   "name": "@lobu/worker",
   "version": "2.3.0",
-  "description": "Lobu worker runtime - run in your own Docker image or use our base image",
+  "description": "Peon worker runtime - run in your own Docker image or use our base image",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "lobu-worker": "./dist/index.js"
+    "peon-worker": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -16,14 +16,14 @@
     "prepublishOnly": "bun run build"
   },
   "keywords": [
-    "lobu",
+    "peon",
     "worker",
     "ai",
     "agent"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/lobu-ai/lobu.git",
+    "url": "https://github.com/peon-ai/peon.git",
     "directory": "packages/worker"
   },
   "license": "Apache-2.0",

@@ -37,12 +37,12 @@ const GATEWAY_DEFAULTS = {
   QUEUE_DIRECT_MESSAGE: "direct_message",
   QUEUE_MESSAGE_QUEUE: "message_queue",
   /** Default worker settings */
-  WORKER_IMAGE_REPOSITORY: "lobu-worker",
+  WORKER_IMAGE_REPOSITORY: "peon-worker",
   WORKER_IMAGE_TAG: "latest",
   WORKER_IMAGE_DIGEST: "",
   WORKER_IMAGE_PULL_POLICY: "Always",
   WORKER_IMAGE_PULL_SECRETS: "",
-  WORKER_SERVICE_ACCOUNT_NAME: "lobu-worker",
+  WORKER_SERVICE_ACCOUNT_NAME: "peon-worker",
   WORKER_RUNTIME_CLASS_NAME: "kata",
   WORKER_STARTUP_TIMEOUT_SECONDS: 90,
   WORKER_CPU_REQUEST: "100m",
@@ -53,7 +53,7 @@ const GATEWAY_DEFAULTS = {
   MAX_WORKER_DEPLOYMENTS: 100,
   WORKER_STALE_TIMEOUT_MINUTES: 10,
   /** Default Kubernetes namespace */
-  KUBERNETES_NAMESPACE: "lobu",
+  KUBERNETES_NAMESPACE: "peon",
   /** Default cleanup settings */
   CLEANUP_INITIAL_DELAY_MS: TIME.FIVE_SECONDS_MS,
   CLEANUP_INTERVAL_MS: 60000, // 1 minute
@@ -63,9 +63,9 @@ const GATEWAY_DEFAULTS = {
   SOCKET_STALE_THRESHOLD_MS: 15 * TIME.MINUTE_MS, // 15 minutes
   SOCKET_PROTECT_ACTIVE_WORKERS: true,
   /** Default deployment settings */
-  LOBU_DEV_PROJECT_PATH: "/app",
-  COMPOSE_PROJECT_NAME: "lobu",
-  DISPATCHER_SERVICE_NAME: "lobu-dispatcher",
+  PEON_DEV_PROJECT_PATH: "/app",
+  COMPOSE_PROJECT_NAME: "peon",
+  DISPATCHER_SERVICE_NAME: "peon-dispatcher",
   /** Default log level */
   LOG_LEVEL: "INFO" as const,
   /** Default kubeconfig path */
@@ -172,7 +172,7 @@ export function buildGatewayConfig(): GatewayConfig {
   }
 
   // Build MCP config
-  const mcpServersUrl = process.env.LOBU_MCP_SERVERS_URL;
+  const mcpServersUrl = process.env.PEON_MCP_SERVERS_URL;
   const publicGatewayUrl = getOptionalEnv(
     "PUBLIC_GATEWAY_URL",
     DEFAULTS.PUBLIC_GATEWAY_URL

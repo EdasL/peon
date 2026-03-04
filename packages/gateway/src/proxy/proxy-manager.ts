@@ -10,7 +10,7 @@ let proxyServer: Server | null = null;
 /**
  * Determine the bind host for the proxy.
  * DEPLOYMENT_MODE=docker is expected to run inside a container. Fail fast if not,
- * then bind to all interfaces so workers on lobu-internal can connect.
+ * then bind to all interfaces so workers on peon-internal can connect.
  */
 function getProxyBindHost(): string {
   const deploymentMode = process.env.DEPLOYMENT_MODE;

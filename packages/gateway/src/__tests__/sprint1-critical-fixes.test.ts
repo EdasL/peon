@@ -55,7 +55,7 @@ class MockDb {
     id: string
     email: string
     name: string
-    lobuAgentId: string | null
+    peonAgentId: string | null
   }> = []
 
   private projects: Array<{
@@ -69,8 +69,8 @@ class MockDb {
 
   // ---- seed helpers ----
 
-  addUser(user: { id: string; email: string; name: string; lobuAgentId?: string }) {
-    this.users.push({ lobuAgentId: null, ...user })
+  addUser(user: { id: string; email: string; name: string; peonAgentId?: string }) {
+    this.users.push({ peonAgentId: null, ...user })
   }
 
   addApiKey(key: {
@@ -209,7 +209,7 @@ describe("bridgeCredentials()", () => {
   // without hitting real DB or module imports.
   async function bridgeCredentials(
     userId: string,
-    lobuAgentId: string,
+    peonAgentId: string,
     db: MockDb,
     store: MockAgentSettingsStore
   ): Promise<boolean> {
@@ -232,7 +232,7 @@ describe("bridgeCredentials()", () => {
 
       if (key.provider === "anthropic") {
         await profilesManager.upsertProfile({
-          agentId: lobuAgentId,
+          agentId: peonAgentId,
           provider: "claude",
           credential: decryptedKey,
           authType: "api-key",
@@ -242,7 +242,7 @@ describe("bridgeCredentials()", () => {
         bridgedCount++
       } else if (key.provider === "openai") {
         await profilesManager.upsertProfile({
-          agentId: lobuAgentId,
+          agentId: peonAgentId,
           provider: "openai",
           credential: decryptedKey,
           authType: "api-key",

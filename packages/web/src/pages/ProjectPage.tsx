@@ -247,6 +247,7 @@ export function ProjectPage() {
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<Project["status"] | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [bootStep, setBootStep] = useState<string | null>(null)
   const [headerTeamMembers, setHeaderTeamMembers] = useState<TeamMember[]>([])
 
   useEffect(() => {
@@ -255,9 +256,10 @@ export function ProjectPage() {
       .getProject(id)
       .then(({ project }) => {
         setProject(project)
+        // If project has been "creating" for over 3 minutes, treat as running (recovery fallback)
         const ageMs = Date.now() - new Date(project.createdAt).getTime()
         const effectiveStatus =
-          project.status === "creating" && ageMs > 2 * 60 * 1000
+          project.status === "creating" && ageMs > 3 * 60 * 1000
             ? "running"
             : project.status
         setStatus(effectiveStatus)
@@ -265,19 +267,26 @@ export function ProjectPage() {
       .finally(() => setLoading(false))
   }, [id])
 
+  // Poll status: fast during provisioning, slow as a fallback for running/stopped
   useEffect(() => {
-    if (!id || status !== "creating") return
+    if (!id || !status || status === "error") return
+    const intervalMs = status === "creating" ? 3_000 : 30_000
     const interval = setInterval(() => {
       api
         .getProjectStatus(id)
-        .then(({ status: s }) => setStatus(s))
+        .then(({ status: s }) => {
+          // API returns "starting" during provisioning — map to frontend's "creating"
+          const mapped = s === ("starting" as string) ? "creating" : s
+          setStatus(mapped as Project["status"])
+        })
         .catch(() => {})
-    }, 3000)
+    }, intervalMs)
     return () => clearInterval(interval)
   }, [id, status])
 
+  // SSE subscription for real-time status updates — stays connected across status transitions
   useEffect(() => {
-    if (!id || status !== "creating") return
+    if (!id) return
     const es = new EventSource(`/api/projects/${id}/chat/stream`, {
       withCredentials: true,
     })
@@ -288,8 +297,14 @@ export function ProjectPage() {
         if (data.message) setStatusMessage(data.message)
       } catch {}
     })
+    es.addEventListener("boot_progress", (e) => {
+      try {
+        const data = JSON.parse(e.data) as { step: string; label: string }
+        setBootStep(data.step)
+      } catch {}
+    })
     return () => es.close()
-  }, [id, status])
+  }, [id])
 
   const handleProvisioningReady = useCallback(() => {
     setStatus("running")
@@ -322,6 +337,7 @@ export function ProjectPage() {
       <ProvisioningOverlay
         projectName={project?.name ?? "your project"}
         status={status}
+        bootStep={bootStep}
         onReady={handleProvisioningReady}
         onBack={() => navigate("/dashboard")}
       />

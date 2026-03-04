@@ -3,38 +3,38 @@ import { db } from "../db/connection.js"
 import { apiKeys, projects } from "../db/schema.js"
 import { eq } from "drizzle-orm"
 import { decrypt } from "../services/encryption.js"
-import { ensureLobuAgent, bridgeCredentials } from "../peon/agent-helper.js"
+import { ensurePeonAgent, bridgeCredentials } from "../peon/agent-helper.js"
 import type { CoreServices } from "../platform.js"
 
 /**
  * Ensures the user has a running container (idempotent).
- * On first call: generates lobuAgentId, bridges credentials, creates session,
+ * On first call: generates peonAgentId, bridges credentials, creates session,
  * enqueues bootstrap message to trigger container creation.
  * On subsequent calls: re-bridges credentials (in case key changed), returns existing agentId.
  */
 export async function ensureUserContainer(
   userId: string,
   services: CoreServices
-): Promise<{ lobuAgentId: string; created: boolean; error?: string }> {
-  const lobuAgentId = await ensureLobuAgent(userId)
+): Promise<{ peonAgentId: string; created: boolean; error?: string }> {
+  const peonAgentId = await ensurePeonAgent(userId)
 
   // Bridge credentials (idempotent — checks if already bridged)
-  const hasCreds = await bridgeCredentials(userId, lobuAgentId, services)
+  const hasCreds = await bridgeCredentials(userId, peonAgentId, services)
   if (!hasCreds) {
-    return { lobuAgentId, created: false, error: "no-api-key" }
+    return { peonAgentId, created: false, error: "no-api-key" }
   }
 
   // Check if session already exists (container already provisioned)
   const sessionManager = services.getSessionManager()
-  const existingSession = await sessionManager.getSession(lobuAgentId)
+  const existingSession = await sessionManager.getSession(peonAgentId)
   if (existingSession) {
-    return { lobuAgentId, created: false }
+    return { peonAgentId, created: false }
   }
 
   // First time — create session and enqueue bootstrap message
   await sessionManager.setSession({
-    conversationId: lobuAgentId,
-    channelId: lobuAgentId,
+    conversationId: peonAgentId,
+    channelId: peonAgentId,
     userId,
     threadCreator: userId,
     lastActivity: Date.now(),
@@ -46,11 +46,11 @@ export async function ensureUserContainer(
   const queueProducer = services.getQueueProducer()
   await queueProducer.enqueueMessage({
     userId,
-    conversationId: lobuAgentId,
+    conversationId: peonAgentId,
     messageId: randomUUID(),
-    channelId: lobuAgentId,
+    channelId: peonAgentId,
     teamId: "peon",
-    agentId: lobuAgentId,
+    agentId: peonAgentId,
     botId: "peon-agent",
     platform: "peon",
     messageText: "[system] User container initialized. Ready for project workspaces.",
@@ -58,7 +58,7 @@ export async function ensureUserContainer(
     agentOptions: { provider: "claude" },
   })
 
-  return { lobuAgentId, created: true }
+  return { peonAgentId, created: true }
 }
 
 export interface TeamMemberConfig {
@@ -145,7 +145,7 @@ ${teammateSpecs}
  */
 export async function initProjectWorkspace(
   userId: string,
-  lobuAgentId: string,
+  peonAgentId: string,
   projectId: string,
   templateId: string,
   repoUrl: string | null,
@@ -171,11 +171,11 @@ export async function initProjectWorkspace(
   const queueProducer = services.getQueueProducer()
   await queueProducer.enqueueMessage({
     userId,
-    conversationId: lobuAgentId,
+    conversationId: peonAgentId,
     messageId: randomUUID(),
-    channelId: lobuAgentId,
+    channelId: peonAgentId,
     teamId: "peon",
-    agentId: lobuAgentId,
+    agentId: peonAgentId,
     botId: "peon-agent",
     platform: "peon",
     messageText: `[system] Initialize project "${projectId}".
@@ -196,8 +196,11 @@ ${teamSpawnInstruction ? `\n${teamSpawnInstruction}` : ""}`,
 }
 
 /**
- * Polls the container status until it becomes "running" or "error", then
- * updates the DB and broadcasts a project_status SSE event.
+ * Polls the container status until Docker reports "running" or "error".
+ * When Docker is "running", broadcasts a boot_progress event but does NOT
+ * mark the project as "running" — that transition is controlled by the
+ * worker's "ready" boot-progress signal via POST /internal/boot-progress.
+ *
  * Fires-and-forgets internally — the caller is not blocked.
  */
 export async function waitForContainerReady(
@@ -214,9 +217,10 @@ export async function waitForContainerReady(
     while (Date.now() < deadline) {
       const status = await getContainerStatus(deploymentName)
       if (status === "running") {
-        await db.update(projects).set({ status: "running", updatedAt: new Date() })
-          .where(eq(projects.id, projectId))
-        broadcastToProject(projectId, "project_status", { status: "running" })
+        broadcastToProject(projectId, "boot_progress", {
+          step: "container",
+          label: "Environment provisioned",
+        })
         return
       }
       if (status === "error") {

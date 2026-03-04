@@ -403,7 +403,7 @@ export function createAgentApi(
   };
 
   const checkApiKey = (c: Context): boolean => {
-    const apiKey = process.env.LOBU_API_KEY;
+    const apiKey = process.env.PEON_API_KEY;
     if (!apiKey) return true;
     const providedKey = c.req.header("X-API-Key");
     if (!providedKey) return false;
@@ -671,8 +671,8 @@ export function createAgentApi(
     await sessionManager.touchSession(agentId);
 
     const { span: rootSpan, traceparent } = createRootSpan("message_received", {
-      "lobu.agent_id": agentId,
-      "lobu.message_id": messageId,
+      "peon.agent_id": agentId,
+      "peon.message_id": messageId,
     });
 
     try {
@@ -683,7 +683,7 @@ export function createAgentApi(
         channelId: tokenData.channelId,
         teamId: tokenData.teamId || "api",
         agentId: tokenData.agentId || `api-${tokenData.userId}`,
-        botId: "lobu-api",
+        botId: "peon-api",
         platform: "api",
         messageText: content,
         platformMetadata: {

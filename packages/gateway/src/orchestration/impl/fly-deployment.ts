@@ -15,7 +15,7 @@ import {
 
 const logger = createLogger("fly-deployment");
 
-const FLY_ACTIVITY_KEY_PREFIX = "lobu:fly:last-activity:";
+const FLY_ACTIVITY_KEY_PREFIX = "peon:fly:last-activity:";
 
 interface FlyMachineMetadata {
   [key: string]: string | undefined;
@@ -220,15 +220,15 @@ export class FlyDeploymentManager extends BaseDeploymentManager {
         auto_destroy: false,
         guest: this.resolveMachineGuest(),
         metadata: {
-          "lobu.component": "worker",
-          "lobu.deployment_name": deploymentName,
-          "lobu.user_id": userId,
-          "lobu.platform": messageData?.platform || "",
-          "lobu.channel_id": messageData?.channelId || "",
-          "lobu.conversation_id": messageData?.conversationId || "",
-          "lobu.agent_id": messageData?.agentId || "",
-          "lobu.created_at": nowIso,
-          "lobu.last_activity": nowIso,
+          "peon.component": "worker",
+          "peon.deployment_name": deploymentName,
+          "peon.user_id": userId,
+          "peon.platform": messageData?.platform || "",
+          "peon.channel_id": messageData?.channelId || "",
+          "peon.conversation_id": messageData?.conversationId || "",
+          "peon.agent_id": messageData?.agentId || "",
+          "peon.created_at": nowIso,
+          "peon.last_activity": nowIso,
         },
       },
     };
@@ -439,7 +439,7 @@ export class FlyDeploymentManager extends BaseDeploymentManager {
     // Use Fly private networking (<app>.internal) so the proxy port doesn't
     // need to be publicly exposed.
     const proxyPort = process.env.WORKER_PROXY_PORT || "8118";
-    const gatewayApp = (process.env.FLY_APP_NAME || "lobu-gateway").trim();
+    const gatewayApp = (process.env.FLY_APP_NAME || "peon-gateway").trim();
     const proxyHost = `${gatewayApp}.internal`;
     const proxyUrl = envVars.HTTP_PROXY || "";
 
@@ -551,14 +551,14 @@ export class FlyDeploymentManager extends BaseDeploymentManager {
 
   private isWorkerMachine(machine: FlyMachine): boolean {
     const metadata = machine.config?.metadata || {};
-    if (metadata["lobu.component"] === "worker") return true;
+    if (metadata["peon.component"] === "worker") return true;
     const name = machine.name || "";
-    return name.startsWith("lobu-worker-");
+    return name.startsWith("peon-worker-");
   }
 
   private getDeploymentNameFromMachine(machine: FlyMachine): string {
     const metadata = machine.config?.metadata || {};
-    return metadata["lobu.deployment_name"] || machine.name || "";
+    return metadata["peon.deployment_name"] || machine.name || "";
   }
 
   private getMachineUpdatedAt(machine: FlyMachine): Date {
@@ -589,7 +589,7 @@ export class FlyDeploymentManager extends BaseDeploymentManager {
     }
 
     const metadataLastActivity =
-      machine.config?.metadata?.["lobu.last_activity"];
+      machine.config?.metadata?.["peon.last_activity"];
     if (metadataLastActivity) {
       const parsed = new Date(metadataLastActivity);
       if (!Number.isNaN(parsed.getTime())) {

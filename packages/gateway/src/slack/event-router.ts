@@ -130,7 +130,7 @@ export class SlackEventHandlers {
         await client.chat.postMessage({
           channel: assistantEvent.assistant_thread.channel_id,
           thread_ts: assistantEvent.assistant_thread.thread_ts,
-          text: "👋 Hi! I'm Lobu, your AI coding assistant. How can I help you today?",
+          text: "👋 Hi! I'm Peon, your AI coding assistant. How can I help you today?",
         });
       } catch (error) {
         logger.error("Failed to send assistant thread welcome message:", error);

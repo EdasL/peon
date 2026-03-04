@@ -354,7 +354,7 @@ export class OpenClawWsClient {
         maxProtocol: PROTOCOL_VERSION,
         client: {
           id: clientId,
-          displayName: "lobu-worker",
+          displayName: "peon-worker",
           version: "1.0.0",
           platform,
           mode: clientMode,
@@ -365,7 +365,7 @@ export class OpenClawWsClient {
         commands: [],
         permissions: {},
         locale: "en-US",
-        userAgent: "lobu-worker/1.0.0",
+        userAgent: "peon-worker/1.0.0",
         device: {
           id: identity.deviceId,
           publicKey: publicKeyRawBase64Url(identity.publicKeyPem),

@@ -26,7 +26,7 @@ Standalone page with left sidebar navigation and 4 sections:
 - List existing keys: provider badge, masked key, label, created date, delete button
 - Add key form: provider selector (Anthropic/OpenAI), key input, label input
 - Delete confirmation via dialog
-- After adding/removing a key, re-bridge credentials to the Lobu agent
+- After adding/removing a key, re-bridge credentials to the Peon agent
 
 **GitHub**
 - Show connection status: connected (@username) or not connected

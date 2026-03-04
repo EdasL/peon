@@ -11,9 +11,6 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createLogger } from "@lobu/core";
-
-const logger = createLogger("bootstrap-config");
 
 const DEFAULT_PORT = 18789;
 const SKILLS_DIR = "/app/packages/worker/src/openclaw/skills";
@@ -103,8 +100,9 @@ export async function writeBootstrapConfig(
     ),
   ]);
 
-  logger.info(`Bootstrap config written to ${getConfigPath()} (port=${port})`);
-  // authToken kept in interface for backwards compatibility with entrypoint script
+  // Use stderr directly — this function is invoked via `bun -e` where
+  // stdout is a signaling channel (the entrypoint checks the exit code).
+  console.error(`[bootstrap-config] Bootstrap config written to ${getConfigPath()} (port=${port})`);
   return { authToken: "unused" };
 }
 

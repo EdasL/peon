@@ -12,7 +12,7 @@ import { broadcastToProject, subscribeClient } from "./redis-broadcast.js"
 // Re-export for other modules that import from chat-routes
 export { broadcastToProject, subscribeClient }
 
-// Active project mapping: conversationId (lobuAgentId) → projectId
+// Active project mapping: conversationId (peonAgentId) → projectId
 // Updated every time a user sends a chat message, so agent activity events
 // route to the correct project instead of "most recently updated".
 const activeProjectMap = new Map<string, string>()
@@ -87,9 +87,9 @@ chatRouter.get("/:id/chat", async (c) => {
     const user = await db.query.users.findFirst({
       where: eq(users.id, session.userId),
     })
-    const lobuAgentId = user?.lobuAgentId
+    const peonAgentId = user?.peonAgentId
 
-    if (lobuAgentId) {
+    if (peonAgentId) {
       // Get team configuration for personalized welcome
       const projectTeam = await db.query.teams.findFirst({
         where: eq(teams.projectId, projectId),
@@ -114,18 +114,27 @@ ${project.templateId ? `\n📋 Template: ${project.templateId}` : ""}${taskSumma
 
 I'm here to coordinate our AI team and ensure we ship features fast. What would you like us to work on first?`
 
-      // Enqueue welcome message (async, non-blocking)
+      // Persist welcome message immediately so subsequent GETs won't re-trigger
+      const [welcomeMsg] = await db.insert(chatMessages).values({
+        projectId,
+        role: "assistant" as const,
+        content: welcomeContent,
+      }).returning()
+
+      // Broadcast to any SSE listeners so the UI shows it instantly
+      broadcastToProject(projectId, "message", welcomeMsg)
+
+      // Also enqueue to the agent so it can proactively assess the project
       const services = getPeonPlatform().getServices()
       const queueProducer = services.getQueueProducer()
-      
-      // Don't await - let it process in background
+
       queueProducer.enqueueMessage({
         userId: session.userId,
-        conversationId: lobuAgentId,
+        conversationId: peonAgentId,
         messageId: randomUUID(),
-        channelId: lobuAgentId,
+        channelId: peonAgentId,
         teamId: "peon",
-        agentId: lobuAgentId,
+        agentId: peonAgentId,
         botId: "peon-agent",
         platform: "peon",
         messageText: `[Project Context]
@@ -155,7 +164,7 @@ ${welcomeContent}`,
   return c.json({ messages })
 })
 
-// POST /api/projects/:id/chat — send a message (enqueued via Lobu pipeline)
+// POST /api/projects/:id/chat — send a message (enqueued via Peon pipeline)
 chatRouter.post("/:id/chat", async (c) => {
   const session = getSession(c)
   const projectId = c.req.param("id")
@@ -171,13 +180,13 @@ chatRouter.post("/:id/chat", async (c) => {
   const user = await db.query.users.findFirst({
     where: eq(users.id, session.userId),
   })
-  const lobuAgentId = user?.lobuAgentId
-  if (!lobuAgentId) {
+  const peonAgentId = user?.peonAgentId
+  if (!peonAgentId) {
     return c.json({ error: "Agent not ready" }, 409)
   }
 
   // Record which project this user's agent is actively working on
-  setActiveProject(lobuAgentId, projectId)
+  setActiveProject(peonAgentId, projectId)
 
   // Store user message in Postgres
   const [userMsg] = await db.insert(chatMessages).values({
@@ -218,14 +227,14 @@ chatRouter.post("/:id/chat", async (c) => {
   const services = getPeonPlatform().getServices()
   try {
     const { bridgeCredentials } = await import("../peon/agent-helper.js")
-    await bridgeCredentials(session.userId, lobuAgentId, services)
+    await bridgeCredentials(session.userId, peonAgentId, services)
   } catch (err) {
     console.error("Credential bridge failed (non-blocking):", err)
   }
 
   // Keep session alive
   const sessionManager = services.getSessionManager()
-  await sessionManager.touchSession(lobuAgentId)
+  await sessionManager.touchSession(peonAgentId)
 
   // Fetch configured team for this project
   const projectTeam = await db.query.teams.findFirst({
@@ -242,11 +251,11 @@ chatRouter.post("/:id/chat", async (c) => {
   const queueProducer = services.getQueueProducer()
   await queueProducer.enqueueMessage({
     userId: session.userId,
-    conversationId: lobuAgentId,
+    conversationId: peonAgentId,
     messageId: randomUUID(),
-    channelId: lobuAgentId,
+    channelId: peonAgentId,
     teamId: "peon",
-    agentId: lobuAgentId,
+    agentId: peonAgentId,
     botId: "peon-agent",
     platform: "peon",
     messageText,

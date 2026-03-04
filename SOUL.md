@@ -24,10 +24,10 @@ The vision: Users open a project and AI agents immediately start working. They s
 - Agent registry, team system, task board, SSE broadcasts
 - Container orchestration, Claude Code integration via tmux
 - Project-scoped context, Redis pub/sub, GitHub integration
+- Agent proactive messaging (agents greet users on project open)
+- Repository auto-sync (clone/pull repo on project load)
 
-**Missing User Experience:** 🚧 In Progress
-- Agent proactive messaging (agents should greet users first)
-- Repository auto-sync (clone latest repo on project load)
+**User Experience:** 🚧 In Progress
 - Real-time progress visibility (file changes, commits, task automation)
 - Agent status broadcasting (show what each agent is working on)
 
@@ -48,4 +48,4 @@ I should be demonstrating the exact behavior we want to build:
 
 ---
 
-*Updated 2026-03-03 - I know my mission now.*
+*Updated 2026-03-04 - Proactive messaging & repo auto-sync shipped.*

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# Container entrypoint script for Lobu Worker
-echo "🚀 Starting Lobu Worker..."
+# Container entrypoint script for Peon Worker
+echo "🚀 Starting Peon Worker..."
 
 # Function to handle cleanup on exit
 cleanup() {
@@ -78,8 +78,8 @@ echo "  - Container CPU Limit: $(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo 
 
 # Setup git global configuration
 echo "⚙️ Setting up git configuration..."
-git config --global user.name "Lobu Worker"
-git config --global user.email "lobu@noreply.github.com"
+git config --global user.name "Peon Worker"
+git config --global user.email "peon@noreply.github.com"
 git config --global init.defaultBranch main
 git config --global pull.rebase false
 git config --global safe.directory '*'
@@ -258,6 +258,7 @@ mkdir -p "$CLAUDE_CONFIG_DIR"
 cat > "$CLAUDE_CONFIG_DIR/settings.json" << 'SETTINGSEOF'
 {
   "model": "opus",
+  "teammateMode": "in-process",
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
@@ -286,12 +287,12 @@ OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
 # Generate bootstrap OpenClaw config BEFORE starting the gateway
 echo "📝 Generating OpenClaw bootstrap config..."
 cd /app/packages/worker
-BOOTSTRAP_OK=$(bun -e "
+if bun -e "
 import { writeBootstrapConfig } from './src/openclaw/bootstrap-config.ts';
 await writeBootstrapConfig({ port: ${OPENCLAW_PORT} });
-process.stdout.write('ok');
-")
-if [ "$BOOTSTRAP_OK" != "ok" ]; then
+" 2>&1; then
+    echo "  Bootstrap config generated successfully"
+else
     echo "⚠️  Bootstrap config generation failed, generating fallback config..."
     mkdir -p "$WORKSPACE_DIR/.openclaw"
     cat > "$WORKSPACE_DIR/.openclaw/openclaw.json" << CFGEOF
@@ -305,13 +306,27 @@ if [ "$BOOTSTRAP_OK" != "ok" ]; then
   "agents": {
     "defaults": {
       "model": "anthropic/claude-sonnet-4-20250514"
-    }
-  }
+    },
+    "list": [
+      {
+        "id": "master",
+        "default": true,
+        "workspace": "/workspace",
+        "name": "Orchestrator"
+      }
+    ]
+  },
+  "skills": {
+    "load": { "extraDirs": ["/app/packages/worker/src/openclaw/skills"] }
+  },
+  "plugins": {
+    "load": { "paths": ["/app/packages/worker/src/openclaw/plugins/peon-gateway"] }
+  },
+  "tools": { "agentToAgent": { "enabled": true, "allow": ["*"] } }
 }
 CFGEOF
     echo "  Fallback config written to $WORKSPACE_DIR/.openclaw/openclaw.json"
 fi
-echo "  Bootstrap config generated"
 cd "$WORKSPACE_DIR"
 
 # OpenClaw gateway makes direct HTTPS calls to LLM provider APIs
@@ -324,7 +339,7 @@ echo "  OpenClaw gateway PID: $OPENCLAW_PID"
 
 # Wait for OpenClaw gateway to be ready (health check via HTTP)
 OPENCLAW_READY=false
-OPENCLAW_MAX_RETRIES=30
+OPENCLAW_MAX_RETRIES=60
 OPENCLAW_RETRY=0
 while [ "$OPENCLAW_READY" = "false" ] && [ "$OPENCLAW_RETRY" -lt "$OPENCLAW_MAX_RETRIES" ]; do
     OPENCLAW_RETRY=$((OPENCLAW_RETRY + 1))
@@ -352,13 +367,36 @@ fi
 export OPENCLAW_PORT
 export OPENCLAW_PID
 
-# Install OpenClaw skills on first boot (requires gateway to be running)
-echo "  Installing OpenClaw skills..."
-SKILLS="coding-agent github tmux summarize oracle clawhub"
-for skill in $SKILLS; do
-    openclaw skill install "$skill" 2>/dev/null || echo "  Skill $skill not available, skipping"
+# Install OpenClaw skills from ClawHub (requires gateway + network access).
+# Bundled skills (coding-agent, github, tmux) are loaded automatically by the
+# OpenClaw gateway from the npm package — no install needed.
+# Non-bundled skills must be fetched from ClawHub into ~/.openclaw/skills/.
+echo "  Installing OpenClaw skills from ClawHub..."
+CLAWHUB_SKILLS="summarize oracle clawhub"
+CLAWHUB_WORKDIR="${HOME:-/workspace}/.openclaw/skills"
+mkdir -p "$CLAWHUB_WORKDIR"
+for skill in $CLAWHUB_SKILLS; do
+    if [ -d "$CLAWHUB_WORKDIR/$skill" ]; then
+        echo "  Skill $skill already installed, skipping"
+    elif command -v clawhub &>/dev/null; then
+        clawhub install "$skill" --workdir "$CLAWHUB_WORKDIR" --no-input 2>&1 \
+            || echo "  Warning: Failed to install skill $skill from ClawHub"
+    else
+        echo "  Warning: clawhub CLI not found, cannot install $skill"
+    fi
 done
+echo "  Verifying loaded skills..."
+openclaw skills list 2>&1 | head -30 || true
 echo "  OpenClaw skills installation complete"
+
+# Report boot progress: workspace configured (before starting TypeScript)
+if [ -n "${DISPATCHER_URL:-}" ] && [ -n "${WORKER_TOKEN:-}" ]; then
+    curl -sf -X POST "${DISPATCHER_URL}/internal/boot-progress" \
+        -H "Authorization: Bearer ${WORKER_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{"step":"workspace","label":"Workspace configured"}' \
+        --max-time 5 2>/dev/null || true
+fi
 
 # Start the worker process
 echo "🚀 Executing Worker..."

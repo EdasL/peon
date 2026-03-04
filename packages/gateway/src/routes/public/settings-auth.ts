@@ -6,7 +6,7 @@ import {
 } from "../../auth/settings/token-service";
 
 export const SETTINGS_TOKEN_QUERY_PARAM = "token";
-export const SETTINGS_SESSION_COOKIE_NAME = "lobu_settings_session";
+export const SETTINGS_SESSION_COOKIE_NAME = "peon_settings_session";
 
 function getTokenFromQuery(c: Context): string | undefined {
   const token = c.req.query(SETTINGS_TOKEN_QUERY_PARAM);

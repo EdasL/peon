@@ -53,8 +53,8 @@ export abstract class BaseFileHandler implements IFileHandler {
       {
         expiresIn,
         algorithm: "HS256",
-        issuer: "lobu-gateway",
-        audience: "lobu-worker",
+        issuer: "peon-gateway",
+        audience: "peon-worker",
       }
     );
   }
@@ -68,8 +68,8 @@ export abstract class BaseFileHandler implements IFileHandler {
     try {
       const decoded = jwt.verify(token, this.jwtSecret, {
         algorithms: ["HS256"],
-        issuer: "lobu-gateway",
-        audience: "lobu-worker",
+        issuer: "peon-gateway",
+        audience: "peon-worker",
       });
 
       if (

@@ -120,6 +120,8 @@ export class GatewayClient {
   private eventErrorCount = 0;
   private eventErrorThreshold = 10;
   private httpPort?: number;
+  private firstConnectCallback?: () => void;
+  private hasConnected = false;
 
   constructor(
     dispatcherUrl: string,
@@ -146,6 +148,10 @@ export class GatewayClient {
       { traceId: this.currentTraceId, deploymentName },
       "Worker connected"
     );
+  }
+
+  onFirstConnect(cb: () => void): void {
+    this.firstConnectCallback = cb;
   }
 
   async start(): Promise<void> {
@@ -195,6 +201,11 @@ export class GatewayClient {
 
     logger.info("✅ Connected to dispatcher via SSE");
     this.reconnectAttempts = 0;
+
+    if (!this.hasConnected && this.firstConnectCallback) {
+      this.hasConnected = true;
+      try { this.firstConnectCallback(); } catch {}
+    }
 
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
@@ -447,10 +458,10 @@ export class GatewayClient {
       this.currentJobId = data.jobId;
       // Create child span for job received (linked to parent via traceparent)
       const span = createChildSpan("job_received", traceparent, {
-        "lobu.job_id": data.jobId,
-        "lobu.message_id": data.messageId,
-        "lobu.conversation_id": conversationId,
-        "lobu.job_type": data.jobType || "message",
+        "peon.job_id": data.jobId,
+        "peon.message_id": data.messageId,
+        "peon.conversation_id": conversationId,
+        "peon.job_type": data.jobType || "message",
       });
       span?.setStatus({ code: SpanStatusCode.OK });
       span?.end();
@@ -519,8 +530,8 @@ export class GatewayClient {
 
     // Create span for exec execution
     const span = createChildSpan("exec_execution", traceparent, {
-      "lobu.exec_id": execId,
-      "lobu.command": execCommand.substring(0, 100),
+      "peon.exec_id": execId,
+      "peon.command": execCommand.substring(0, 100),
     });
 
     // Determine working directory
@@ -605,7 +616,7 @@ export class GatewayClient {
       // Send completion
       await transport.sendExecComplete(execId, exitCode);
 
-      span?.setAttribute("lobu.exit_code", exitCode);
+      span?.setAttribute("peon.exit_code", exitCode);
       span?.setStatus({ code: SpanStatusCode.OK });
       span?.end();
       await flushTracing();
@@ -691,10 +702,10 @@ export class GatewayClient {
 
     // Create child span for agent execution (linked to parent via traceparent)
     const span = createChildSpan("agent_execution", traceparent, {
-      "lobu.message_id": message.payload.messageId,
-      "lobu.conversation_id": conversationId,
-      "lobu.user_id": message.payload.userId,
-      "lobu.model": message.payload.agentOptions?.model || "default",
+      "peon.message_id": message.payload.messageId,
+      "peon.conversation_id": conversationId,
+      "peon.user_id": message.payload.userId,
+      "peon.model": message.payload.agentOptions?.model || "default",
     });
 
     try {

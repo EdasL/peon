@@ -26,7 +26,7 @@ export function setupAssistantHandlers(
     threadStarted: async ({ say, setSuggestedPrompts, setTitle }) => {
       logger.info("Assistant thread started");
 
-      say("👋 Hi! I'm Lobu, your AI assistant. How can I help you today?");
+      say("👋 Hi! I'm Peon, your AI assistant. How can I help you today?");
 
       // Set suggested prompts for the user
       setSuggestedPrompts({
@@ -46,7 +46,7 @@ export function setupAssistantHandlers(
         ],
       });
 
-      await setTitle("Lobu");
+      await setTitle("Peon");
     },
 
     // Called when the context changes (e.g., user switches channels)

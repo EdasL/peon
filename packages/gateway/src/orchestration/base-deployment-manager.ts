@@ -77,7 +77,7 @@ export function generateDeploymentName(
       .update(`${userId}:${conversationId}`)
       .digest("hex")
       .slice(0, 12);
-    return `lobu-worker-${shortHint}-${hash}`;
+    return `peon-worker-${shortHint}-${hash}`;
   }
 
   const identity = arg1;
@@ -87,7 +87,7 @@ export function generateDeploymentName(
     .update(canonicalKey)
     .digest("hex")
     .slice(0, 12);
-  return `lobu-worker-${hint}-${hash}`;
+  return `peon-worker-${hint}-${hash}`;
 }
 
 // Type for module environment variable builder function
@@ -513,7 +513,7 @@ export abstract class BaseDeploymentManager {
         const tempoUrl = new URL(tempoEndpoint);
         envVars.NO_PROXY = `${envVars.NO_PROXY},${tempoUrl.hostname}`;
       } catch {
-        envVars.NO_PROXY = `${envVars.NO_PROXY},lobu-tempo`;
+        envVars.NO_PROXY = `${envVars.NO_PROXY},peon-tempo`;
       }
     }
 
@@ -534,7 +534,7 @@ export abstract class BaseDeploymentManager {
   /**
    * Replace secret env var values with opaque placeholders before passing to workers.
    *
-   * Provider credential env vars are set to `"lobu-proxy"` — the proxy resolves
+   * Provider credential env vars are set to `"peon-proxy"` — the proxy resolves
    * the real credential at request time using agentId from the URL path
    * (`/a/{agentId}`) and the provider slug.
    *

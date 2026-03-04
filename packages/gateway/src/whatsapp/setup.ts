@@ -60,7 +60,7 @@ export async function runWhatsAppSetup(): Promise<void> {
       version,
       logger: baileysLogger as any,
       printQRInTerminal: false,
-      browser: ["lobu", "setup", "1.0.0"],
+      browser: ["peon", "setup", "1.0.0"],
       syncFullHistory: false,
       markOnlineOnConnect: false,
     });

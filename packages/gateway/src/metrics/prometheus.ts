@@ -26,79 +26,79 @@ const metrics: Map<string, Metric> = new Map();
 function initializeMetrics() {
   // Worker deployment metrics
   registerMetric(
-    "lobu_worker_deployments_total",
+    "peon_worker_deployments_total",
     "Total number of worker deployments created",
     "counter"
   );
   registerMetric(
-    "lobu_worker_deployments_failed_total",
+    "peon_worker_deployments_failed_total",
     "Total number of failed worker deployments",
     "counter"
   );
   registerMetric(
-    "lobu_worker_deployments_active",
+    "peon_worker_deployments_active",
     "Current number of active worker deployments",
     "gauge"
   );
 
   // Message queue metrics
   registerMetric(
-    "lobu_messages_received_total",
+    "peon_messages_received_total",
     "Total number of messages received",
     "counter"
   );
   registerMetric(
-    "lobu_messages_processed_total",
+    "peon_messages_processed_total",
     "Total number of messages processed",
     "counter"
   );
-  registerMetric("lobu_queue_length", "Current message queue length", "gauge");
+  registerMetric("peon_queue_length", "Current message queue length", "gauge");
 
   // PVC metrics
   registerMetric(
-    "lobu_pvc_created_total",
+    "peon_pvc_created_total",
     "Total number of PVCs created",
     "counter"
   );
   registerMetric(
-    "lobu_pvc_deleted_total",
+    "peon_pvc_deleted_total",
     "Total number of PVCs deleted",
     "counter"
   );
   registerMetric(
-    "lobu_pvc_cleanup_failed_total",
+    "peon_pvc_cleanup_failed_total",
     "Total number of failed PVC cleanup operations",
     "counter"
   );
 
   // Redis metrics
   registerMetric(
-    "lobu_redis_connection_errors_total",
+    "peon_redis_connection_errors_total",
     "Total number of Redis connection errors",
     "counter"
   );
 
   // HTTP proxy metrics
   registerMetric(
-    "lobu_proxy_requests_total",
+    "peon_proxy_requests_total",
     "Total number of HTTP proxy requests",
     "counter"
   );
   registerMetric(
-    "lobu_proxy_requests_blocked_total",
+    "peon_proxy_requests_blocked_total",
     "Total number of blocked proxy requests",
     "counter"
   );
 
   // Process metrics
   registerMetric(
-    "lobu_process_start_time_seconds",
+    "peon_process_start_time_seconds",
     "Start time of the process since unix epoch in seconds",
     "gauge"
   );
 
   // Set process start time
-  setGauge("lobu_process_start_time_seconds", Math.floor(Date.now() / 1000));
+  setGauge("peon_process_start_time_seconds", Math.floor(Date.now() / 1000));
 
   logger.info("✅ Prometheus metrics initialized");
 }

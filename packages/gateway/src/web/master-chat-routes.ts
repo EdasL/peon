@@ -65,8 +65,8 @@ masterChatRouter.post("/", async (c) => {
   const user = await db.query.users.findFirst({
     where: eq(users.id, session.userId),
   })
-  const lobuAgentId = user?.lobuAgentId
-  if (!lobuAgentId) {
+  const peonAgentId = user?.peonAgentId
+  if (!peonAgentId) {
     return c.json({ error: "Agent not ready" }, 409)
   }
 
@@ -83,22 +83,22 @@ masterChatRouter.post("/", async (c) => {
   const services = getPeonPlatform().getServices()
   try {
     const { bridgeCredentials } = await import("../peon/agent-helper.js")
-    await bridgeCredentials(session.userId, lobuAgentId, services)
+    await bridgeCredentials(session.userId, peonAgentId, services)
   } catch (err) {
     console.error("Credential bridge failed (non-blocking):", err)
   }
 
   const sessionManager = services.getSessionManager()
-  await sessionManager.touchSession(lobuAgentId)
+  await sessionManager.touchSession(peonAgentId)
 
   const queueProducer = services.getQueueProducer()
   await queueProducer.enqueueMessage({
     userId: session.userId,
-    conversationId: lobuAgentId,
+    conversationId: peonAgentId,
     messageId: randomUUID(),
-    channelId: lobuAgentId,
+    channelId: peonAgentId,
     teamId: "peon",
-    agentId: lobuAgentId,
+    agentId: peonAgentId,
     botId: "peon-agent",
     platform: "peon",
     messageText: content,

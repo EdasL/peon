@@ -1,5 +1,5 @@
 /**
- * OpenClaw plugin types for Lobu.
+ * OpenClaw plugin types for Peon.
  *
  * Supports loading existing OpenClaw community plugins (tool and provider).
  * Memory and channel plugins are deferred to a future PR.

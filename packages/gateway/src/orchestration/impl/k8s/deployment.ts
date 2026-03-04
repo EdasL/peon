@@ -29,7 +29,7 @@ import {
   waitForWorkerReady,
 } from "./helpers";
 
-export const LOBU_FINALIZER = "lobu.io/cleanup";
+export const PEON_FINALIZER = "peon.io/cleanup";
 
 export const WORKER_SECURITY = {
   USER_ID: 1001,
@@ -342,7 +342,7 @@ export class K8sDeploymentManager extends BaseDeploymentManager {
   }
 
   private getWorkerServiceAccountName(): string {
-    return this.config.worker.serviceAccountName || "lobu-worker";
+    return this.config.worker.serviceAccountName || "peon-worker";
   }
 
   private getWorkerImagePullSecrets(): Array<{ name: string }> | undefined {
@@ -426,7 +426,7 @@ export class K8sDeploymentManager extends BaseDeploymentManager {
         // Clean up orphaned finalizers on Terminating deployments (avoids extra API call)
         if (
           deployment.metadata?.deletionTimestamp &&
-          deployment.metadata?.finalizers?.includes(LOBU_FINALIZER)
+          deployment.metadata?.finalizers?.includes(PEON_FINALIZER)
         ) {
           logger.info(
             `Removing orphaned finalizer from Terminating deployment ${deploymentName}`
@@ -448,8 +448,8 @@ export class K8sDeploymentManager extends BaseDeploymentManager {
 
         // Get last activity from annotations or fallback to creation time
         const lastActivityStr =
-          deployment.metadata?.annotations?.["lobu.io/last-activity"] ||
-          deployment.metadata?.annotations?.["lobu.io/created"] ||
+          deployment.metadata?.annotations?.["peon.io/last-activity"] ||
+          deployment.metadata?.annotations?.["peon.io/created"] ||
           deployment.metadata?.creationTimestamp;
 
         const lastActivity = lastActivityStr
@@ -498,7 +498,7 @@ export class K8sDeploymentManager extends BaseDeploymentManager {
 
     // Use agentId for PVC naming (shared across threads in same space)
     const agentId = messageData?.agentId!;
-    const pvcName = `lobu-workspace-${agentId}`;
+    const pvcName = `peon-workspace-${agentId}`;
 
     // Check if Nix packages are configured (need init container + subPath mounts)
     const hasNixConfig =
@@ -540,14 +540,14 @@ export class K8sDeploymentManager extends BaseDeploymentManager {
         namespace: this.config.kubernetes.namespace,
         labels: {
           ...BASE_WORKER_LABELS,
-          "lobu.io/platform": platform,
-          "lobu.io/agent-id": agentId,
+          "peon.io/platform": platform,
+          "peon.io/agent-id": agentId,
         },
         annotations: {
-          "lobu.io/status": "running",
-          "lobu.io/created": new Date().toISOString(),
+          "peon.io/status": "running",
+          "peon.io/created": new Date().toISOString(),
         },
-        finalizers: [LOBU_FINALIZER],
+        finalizers: [PEON_FINALIZER],
       },
       spec: {
         replicas: 1,
@@ -559,13 +559,13 @@ export class K8sDeploymentManager extends BaseDeploymentManager {
             annotations: {
               // Add platform-specific metadata
               ...resolvePlatformDeploymentMetadata(messageData),
-              "lobu.io/created": new Date().toISOString(),
-              "lobu.io/agent-id": agentId,
-              ...(traceparent ? { "lobu.io/traceparent": traceparent } : {}),
+              "peon.io/created": new Date().toISOString(),
+              "peon.io/agent-id": agentId,
+              ...(traceparent ? { "peon.io/traceparent": traceparent } : {}),
             },
             labels: {
               ...BASE_WORKER_LABELS,
-              "lobu.io/platform": platform,
+              "peon.io/platform": platform,
             },
           },
           spec: {
@@ -714,9 +714,9 @@ export class K8sDeploymentManager extends BaseDeploymentManager {
 
     // Create child span for worker creation (linked to parent via traceparent)
     const workerSpan = createChildSpan("worker_creation", traceparent, {
-      "lobu.deployment_name": deploymentName,
-      "lobu.user_id": userId,
-      "lobu.agent_id": agentId,
+      "peon.deployment_name": deploymentName,
+      "peon.user_id": userId,
+      "peon.agent_id": agentId,
     });
 
     logger.info(
@@ -828,7 +828,7 @@ export class K8sDeploymentManager extends BaseDeploymentManager {
         const patch = {
           metadata: {
             annotations: {
-              "lobu.io/status": replicas > 0 ? "running" : "scaled-down",
+              "peon.io/status": replicas > 0 ? "running" : "scaled-down",
             },
           },
           spec: {
@@ -931,7 +931,7 @@ export class K8sDeploymentManager extends BaseDeploymentManager {
       const patch = {
         metadata: {
           annotations: {
-            "lobu.io/last-activity": timestamp,
+            "peon.io/last-activity": timestamp,
           },
         },
       };
@@ -960,7 +960,7 @@ export class K8sDeploymentManager extends BaseDeploymentManager {
 
   protected getDispatcherHost(): string {
     const dispatcherService =
-      process.env.DISPATCHER_SERVICE_NAME || "lobu-dispatcher";
+      process.env.DISPATCHER_SERVICE_NAME || "peon-dispatcher";
     return `${dispatcherService}.${this.config.kubernetes.namespace}.svc.cluster.local`;
   }
 

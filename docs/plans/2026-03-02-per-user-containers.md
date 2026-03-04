@@ -4,20 +4,20 @@
 
 **Goal:** Move from per-project containers to per-user containers so each user gets one long-lived Docker container shared across all their projects.
 
-**Architecture:** One `lobuAgentId` per user (not per project). `ensureUserContainer()` is idempotent — called on every project creation but only provisions the container once. Each project becomes a workspace directory inside the container. Messages include `projectId` in metadata so the response renderer routes to the correct SSE stream.
+**Architecture:** One `peonAgentId` per user (not per project). `ensureUserContainer()` is idempotent — called on every project creation but only provisions the container once. Each project becomes a workspace directory inside the container. Messages include `projectId` in metadata so the response renderer routes to the correct SSE stream.
 
-**Tech Stack:** Drizzle ORM + PostgreSQL, Lobu orchestration (Redis queues, session manager), Hono routes, TypeScript/Bun
+**Tech Stack:** Drizzle ORM + PostgreSQL, Peon orchestration (Redis queues, session manager), Hono routes, TypeScript/Bun
 
 ---
 
-## Task 1: Add `lobuAgentId` column to `users` table
+## Task 1: Add `peonAgentId` column to `users` table
 
 **Files:**
 - Modify: `packages/gateway/src/db/schema.ts:3-13`
 
 **Step 1: Add column to schema**
 
-In `packages/gateway/src/db/schema.ts`, add `lobuAgentId` to the `users` table definition:
+In `packages/gateway/src/db/schema.ts`, add `peonAgentId` to the `users` table definition:
 
 ```typescript
 export const users = pgTable("users", {
@@ -28,7 +28,7 @@ export const users = pgTable("users", {
   googleId: text("google_id").unique(),
   githubId: text("github_id").unique(),
   githubAccessToken: text("github_access_token"),
-  lobuAgentId: text("lobu_agent_id"),
+  peonAgentId: text("peon_agent_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
@@ -42,38 +42,38 @@ Run from `packages/gateway/`:
 bunx drizzle-kit push
 ```
 
-Expected: Column `lobu_agent_id` added to `users` table. Confirm with:
+Expected: Column `peon_agent_id` added to `users` table. Confirm with:
 
 ```bash
 bunx drizzle-kit studio
 ```
 
-Or: `psql $DATABASE_URL -c "\\d users"` — should show `lobu_agent_id` column.
+Or: `psql $DATABASE_URL -c "\\d users"` — should show `peon_agent_id` column.
 
 **Step 3: Commit**
 
 ```bash
 git add packages/gateway/src/db/schema.ts
-git commit -m "feat: add lobuAgentId column to users table"
+git commit -m "feat: add peonAgentId column to users table"
 ```
 
 ---
 
-## Task 2: Rewrite `ensureLobuAgent()` to be user-scoped
+## Task 2: Rewrite `ensurePeonAgent()` to be user-scoped
 
 **Files:**
 - Modify: `packages/gateway/src/peon/agent-helper.ts:15-37`
 
-**Step 1: Change `ensureLobuAgent` to accept userId instead of projectId**
+**Step 1: Change `ensurePeonAgent` to accept userId instead of projectId**
 
-Replace the entire `ensureLobuAgent` function in `packages/gateway/src/peon/agent-helper.ts`:
+Replace the entire `ensurePeonAgent` function in `packages/gateway/src/peon/agent-helper.ts`:
 
 ```typescript
 /**
- * Ensures a user has a lobuAgentId, creating one if needed.
- * Returns the lobuAgentId.
+ * Ensures a user has a peonAgentId, creating one if needed.
+ * Returns the peonAgentId.
  */
-export async function ensureLobuAgent(
+export async function ensurePeonAgent(
   userId: string
 ): Promise<string> {
   const user = await db.query.users.findFirst({
@@ -83,18 +83,18 @@ export async function ensureLobuAgent(
     throw new Error(`User ${userId} not found`)
   }
 
-  if (user.lobuAgentId) {
-    return user.lobuAgentId
+  if (user.peonAgentId) {
+    return user.peonAgentId
   }
 
-  const lobuAgentId = randomUUID()
+  const peonAgentId = randomUUID()
   await db
     .update(users)
-    .set({ lobuAgentId, updatedAt: new Date() })
+    .set({ peonAgentId, updatedAt: new Date() })
     .where(eq(users.id, userId))
 
-  logger.info({ userId, lobuAgentId }, "Created lobuAgentId for user")
-  return lobuAgentId
+  logger.info({ userId, peonAgentId }, "Created peonAgentId for user")
+  return peonAgentId
 }
 ```
 
@@ -114,13 +114,13 @@ import { users, apiKeys } from "../db/schema.js"
 cd packages/gateway && bunx tsc --noEmit 2>&1 | grep -E "(agent-helper|project-launcher|chat-routes)"
 ```
 
-Expected: Errors in `project-launcher.ts` (calling `ensureLobuAgent(projectId)` — will fix in Task 3). No errors in `agent-helper.ts` itself.
+Expected: Errors in `project-launcher.ts` (calling `ensurePeonAgent(projectId)` — will fix in Task 3). No errors in `agent-helper.ts` itself.
 
 **Step 4: Commit**
 
 ```bash
 git add packages/gateway/src/peon/agent-helper.ts
-git commit -m "refactor: make ensureLobuAgent user-scoped instead of project-scoped"
+git commit -m "refactor: make ensurePeonAgent user-scoped instead of project-scoped"
 ```
 
 ---
@@ -140,38 +140,38 @@ import { db } from "../db/connection.js"
 import { apiKeys } from "../db/schema.js"
 import { eq } from "drizzle-orm"
 import { decrypt } from "../services/encryption.js"
-import { ensureLobuAgent, bridgeCredentials } from "../peon/agent-helper.js"
+import { ensurePeonAgent, bridgeCredentials } from "../peon/agent-helper.js"
 import type { CoreServices } from "../platform.js"
 
 /**
  * Ensures the user has a running container (idempotent).
- * On first call: generates lobuAgentId, bridges credentials, creates session,
+ * On first call: generates peonAgentId, bridges credentials, creates session,
  * enqueues bootstrap message to trigger container creation.
  * On subsequent calls: re-bridges credentials (in case key changed), returns existing agentId.
  */
 export async function ensureUserContainer(
   userId: string,
   services: CoreServices
-): Promise<{ lobuAgentId: string; created: boolean; error?: string }> {
-  const lobuAgentId = await ensureLobuAgent(userId)
+): Promise<{ peonAgentId: string; created: boolean; error?: string }> {
+  const peonAgentId = await ensurePeonAgent(userId)
 
   // Bridge credentials (idempotent — checks if already bridged)
-  const hasCreds = await bridgeCredentials(userId, lobuAgentId, services)
+  const hasCreds = await bridgeCredentials(userId, peonAgentId, services)
   if (!hasCreds) {
-    return { lobuAgentId, created: false, error: "no-api-key" }
+    return { peonAgentId, created: false, error: "no-api-key" }
   }
 
   // Check if session already exists (container already provisioned)
   const sessionManager = services.getSessionManager()
-  const existingSession = await sessionManager.getSession(lobuAgentId)
+  const existingSession = await sessionManager.getSession(peonAgentId)
   if (existingSession) {
-    return { lobuAgentId, created: false }
+    return { peonAgentId, created: false }
   }
 
   // First time — create session and enqueue bootstrap message
   await sessionManager.setSession({
-    conversationId: lobuAgentId,
-    channelId: lobuAgentId,
+    conversationId: peonAgentId,
+    channelId: peonAgentId,
     userId,
     threadCreator: userId,
     lastActivity: Date.now(),
@@ -183,11 +183,11 @@ export async function ensureUserContainer(
   const queueProducer = services.getQueueProducer()
   await queueProducer.enqueueMessage({
     userId,
-    conversationId: lobuAgentId,
+    conversationId: peonAgentId,
     messageId: randomUUID(),
-    channelId: lobuAgentId,
+    channelId: peonAgentId,
     teamId: "peon",
-    agentId: lobuAgentId,
+    agentId: peonAgentId,
     botId: "peon-agent",
     platform: "peon",
     messageText: "[system] User container initialized. Ready for project workspaces.",
@@ -195,7 +195,7 @@ export async function ensureUserContainer(
     agentOptions: { provider: "claude" },
   })
 
-  return { lobuAgentId, created: true }
+  return { peonAgentId, created: true }
 }
 
 /**
@@ -204,7 +204,7 @@ export async function ensureUserContainer(
  */
 export async function initProjectWorkspace(
   userId: string,
-  lobuAgentId: string,
+  peonAgentId: string,
   projectId: string,
   templateId: string,
   repoUrl: string | null,
@@ -213,11 +213,11 @@ export async function initProjectWorkspace(
   const queueProducer = services.getQueueProducer()
   await queueProducer.enqueueMessage({
     userId,
-    conversationId: lobuAgentId,
+    conversationId: peonAgentId,
     messageId: randomUUID(),
-    channelId: lobuAgentId,
+    channelId: peonAgentId,
     teamId: "peon",
-    agentId: lobuAgentId,
+    agentId: peonAgentId,
     botId: "peon-agent",
     platform: "peon",
     messageText: `[system] New project workspace: ${projectId}. Template: ${templateId}.${repoUrl ? ` Repo: ${repoUrl}.` : ""} Ready for user instructions.`,
@@ -281,7 +281,7 @@ Replace the background launch block (after `if (!project) return ...`) with:
     }
     await initProjectWorkspace(
       session.userId,
-      result.lobuAgentId,
+      result.peonAgentId,
       project.id,
       body.templateId,
       body.repoUrl ?? null,
@@ -352,7 +352,7 @@ projectsRouter.post("/", async (c) => {
     }
     await initProjectWorkspace(
       session.userId,
-      result.lobuAgentId,
+      result.peonAgentId,
       project.id,
       body.templateId,
       body.repoUrl ?? null,
@@ -407,7 +407,7 @@ git commit -m "feat: wire ensureUserContainer + initProjectWorkspace into projec
 
 ---
 
-## Task 5: Update chat routes to read `lobuAgentId` from user
+## Task 5: Update chat routes to read `peonAgentId` from user
 
 **Files:**
 - Modify: `packages/gateway/src/web/chat-routes.ts:1-8` (imports)
@@ -423,12 +423,12 @@ import { chatMessages, projects, users } from "../db/schema.js"
 
 **Step 2: Update POST handler to read from user**
 
-In the POST `/:id/chat` handler, replace the lobuAgentId lookup block. After the project ownership check (`if (!project) return ...`), replace:
+In the POST `/:id/chat` handler, replace the peonAgentId lookup block. After the project ownership check (`if (!project) return ...`), replace:
 
 ```typescript
   // Agent must already exist (created during onboarding)
-  const lobuAgentId = project.lobuAgentId
-  if (!lobuAgentId) {
+  const peonAgentId = project.peonAgentId
+  if (!peonAgentId) {
     return c.json({ error: "Project not ready" }, 409)
   }
 ```
@@ -440,8 +440,8 @@ With:
   const user = await db.query.users.findFirst({
     where: eq(users.id, session.userId),
   })
-  const lobuAgentId = user?.lobuAgentId
-  if (!lobuAgentId) {
+  const peonAgentId = user?.peonAgentId
+  if (!peonAgentId) {
     return c.json({ error: "Agent not ready" }, 409)
   }
 ```
@@ -458,19 +458,19 @@ Expected: No errors.
 
 ```bash
 git add packages/gateway/src/web/chat-routes.ts
-git commit -m "refactor: read lobuAgentId from user instead of project in chat routes"
+git commit -m "refactor: read peonAgentId from user instead of project in chat routes"
 ```
 
 ---
 
-## Task 6: Remove `lobuAgentId` from projects table
+## Task 6: Remove `peonAgentId` from projects table
 
 **Files:**
 - Modify: `packages/gateway/src/db/schema.ts:15-27`
 
 **Step 1: Remove the column from schema**
 
-In the `projects` table definition, remove the `lobuAgentId` line:
+In the `projects` table definition, remove the `peonAgentId` line:
 
 ```typescript
 export const projects = pgTable("projects", {
@@ -507,7 +507,7 @@ Expected: No errors related to our changed files. Any remaining errors are pre-e
 
 ```bash
 git add packages/gateway/src/db/schema.ts
-git commit -m "cleanup: remove lobuAgentId from projects table (now on users)"
+git commit -m "cleanup: remove peonAgentId from projects table (now on users)"
 ```
 
 ---
@@ -542,7 +542,7 @@ curl -X POST http://localhost:3001/api/projects \
 ```
 
 Verify in gateway logs:
-- `ensureLobuAgent` called with userId (not projectId)
+- `ensurePeonAgent` called with userId (not projectId)
 - `bridgeCredentials` called
 - `enqueueMessage` called with `[system] User container initialized...`
 - Second `enqueueMessage` called with `[system] New project workspace...`
@@ -577,11 +577,11 @@ Verify:
 
 | Action | File | What Changes |
 |--------|------|--------------|
-| Modify | `packages/gateway/src/db/schema.ts` | Add `lobuAgentId` to `users`, remove from `projects` |
-| Rewrite | `packages/gateway/src/peon/agent-helper.ts` | `ensureLobuAgent(userId)` — queries/updates `users` table |
+| Modify | `packages/gateway/src/db/schema.ts` | Add `peonAgentId` to `users`, remove from `projects` |
+| Rewrite | `packages/gateway/src/peon/agent-helper.ts` | `ensurePeonAgent(userId)` — queries/updates `users` table |
 | Rewrite | `packages/gateway/src/web/project-launcher.ts` | `ensureUserContainer()` + `initProjectWorkspace()` replace `launchProject()` |
 | Modify | `packages/gateway/src/routes/api/projects.ts` | Call new functions |
-| Modify | `packages/gateway/src/web/chat-routes.ts` | Read `lobuAgentId` from user, not project |
+| Modify | `packages/gateway/src/web/chat-routes.ts` | Read `peonAgentId` from user, not project |
 
 **Untouched (works as-is):**
 - `packages/gateway/src/peon/response-renderer.ts` — routes by `platformMetadata.projectId` (unchanged)

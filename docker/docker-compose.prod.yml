@@ -10,7 +10,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - lobu-public
+      - peon-public
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-peon}"]
@@ -24,8 +24,8 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - lobu-public
-      - lobu-internal
+      - peon-public
+      - peon-internal
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -53,27 +53,27 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - lobu-public
-      - lobu-internal
+      - peon-public
+      - peon-internal
     restart: unless-stopped
 
   worker:
     build:
       context: ..
       dockerfile: docker/Dockerfile.worker
-    image: lobu-worker:latest
+    image: peon-worker:latest
     profiles:
       - build-only
     networks:
-      - lobu-internal
+      - peon-internal
 
 volumes:
   postgres_data:
   redis_data:
 
 networks:
-  lobu-public:
+  peon-public:
     driver: bridge
-  lobu-internal:
+  peon-internal:
     driver: bridge
     internal: true

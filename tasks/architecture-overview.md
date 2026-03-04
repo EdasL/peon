@@ -4,7 +4,7 @@
 
 ### Infrastructure Layer (Complete)
 
-- **Per-project Docker containers** via Lobu orchestration (Docker + K8s backends)
+- **Per-project Docker containers** via Peon orchestration (Docker + K8s backends)
 - **Credential proxy** — containers never see real API keys; proxy injects at request time
 - **Session lifecycle** — Redis sessions with TTL, idle scale-to-zero, volume persistence
 - **SSE streaming** — real-time chat via server-sent events
@@ -22,7 +22,7 @@
 
 ### Key Decision: One Container Per User, Not Per Project
 
-Lobu's per-conversation container model was designed for multi-tenant (different users, different orgs). Peon is different: **one user, many projects**. A container per project means:
+Peon's per-conversation container model was designed for multi-tenant (different users, different orgs). Peon is different: **one user, many projects**. A container per project means:
 
 - Duplicate containers sharing the same API key and preferences
 - Slow project creation (wait for Docker spin-up each time)
@@ -40,8 +40,8 @@ Lobu's per-conversation container model was designed for multi-tenant (different
 ### Data Model Changes
 
 ```
-BEFORE: projects.lobuAgentId  (one agent per project)
-AFTER:  users.lobuAgentId     (one agent per user)
+BEFORE: projects.peonAgentId  (one agent per project)
+AFTER:  users.peonAgentId     (one agent per user)
         — or —
         user_agents table      (if we want multiple agent profiles per user)
 ```
@@ -56,7 +56,7 @@ AFTER:  users.lobuAgentId     (one agent per user)
 
 ### Phase 1: OpenClaw Inside Worker Containers
 
-The `lobu-worker:latest` image already has Bun, Node, Python, Docker CLI. Add OpenClaw as the agent runtime.
+The `peon-worker:latest` image already has Bun, Node, Python, Docker CLI. Add OpenClaw as the agent runtime.
 
 **Dockerfile changes:**
 ```dockerfile
@@ -139,13 +139,13 @@ The worker image already has Docker CLI and supports nested Docker. For Agent Te
 2. User adds Anthropic API key in settings
 3. User creates first project
     ├── ensureUserContainer(userId)
-    │   ├── Generate lobuAgentId (UUID) → store on user
-    │   ├── bridgeCredentials(userId, lobuAgentId)
-    │   ├── Create Lobu session
+    │   ├── Generate peonAgentId (UUID) → store on user
+    │   ├── bridgeCredentials(userId, peonAgentId)
+    │   ├── Create Peon session
     │   ├── Enqueue bootstrap message
     │   └── MessageConsumer → create Docker container
-    │       ├── lobu-worker:latest + OpenClaw
-    │       ├── Volume: lobu-workspace-{lobuAgentId}
+    │       ├── peon-worker:latest + OpenClaw
+    │       ├── Volume: peon-workspace-{peonAgentId}
     │       └── Internal network, proxy, non-root
     └── initializeProjectWorkspace(projectId)
         ├── mkdir /workspace/projects/{projectId}/
@@ -169,9 +169,9 @@ The worker image already has Docker CLI and supports nested Docker. For Agent Te
 
 ```
 1. POST /api/projects/:id/chat { content }
-2. Look up user.lobuAgentId → if missing: 409 "Not ready"
+2. Look up user.peonAgentId → if missing: 409 "Not ready"
 3. Store message in Postgres + broadcast via SSE
-4. touchSession(lobuAgentId) → keep alive
+4. touchSession(peonAgentId) → keep alive
 5. enqueueMessage() with projectId in metadata
 6. Return 201
     ↓
@@ -234,7 +234,7 @@ Container never has real keys. Proxy resolves by `agentId` at request time.
 |----------|-------|
 | **User** | UID 1001 (non-root) |
 | **Network** | Internal bridge — no direct internet |
-| **Volume** | `lobu-workspace-{agentId}` per user |
+| **Volume** | `peon-workspace-{agentId}` per user |
 | **Auth** | Unique `workerToken` per container |
 | **Runtime** | gvisor if available |
 | **Resources** | CPU/memory limits from config |
@@ -262,7 +262,7 @@ Users can customize after selecting a template. The UI writes to the workspace v
 
 | # | Task | Effort | Impact |
 |---|------|--------|--------|
-| 1 | Move `lobuAgentId` from projects to users table | Small | Unlocks per-user model |
+| 1 | Move `peonAgentId` from projects to users table | Small | Unlocks per-user model |
 | 2 | Split `launchProject()` into `ensureUserContainer()` + `initProjectWorkspace()` | Medium | Per-user containers |
 | 3 | Add OpenClaw to worker Dockerfile | Small | Agent intelligence layer |
 | 4 | Build session-context → OpenClaw config bridge | Medium | Wires everything together |
@@ -275,7 +275,7 @@ Users can customize after selecting a template. The UI writes to the workspace v
 
 ## Worker Image Contents
 
-**Image:** `lobu-worker:latest` (from `docker/Dockerfile.worker`)
+**Image:** `peon-worker:latest` (from `docker/Dockerfile.worker`)
 
 Current: Bun 1.2.9, Node.js 20, Python3 + pip + uv, Nix, Docker CLI, GitHub CLI
 

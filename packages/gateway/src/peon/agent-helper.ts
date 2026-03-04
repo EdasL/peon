@@ -9,10 +9,10 @@ import type { CoreServices } from "../platform.js"
 const logger = createLogger("peon-agent-helper")
 
 /**
- * Ensures a user has a lobuAgentId, creating one if needed.
- * Returns the lobuAgentId.
+ * Ensures a user has a peonAgentId, creating one if needed.
+ * Returns the peonAgentId.
  */
-export async function ensureLobuAgent(
+export async function ensurePeonAgent(
   userId: string
 ): Promise<string> {
   const user = await db.query.users.findFirst({
@@ -22,22 +22,22 @@ export async function ensureLobuAgent(
     throw new Error(`User ${userId} not found`)
   }
 
-  if (user.lobuAgentId) {
-    return user.lobuAgentId
+  if (user.peonAgentId) {
+    return user.peonAgentId
   }
 
-  const lobuAgentId = randomUUID()
+  const peonAgentId = randomUUID()
   await db
     .update(users)
-    .set({ lobuAgentId, updatedAt: new Date() })
+    .set({ peonAgentId, updatedAt: new Date() })
     .where(eq(users.id, userId))
 
-  logger.info({ userId, lobuAgentId }, "Created lobuAgentId for user")
-  return lobuAgentId
+  logger.info({ userId, peonAgentId }, "Created peonAgentId for user")
+  return peonAgentId
 }
 
 /**
- * Bridges the user's API keys from Postgres into Lobu's AgentSettingsStore
+ * Bridges the user's API keys from Postgres into Peon's AgentSettingsStore
  * so the orchestrator can inject them into workers via the proxy pattern.
  *
  * Checks three credential sources (in order):
@@ -49,7 +49,7 @@ export async function ensureLobuAgent(
  */
 export async function bridgeCredentials(
   userId: string,
-  lobuAgentId: string,
+  peonAgentId: string,
   services: CoreServices
 ): Promise<boolean> {
   const agentSettingsStore = services.getAgentSettingsStore()
@@ -73,7 +73,7 @@ export async function bridgeCredentials(
   })
 
   logger.info(
-    { userId, lobuAgentId, keyCount: userKeys.length, providers: userKeys.map(k => k.provider) },
+    { userId, peonAgentId, keyCount: userKeys.length, providers: userKeys.map(k => k.provider) },
     "bridgeCredentials: fetched user API keys from DB"
   )
 
@@ -87,12 +87,12 @@ export async function bridgeCredentials(
 
     if (key.provider === "anthropic") {
       logger.info(
-        { userId, lobuAgentId, keyPreview, label: key.label },
+        { userId, peonAgentId, keyPreview, label: key.label },
         "bridgeCredentials: upserting Anthropic key into Redis"
       )
-      await catalogService.installProvider(lobuAgentId, "claude")
+      await catalogService.installProvider(peonAgentId, "claude")
       await profilesManager.upsertProfile({
-        agentId: lobuAgentId,
+        agentId: peonAgentId,
         provider: "claude",
         credential: decryptedKey,
         authType: "api-key",
@@ -100,14 +100,14 @@ export async function bridgeCredentials(
         makePrimary: true,
       })
       logger.info(
-        { userId, lobuAgentId },
-        "Bridged Anthropic credential to Lobu agent"
+        { userId, peonAgentId },
+        "Bridged Anthropic credential to Peon agent"
       )
       bridgedCount++
     } else if (key.provider === "openai") {
-      await catalogService.installProvider(lobuAgentId, "openai")
+      await catalogService.installProvider(peonAgentId, "openai")
       await profilesManager.upsertProfile({
-        agentId: lobuAgentId,
+        agentId: peonAgentId,
         provider: "openai",
         credential: decryptedKey,
         authType: "api-key",
@@ -115,8 +115,8 @@ export async function bridgeCredentials(
         makePrimary: true,
       })
       logger.info(
-        { userId, lobuAgentId },
-        "Bridged OpenAI credential to Lobu agent"
+        { userId, peonAgentId },
+        "Bridged OpenAI credential to Peon agent"
       )
       bridgedCount++
     }
@@ -128,12 +128,12 @@ export async function bridgeCredentials(
 
   // No keys in Postgres — check if OAuth profiles already exist in Redis
   // (e.g. user authenticated via Claude Code OAuth login)
-  const hasClaudeProfile = await profilesManager.hasProviderProfiles(lobuAgentId, "claude")
-  const hasOpenAiProfile = await profilesManager.hasProviderProfiles(lobuAgentId, "openai")
+  const hasClaudeProfile = await profilesManager.hasProviderProfiles(peonAgentId, "claude")
+  const hasOpenAiProfile = await profilesManager.hasProviderProfiles(peonAgentId, "openai")
 
   if (hasClaudeProfile || hasOpenAiProfile) {
     logger.info(
-      { userId, lobuAgentId, hasClaudeProfile, hasOpenAiProfile },
+      { userId, peonAgentId, hasClaudeProfile, hasOpenAiProfile },
       "bridgeCredentials: found existing OAuth profiles in Redis"
     )
     return true
@@ -148,13 +148,13 @@ export async function bridgeCredentials(
 
   if (hasSystemKey) {
     logger.info(
-      { userId, lobuAgentId },
+      { userId, peonAgentId },
       "bridgeCredentials: using system-level credentials"
     )
     return true
   }
 
-  logger.warn({ userId, lobuAgentId }, "No credentials found (DB, OAuth profiles, or system env)")
+  logger.warn({ userId, peonAgentId }, "No credentials found (DB, OAuth profiles, or system env)")
   return false
 }
 
@@ -176,17 +176,17 @@ export async function hasAnyCredentials(
   // 2. OAuth profiles in Redis (e.g. Claude Code login)
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
-    columns: { lobuAgentId: true },
+    columns: { peonAgentId: true },
   })
-  if (user?.lobuAgentId) {
+  if (user?.peonAgentId) {
     const agentSettingsStore = services.getAgentSettingsStore()
     const { AuthProfilesManager } = await import(
       "../auth/settings/auth-profiles-manager.js"
     )
     const profilesManager = new AuthProfilesManager(agentSettingsStore)
 
-    const hasClaudeProfile = await profilesManager.hasProviderProfiles(user.lobuAgentId, "claude")
-    const hasOpenAiProfile = await profilesManager.hasProviderProfiles(user.lobuAgentId, "openai")
+    const hasClaudeProfile = await profilesManager.hasProviderProfiles(user.peonAgentId, "claude")
+    const hasOpenAiProfile = await profilesManager.hasProviderProfiles(user.peonAgentId, "openai")
     if (hasClaudeProfile || hasOpenAiProfile) return true
   }
 

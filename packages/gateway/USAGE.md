@@ -1,6 +1,6 @@
 # Gateway Environment Variables
 
-This document describes all environment variables used by the Lobu Gateway.
+This document describes all environment variables used by the Peon Gateway.
 
 ## Required Variables
 
@@ -60,16 +60,16 @@ This document describes all environment variables used by the Lobu Gateway.
 
 ## MCP (Model Context Protocol) Configuration
 
-### `LOBU_MCP_SERVERS_URL`
+### `PEON_MCP_SERVERS_URL`
 **Description**: Path to MCP servers configuration file
 **Format**: File path (relative to project root)
-**Example**: `file:///app/.lobu/mcp.config.json` or `.lobu/mcp.config.json`
+**Example**: `file:///app/.peon/mcp.config.json` or `.peon/mcp.config.json`
 **Used by**: MCP server discovery and OAuth configuration
 
 ### `PUBLIC_GATEWAY_URL`
 **Description**: Public URL where gateway is accessible (required for MCP OAuth callbacks)
 **Format**: URL without trailing slash
-**Example**: `https://lobu.example.com`
+**Example**: `https://peon.example.com`
 **Default**: `http://localhost:8080`
 **Used by**: OAuth callback URL generation
 
@@ -96,8 +96,8 @@ This document describes all environment variables used by the Lobu Gateway.
 ### `COMPOSE_PROJECT_NAME`
 **Description**: Docker Compose project name (Docker mode only)
 **Format**: Alphanumeric string
-**Default**: `lobu`
-**Used by**: Docker network name resolution (`${COMPOSE_PROJECT_NAME}_lobu-network`)
+**Default**: `peon`
+**Used by**: Docker network name resolution (`${COMPOSE_PROJECT_NAME}_peon-network`)
 
 ## Worker Configuration
 
@@ -105,7 +105,7 @@ This document describes all environment variables used by the Lobu Gateway.
 
 #### `WORKER_IMAGE_REPOSITORY`
 **Description**: Worker Docker image repository
-**Default**: `buremba/lobu-worker`
+**Default**: `buremba/peon-worker`
 **Used by**: Worker container deployment
 
 #### `WORKER_IMAGE_TAG`
@@ -180,10 +180,10 @@ This document describes all environment variables used by the Lobu Gateway.
 **Example**: `${PWD}/examples/my-tool:/workspace/my-tool:ro;${PWD}/data:/data:rw`
 **Used by**: Docker bind mounts in development mode
 
-#### `LOBU_DEV_PROJECT_PATH` (Internal - Development Only)
+#### `PEON_DEV_PROJECT_PATH` (Internal - Development Only)
 **Description**: Host project path for mounting into worker containers (internal use, set automatically in docker-compose.dev.yml)
 **Format**: Absolute host path
-**Example**: `/Users/username/Code/lobu`
+**Example**: `/Users/username/Code/peon`
 **Note**: Only needed in development mode when gateway runs in Docker and needs to mount host directories into workers
 **Used by**: Docker bind mounts for hot reload
 
@@ -213,7 +213,7 @@ This document describes all environment variables used by the Lobu Gateway.
 **Description**: AppArmor profile name for workers
 **Format**: Profile name
 **Default**: Docker's default AppArmor profile (recommended)
-**Example**: `docker-lobu-worker`
+**Example**: `docker-peon-worker`
 **Used by**: Docker SecurityOpt configuration
 
 #### `WORKER_USERNS_MODE`
@@ -266,12 +266,12 @@ This document describes all environment variables used by the Lobu Gateway.
 
 ### `QUEUE_DIRECT_MESSAGE`
 **Description**: Queue name for direct messages
-**Default**: `lobu:queue:direct-message`
+**Default**: `peon:queue:direct-message`
 **Used by**: Message routing
 
 ### `QUEUE_MESSAGE_QUEUE`
 **Description**: Queue name for channel messages
-**Default**: `lobu:queue:message-queue`
+**Default**: `peon:queue:message-queue`
 **Used by**: Message routing
 
 ### `QUEUE_RETRY_LIMIT`
@@ -327,7 +327,7 @@ This document describes all environment variables used by the Lobu Gateway.
 ### `DISPATCHER_SERVICE_NAME`
 **Description**: Kubernetes service name for gateway (for worker callbacks)
 **Format**: Kubernetes service name
-**Default**: `lobu-dispatcher`
+**Default**: `peon-dispatcher`
 **Used by**: Worker-to-gateway communication
 
 ## Health Monitoring

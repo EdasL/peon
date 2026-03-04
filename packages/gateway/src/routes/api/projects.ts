@@ -56,23 +56,24 @@ projectsRouter.get("/", async (c) => {
     orderBy: (p, { desc }) => [desc(p.updatedAt)],
   })
 
-  // Fetch the user's lobuAgentId for Docker status queries
+  // Fetch the user's peonAgentId for Docker status queries
   const user = await db.query.users.findFirst({
     where: eq(users.id, session.userId),
-    columns: { lobuAgentId: true },
+    columns: { peonAgentId: true },
   })
 
   // If we have a container deployment name, query Docker for real status
-  if (user?.lobuAgentId) {
-    const deploymentName = getPeonDeploymentName(session.userId, user.lobuAgentId)
+  if (user?.peonAgentId) {
+    const deploymentName = getPeonDeploymentName(session.userId, user.peonAgentId)
     const dockerStatus = await getContainerStatus(deploymentName)
     if (dockerStatus !== null) {
-      // Map Docker status to projects schema enum: "creating" | "running" | "stopped" | "error"
-      const dbStatus = dockerStatus === "starting" ? "creating" : dockerStatus
-      // Update all user's projects with the real container status
+      const mapped = dockerStatus === "starting" ? "creating"
+        : dockerStatus === "not_found" ? "stopped"
+        : dockerStatus
       const statusUpdates = userProjects.map((p) => ({
         ...p,
-        status: dbStatus as typeof p.status,
+        // "creating" is authoritative — only boot-progress or error/timeout can transition it
+        status: (p.status === "creating" ? "creating" : mapped) as typeof p.status,
       }))
       return c.json({ projects: statusUpdates })
     }
@@ -157,14 +158,14 @@ projectsRouter.post("/", async (c) => {
       return
     }
     // Store deployment name in DB for future status queries and cleanup
-    const deploymentName = getPeonDeploymentName(session.userId, containerResult.lobuAgentId)
+    const deploymentName = getPeonDeploymentName(session.userId, containerResult.peonAgentId)
     await db.update(projects)
       .set({ deploymentName, status: "creating" })
       .where(eq(projects.id, project.id))
 
     await initProjectWorkspace(
       session.userId,
-      containerResult.lobuAgentId,
+      containerResult.peonAgentId,
       project.id,
       templateId,
       body.repoUrl ?? null,
@@ -196,8 +197,12 @@ projectsRouter.get("/:id", async (c) => {
   if (project.deploymentName) {
     const dockerStatus = await getContainerStatus(project.deploymentName)
     if (dockerStatus !== null) {
-      const dbStatus = dockerStatus === "starting" ? "creating" : dockerStatus
-      return c.json({ project: { ...project, status: dbStatus } })
+      const mapped = dockerStatus === "starting" ? "creating"
+        : dockerStatus === "not_found" ? "stopped"
+        : dockerStatus
+      // "creating" is authoritative — only boot-progress or error/timeout can transition it
+      const effectiveStatus = project.status === "creating" ? "creating" : mapped
+      return c.json({ project: { ...project, status: effectiveStatus } })
     }
   }
 
@@ -214,12 +219,16 @@ projectsRouter.get("/:id/status", async (c) => {
 
   let containerStatus: "starting" | "running" | "stopped" | "error"
 
-  if (project.deploymentName) {
+  // "creating" is authoritative — only boot-progress or error/timeout can transition it
+  if (project.status === "creating") {
+    containerStatus = "starting"
+  } else if (project.deploymentName) {
     const dockerStatus = await getContainerStatus(project.deploymentName)
     if (dockerStatus !== null) {
-      containerStatus = dockerStatus
-      // Sync DB status and broadcast to SSE clients
-      const dbStatus = dockerStatus === "starting" ? "creating" : dockerStatus
+      const mapped: "starting" | "running" | "stopped" | "error" =
+        dockerStatus === "not_found" ? "stopped" : dockerStatus
+      containerStatus = mapped
+      const dbStatus = mapped === "starting" ? "creating" : mapped
       if (project.status !== dbStatus) {
         await db.update(projects).set({ status: dbStatus as any, updatedAt: new Date() })
           .where(eq(projects.id, project.id))
@@ -277,10 +286,10 @@ projectsRouter.post("/:id/restart", async (c) => {
         return c.json({ error: message }, 400)
       }
 
-      const deploymentName = getPeonDeploymentName(session.userId, containerResult.lobuAgentId)
+      const deploymentName = getPeonDeploymentName(session.userId, containerResult.peonAgentId)
       await db.update(projects).set({ deploymentName, status: "creating" }).where(eq(projects.id, project.id))
 
-      await initProjectWorkspace(session.userId, containerResult.lobuAgentId, project.id, project.templateId ?? "default", project.repoUrl, services)
+      await initProjectWorkspace(session.userId, containerResult.peonAgentId, project.id, project.templateId ?? "default", project.repoUrl, services)
       waitForContainerReady(project.id, deploymentName)
 
       return c.json({ status: "creating" })

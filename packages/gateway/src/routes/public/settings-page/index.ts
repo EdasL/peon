@@ -170,7 +170,7 @@ export function renderSettingsPage(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
-  <title>Agent Settings - Lobu</title>
+  <title>Agent Settings - Peon</title>
   <style>${settingsPageCSS}</style>
   ${payload.platform === "telegram" ? '<script src="https://telegram.org/js/telegram-web-app.js"></script>' : ""}
 </head>
@@ -196,7 +196,7 @@ export function renderPickerPage(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
-  <title>Configure Agent - Lobu</title>
+  <title>Configure Agent - Peon</title>
   <style>${settingsPageCSS}</style>
   ${payload.platform === "telegram" ? '<script src="https://telegram.org/js/telegram-web-app.js"></script>' : ""}
 </head>
@@ -376,7 +376,7 @@ export function renderSessionBootstrapPage(): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
-  <title>Loading Settings - Lobu</title>
+  <title>Loading Settings - Peon</title>
   <style>
     body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.25rem; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: linear-gradient(to bottom right, #334155, #0f172a); color: #e2e8f0; }
     .card { background: #0f172a; border: 1px solid #334155; border-radius: 1rem; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.35); padding: 1.5rem; max-width: 28rem; width: 100%; text-align: center; }
@@ -488,7 +488,7 @@ export function renderErrorPage(message: string): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings Error - Lobu</title>
+  <title>Settings Error - Peon</title>
   <style>
     body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.25rem; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: linear-gradient(to bottom right, #ef4444, #b91c1c); }
     .card { background: #fff; border-radius: 1rem; box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25); padding: 2.5rem; max-width: 28rem; width: 100%; text-align: center; }

@@ -6,7 +6,7 @@
  * the relevant project via broadcastToProject().
  *
  * Authentication: same Bearer worker-token pattern as all other /internal routes.
- * The token carries conversationId (= lobuAgentId = projectId lookup key).
+ * The token carries conversationId (= peonAgentId = projectId lookup key).
  */
 
 import { createLogger, verifyWorkerToken } from "@lobu/core"
@@ -60,7 +60,7 @@ export interface AgentActivityEvent {
 
 /**
  * Look up which project to broadcast to from the conversationId carried in
- * the worker token.  The conversationId is the lobuAgentId stored on users.
+ * The conversationId is the peonAgentId stored on users.
  *
  * Priority:
  * 1. Explicit active project (set when user sends a chat message)
@@ -77,9 +77,9 @@ async function resolveProjectId(
   const cached = projectIdCache.get(conversationId)
   if (cached && cached.expiresAt > Date.now()) return cached.id
 
-  // conversationId == lobuAgentId == users.lobu_agent_id
+  // conversationId == peonAgentId == users.peon_agent_id
   const user = await db.query.users.findFirst({
-    where: eq(users.lobuAgentId, conversationId),
+    where: eq(users.peonAgentId, conversationId),
     columns: { id: true },
   })
   if (!user) {

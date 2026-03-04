@@ -9,6 +9,32 @@ import { GatewayClient } from "./gateway/sse-client";
 import { startWorkerHttpServer, stopWorkerHttpServer } from "./server";
 
 /**
+ * Report boot progress to the gateway so the frontend can show real startup steps.
+ * Fire-and-forget — errors are logged but don't block startup.
+ */
+async function reportBootProgress(
+  dispatcherUrl: string,
+  workerToken: string,
+  step: string,
+  label: string
+): Promise<void> {
+  try {
+    await fetch(`${dispatcherUrl}/internal/boot-progress`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${workerToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ step, label }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    logger.info(`Boot progress reported: ${step} — ${label}`);
+  } catch (err) {
+    logger.warn(`Failed to report boot progress (${step}):`, err);
+  }
+}
+
+/**
  * Main entry point for gateway-based persistent worker
  */
 async function main() {
@@ -20,10 +46,10 @@ async function main() {
   logger.debug(`TEMPO_ENDPOINT: ${tempoEndpoint}`);
   if (tempoEndpoint) {
     initTracing({
-      serviceName: "lobu-worker",
+      serviceName: "peon-worker",
       tempoEndpoint,
     });
-    logger.info(`Tracing initialized: lobu-worker -> ${tempoEndpoint}`);
+    logger.info(`Tracing initialized: peon-worker -> ${tempoEndpoint}`);
   }
 
   // Discover and register available modules
@@ -66,6 +92,9 @@ async function main() {
 
     setupWorkspaceEnv(deploymentName);
 
+    // Report boot progress: starting AI engine
+    reportBootProgress(dispatcherUrl, workerToken, "engine", "Starting AI engine");
+
     // Start HTTP server before connecting to gateway
     const httpPort = await startWorkerHttpServer();
     logger.info(`Worker HTTP server started on port ${httpPort}`);
@@ -85,6 +114,9 @@ async function main() {
     );
 
     logger.info("🔌 Connecting to dispatcher...");
+    gatewayClient.onFirstConnect(() => {
+      reportBootProgress(dispatcherUrl, workerToken, "ready", "Ready");
+    });
     await gatewayClient.start();
     logger.info("✅ Gateway worker started successfully");
 

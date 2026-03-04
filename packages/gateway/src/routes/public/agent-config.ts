@@ -23,7 +23,7 @@ const TAG = "Agents";
 const ErrorResponse = z.object({ error: z.string() });
 const TokenQuery = z.object({ token: z.string().optional() });
 const logger = createLogger("agent-config-routes");
-const REDACTED_VALUE = "__LOBU_REDACTED__";
+const REDACTED_VALUE = "__PEON_REDACTED__";
 
 export interface ConfigChangeEntry {
   category:

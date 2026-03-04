@@ -35,9 +35,9 @@ export async function buildModuleEnvVars(
 }
 
 export const BASE_WORKER_LABELS = {
-  "app.kubernetes.io/name": "lobu",
+  "app.kubernetes.io/name": "peon",
   "app.kubernetes.io/component": "worker",
-  "lobu/managed-by": "orchestrator",
+  "peon/managed-by": "orchestrator",
 } as const;
 
 export function resolvePlatformDeploymentMetadata(

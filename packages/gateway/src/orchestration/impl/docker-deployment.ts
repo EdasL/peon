@@ -106,8 +106,8 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
       return;
     }
 
-    const composeProjectName = process.env.COMPOSE_PROJECT_NAME || "lobu";
-    const networkName = `${composeProjectName}_lobu-internal`;
+    const composeProjectName = process.env.COMPOSE_PROJECT_NAME || "peon";
+    const networkName = `${composeProjectName}_peon-internal`;
 
     try {
       const network = this.docker.getNetwork(networkName);
@@ -125,8 +125,8 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
           Internal: true,
           Driver: "bridge",
           Labels: {
-            "lobu.io/managed": "true",
-            "lobu.io/purpose": "worker-isolation",
+            "peon.io/managed": "true",
+            "peon.io/purpose": "worker-isolation",
           },
         });
         logger.info(
@@ -232,8 +232,8 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
         // Get last activity from in-memory tracking, labels, or creation time
         const trackedActivity = this.activityTimestamps.get(deploymentName);
         const lastActivityStr =
-          containerInfo.Labels?.["lobu.io/last-activity"] ||
-          containerInfo.Labels?.["lobu.io/created"];
+          containerInfo.Labels?.["peon.io/last-activity"] ||
+          containerInfo.Labels?.["peon.io/created"];
 
         const labelActivity = lastActivityStr
           ? new Date(lastActivityStr)
@@ -270,7 +270,7 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
    * Multiple threads in the same space share the same volume.
    */
   private async ensureVolume(agentId: string): Promise<string> {
-    const volumeName = `lobu-workspace-${agentId}`;
+    const volumeName = `peon-workspace-${agentId}`;
     let volumeCreated = false;
 
     try {
@@ -283,8 +283,8 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
         await this.docker.createVolume({
           Name: volumeName,
           Labels: {
-            "lobu.io/agent-id": agentId,
-            "lobu.io/created": new Date().toISOString(),
+"peon.io/agent-id": agentId,
+          "peon.io/created": new Date().toISOString(),
           },
         });
         logger.info(`✅ Created volume: ${volumeName}`);
@@ -349,7 +349,7 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
       // Determine if running in Docker and resolve project paths
       const isRunningInDocker = process.env.DEPLOYMENT_MODE === "docker";
       const projectRoot = isRunningInDocker
-        ? process.env.LOBU_DEV_PROJECT_PATH || "/app"
+        ? process.env.PEON_DEV_PROJECT_PATH || "/app"
         : path.join(process.cwd(), "..", "..");
 
       const workspaceDir = `${projectRoot}/workspaces/${agentId}`;
@@ -370,10 +370,10 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
       // On macOS/Windows, Docker containers need to use host.docker.internal instead of localhost
       if (process.platform === "darwin" || process.platform === "win32") {
         if (
-          commonEnvVars.LOBU_DATABASE_HOST === "localhost" ||
-          commonEnvVars.LOBU_DATABASE_HOST === "127.0.0.1"
+          commonEnvVars.PEON_DATABASE_HOST === "localhost" ||
+          commonEnvVars.PEON_DATABASE_HOST === "127.0.0.1"
         ) {
-          commonEnvVars.LOBU_DATABASE_HOST = "host.docker.internal";
+          commonEnvVars.PEON_DATABASE_HOST = "host.docker.internal";
         }
       }
 
@@ -390,7 +390,7 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
         !!messageData?.nixConfig?.flakeUrl;
 
       // Get the Docker Compose project name from environment or use default
-      const composeProjectName = process.env.COMPOSE_PROJECT_NAME || "lobu";
+      const composeProjectName = process.env.COMPOSE_PROJECT_NAME || "peon";
 
       const createOptions: Docker.ContainerCreateOptions = {
         name: deploymentName,
@@ -398,8 +398,8 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
         Env: envVars,
         Labels: {
           ...BASE_WORKER_LABELS,
-          "lobu.io/created": new Date().toISOString(),
-          "lobu.io/agent-id": agentId,
+          "peon.io/created": new Date().toISOString(),
+          "peon.io/agent-id": agentId,
           // Docker Compose labels to associate with the project
           "com.docker.compose.project": composeProjectName,
           "com.docker.compose.service": deploymentName, // Use unique service name
@@ -454,7 +454,7 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
           // In docker-compose mode: uses compose project prefix
           // In host mode: uses plain network name (WORKER_NETWORK env var)
           NetworkMode:
-            process.env.WORKER_NETWORK || `${composeProjectName}_lobu-internal`,
+            process.env.WORKER_NETWORK || `${composeProjectName}_peon-internal`,
           // Add host.docker.internal mapping when gateway runs on host
           // Required on Linux, and needed on macOS/Windows when using internal networks
           ...(!this.isRunningInContainer() && {
@@ -529,7 +529,7 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
       // the worker process itself (Claude Code tool use, pip install, etc.).
       try {
         const publicNetwork = this.docker.getNetwork(
-          `${composeProjectName}_lobu-public`
+          `${composeProjectName}_peon-public`
         );
         await publicNetwork.connect({ Container: container.id });
       } catch (netErr) {

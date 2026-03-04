@@ -4,10 +4,14 @@
  * Maps the gateway's session-context response to the file structure
  * OpenClaw expects under ~/.openclaw/ (HOME=/workspace in Docker):
  *
+ *   /workspace/
+ *     SOUL.md                    <- master agent identity (matches agents.list workspace)
  *   ~/.openclaw/
  *     openclaw.json              <- updated dynamically (agents.model, agents.apiKey)
- *     workspace/
- *       SOUL.md                  <- agentInstructions + customInstructions
+ *     workspace-master/
+ *       SOUL.md                  <- safety copy (fallback if agents.list missing)
+ *     agents/<id>/agent/
+ *       SOUL.md                  <- project agent identity
  *     skills/
  *       gateway-skills/SKILL.md  <- skillsInstructions
  *       peon-tools/SKILL.md      <- custom tools manifest
@@ -68,10 +72,10 @@ export async function writeOpenClawConfig(
   const openclawDir = getOpenClawHome();
   const agentId = input.openclawAgentId ?? "master";
 
-  // For master agent, SOUL.md goes in the default workspace.
-  // For project agents, SOUL.md goes in their agent-specific directory.
+  // Master agent workspace is /workspace (matches agents.list in bootstrap config).
+  // Project agents use ~/.openclaw/agents/<id>/agent/.
   const soulDir = agentId === "master"
-    ? path.join(openclawDir, "workspace")
+    ? "/workspace"
     : path.join(openclawDir, "agents", agentId, "agent");
 
   const skillsDir = path.join(openclawDir, "skills");
@@ -82,21 +86,36 @@ export async function writeOpenClawConfig(
   await fs.mkdir(gatewaySkillsDir, { recursive: true });
   await fs.mkdir(peonToolsDir, { recursive: true });
 
-  // Write all config files in parallel
-  await Promise.all([
+  const writes: Promise<void>[] = [
     writeSoulMd(soulDir, input),
     updateOpenClawAgentsConfig(openclawDir, input.providerConfig),
     writeGatewaySkill(gatewaySkillsDir, input.gatewayInstructions),
     writePeonToolsSkill(peonToolsDir),
     writeSessionContext(openclawDir),
-  ]);
+  ];
+
+  // Safety net: also write identity files to workspace-master/ so the agent
+  // gets the Peon persona even if the agents.list is missing and OpenClaw
+  // falls back to its default workspace-master directory.
+  if (agentId === "master") {
+    const fallbackDir = path.join(openclawDir, "workspace-master");
+    writes.push(
+      fs.mkdir(fallbackDir, { recursive: true }).then(async () => {
+        await writeSoulMd(fallbackDir, input);
+        await fs.unlink(path.join(fallbackDir, "BOOTSTRAP.md")).catch(() => {});
+      }),
+    );
+  }
+
+  await Promise.all(writes);
 
   logger.info(`OpenClaw config written to ${openclawDir} (agent=${agentId})`);
 }
 
 /**
  * SOUL.md — the main system prompt / orchestrator personality.
- * Written to ~/.openclaw/workspace/SOUL.md (where OpenClaw reads it).
+ * For master: written to /workspace/SOUL.md (the agent's configured workspace).
+ * For project agents: written to ~/.openclaw/agents/<id>/agent/SOUL.md.
  */
 async function writeSoulMd(
   workspaceDir: string,

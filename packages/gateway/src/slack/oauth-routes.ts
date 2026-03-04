@@ -222,7 +222,7 @@ function renderSuccessPage(teamName: string): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Lobu - Installation Complete</title>
+  <title>Peon - Installation Complete</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f8f9fa; }
     .card { background: white; border-radius: 12px; padding: 48px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 480px; }
@@ -235,7 +235,7 @@ function renderSuccessPage(teamName: string): string {
   <div class="card">
     <div class="success">&#10003;</div>
     <h1>Installation Complete</h1>
-    <p>Lobu has been installed to <strong>${safe}</strong>.</p>
+    <p>Peon has been installed to <strong>${safe}</strong>.</p>
     <p>You can close this window and start using the bot in Slack.</p>
   </div>
 </body>
@@ -249,7 +249,7 @@ function renderErrorPage(error: string): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Lobu - Installation Error</title>
+  <title>Peon - Installation Error</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f8f9fa; }
     .card { background: white; border-radius: 12px; padding: 48px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 480px; }

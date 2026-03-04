@@ -374,7 +374,7 @@ export class OAuthDiscoveryService {
 
       // Prepare registration request
       const registrationRequest = {
-        client_name: "Lobu",
+        client_name: "Peon",
         redirect_uris: [this.callbackUrl],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
