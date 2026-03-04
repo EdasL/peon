@@ -12,6 +12,8 @@ import { createLogger, verifyWorkerToken } from "@lobu/core"
 import { Hono } from "hono"
 import { broadcastToProject } from "../../web/chat-routes.js"
 import { getActiveProject } from "../../web/chat-routes.js"
+import { handleWorkerTaskUpdate } from "../../web/task-sync.js"
+import type { WorkerTask } from "../../web/task-sync.js"
 import { db } from "../../db/connection.js"
 import { projects, users } from "../../db/schema.js"
 import { eq } from "drizzle-orm"
@@ -28,6 +30,14 @@ export interface HookEventPayload {
   toolUseId?: string
   notificationType?: string
   error?: string
+  projectId?: string
+  // Task fields forwarded from TaskCreate/TaskUpdate hook events
+  taskId?: string
+  subject?: string
+  description?: string
+  status?: string
+  owner?: string
+  metadata?: Record<string, unknown>
 }
 
 export interface AgentStatusEvent {
@@ -148,16 +158,35 @@ export function createHookEventRoutes(): Hono {
       return c.json({ error: "eventType and agentId are required" }, 400)
     }
 
+    // Resolve projectId: prefer explicit from payload, fall back to token lookup
+    const projectId = body.projectId || await resolveProjectId(tokenData.conversationId)
+    if (!projectId) {
+      logger.debug(`hook-events: no project found for conversationId=${tokenData.conversationId}`)
+      return c.json({ ok: true })
+    }
+
+    // Handle task events: forward to task-sync so board updates via hooks
+    if ((body.eventType === "TaskCreate" || body.eventType === "TaskUpdate") && body.taskId && body.subject) {
+      const task: WorkerTask = {
+        id: body.taskId,
+        subject: body.subject,
+        description: body.description ?? "",
+        status: (body.status as WorkerTask["status"]) ?? "pending",
+        owner: body.owner ?? null,
+        boardColumn: body.status === "in_progress" ? "in_progress" : body.status === "completed" ? "done" : "todo",
+        metadata: body.metadata,
+        updatedAt: body.timestamp || Date.now(),
+        blocks: [],
+        blockedBy: [],
+      }
+      await handleWorkerTaskUpdate(projectId, task)
+      logger.debug(`hook-events: ${body.eventType} task=${body.taskId} for project=${projectId}`)
+    }
+
     const status = mapHookEventToStatus(body.eventType, body.notificationType)
     if (!status) {
       // Unknown or irrelevant event type — acknowledge but skip broadcast
       return c.json({ ok: true, status: null })
-    }
-
-    const projectId = await resolveProjectId(tokenData.conversationId)
-    if (!projectId) {
-      logger.debug(`hook-events: no project found for conversationId=${tokenData.conversationId}`)
-      return c.json({ ok: true })
     }
 
     const sseEvent: AgentStatusEvent = {

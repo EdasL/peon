@@ -26,6 +26,9 @@ def main():
     parser = argparse.ArgumentParser(description="Forward Claude Code hook events to gateway")
     parser.add_argument("--event-type", required=True, help="Hook event type (PreToolUse, PostToolUse, etc.)")
     parser.add_argument("--source-app", required=True, help="Agent identifier")
+    parser.add_argument("--gateway-url", default=None, help="Gateway URL (overrides GATEWAY_URL env)")
+    parser.add_argument("--worker-token", default=None, help="Worker token (overrides WORKER_TOKEN env)")
+    parser.add_argument("--project-id", default=None, help="Project ID to include in payload")
     args = parser.parse_args()
 
     # Read hook context from stdin
@@ -53,10 +56,12 @@ def main():
         payload["notificationType"] = hook_context["notification_type"]
     if "error" in hook_context:
         payload["error"] = str(hook_context["error"])[:500]
+    if args.project_id:
+        payload["projectId"] = args.project_id
 
-    # Gateway URL from env (set by worker container)
-    gateway_url = os.environ.get("GATEWAY_URL", "http://localhost:8080")
-    worker_token = os.environ.get("WORKER_TOKEN", "")
+    # Gateway URL: CLI arg > env var > default
+    gateway_url = args.gateway_url or os.environ.get("GATEWAY_URL", "http://localhost:8080")
+    worker_token = args.worker_token or os.environ.get("WORKER_TOKEN", "")
 
     url = f"{gateway_url}/internal/hook-events"
 

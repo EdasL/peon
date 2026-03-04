@@ -11,7 +11,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { readFile, stat, writeFile, mkdir, unlink } from "node:fs/promises";
+import { readFile, stat, writeFile, mkdir, unlink, copyFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -490,6 +490,40 @@ async function createProjectTasks(
 
 const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskUpdate", "TaskList"]);
 
+// Inline fallback for send_event.py in case the source file can't be copied
+const SEND_EVENT_SCRIPT = `#!/usr/bin/env python3
+import argparse, json, os, sys, urllib.request, urllib.error
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--event-type", required=True)
+    p.add_argument("--source-app", required=True)
+    p.add_argument("--gateway-url", default=None)
+    p.add_argument("--worker-token", default=None)
+    p.add_argument("--project-id", default=None)
+    a = p.parse_args()
+    ctx = {}
+    try:
+        raw = sys.stdin.read()
+        if raw.strip(): ctx = json.loads(raw)
+    except: pass
+    payload = {"eventType": a.event_type, "agentId": a.source_app, "timestamp": int(__import__("time").time()*1000)}
+    if "tool_name" in ctx: payload["toolName"] = ctx["tool_name"]
+    if "tool_use_id" in ctx: payload["toolUseId"] = ctx["tool_use_id"]
+    if "notification_type" in ctx: payload["notificationType"] = ctx["notification_type"]
+    if "error" in ctx: payload["error"] = str(ctx["error"])[:500]
+    if a.project_id: payload["projectId"] = a.project_id
+    gw = a.gateway_url or os.environ.get("GATEWAY_URL","http://localhost:8080")
+    tk = a.worker_token or os.environ.get("WORKER_TOKEN","")
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(f"{gw}/internal/hook-events", data=data,
+        headers={"Content-Type":"application/json","Authorization":f"Bearer {tk}"}, method="POST")
+    try: urllib.request.urlopen(req, timeout=5)
+    except: pass
+
+if __name__ == "__main__": main()
+`;
+
 // Map Claude Code task status to our status enum
 function normalizeStatus(s?: string): "pending" | "in_progress" | "completed" {
   if (s === "in_progress") return "in_progress";
@@ -690,6 +724,50 @@ async function delegateToProject(
     }
   }
 
+  // Deploy Claude Code hooks into the project workspace so every tool
+  // call / status change fires back to /internal/hook-events via SSE.
+  {
+    const hooksDir = join(claudeDir, "hooks");
+    await mkdir(hooksDir, { recursive: true });
+
+    // Copy send_event.py from the worker's hooks directory.
+    // __dirname is dist/openclaw/plugins/peon-gateway/ at runtime,
+    // so we go up 5 levels to reach packages/worker/.claude/hooks/
+    const workerRoot = join(__dirname, "..", "..", "..", "..");
+    const workerHookSrc = join(workerRoot, ".claude", "hooks", "send_event.py");
+    const destHook = join(hooksDir, "send_event.py");
+    try {
+      await copyFile(workerHookSrc, destHook);
+    } catch {
+      // Fallback: write a minimal send_event.py inline if source not found
+      const script = SEND_EVENT_SCRIPT;
+      await writeFile(destHook, script, { mode: 0o755 });
+    }
+
+    // Build the hook command with inline args (env vars aren't available in project workspaces)
+    const gatewayUrl = process.env.DISPATCHER_URL || "http://localhost:8080";
+    const workerToken = process.env.WORKER_TOKEN || "";
+    const hookCmd = `python3 ${destHook} --gateway-url ${gatewayUrl} --worker-token ${workerToken} --project-id ${params.projectId}`;
+
+    const hookEntry = (eventType: string) => ({
+      matcher: "",
+      hooks: [{ type: "command", command: `${hookCmd} --event-type ${eventType} --source-app \${AGENT_ID:-default}` }],
+    });
+
+    const allEvents = [
+      "PreToolUse", "PostToolUse", "PostToolUseFailure",
+      "Notification", "Stop", "SessionEnd",
+      "SubagentStart", "SubagentStop",
+      "TaskStart", "TaskComplete", "TaskCreate", "TaskUpdate",
+    ];
+
+    const settings: Record<string, unknown> = {
+      hooks: Object.fromEntries(allEvents.map((e) => [e, [hookEntry(e)]])),
+    };
+
+    await writeFile(join(projectDir, ".claude", "settings.json"), JSON.stringify(settings, null, 2), "utf-8");
+  }
+
   const existing = activeTeams.get(params.projectId);
   if (existing && !existing.completed) {
     return text(`Error: A team is already running for "${params.projectId}". Use CheckTeamStatus.`);
@@ -781,32 +859,15 @@ async function delegateToProject(
             team.output += newText;
             idleCount = 0;
 
-            // Try to parse any stream-json lines that leak through
+            // Interactive mode: don't parse stream-json from ANSI terminal output.
+            // Task sync happens via Claude Code hooks (send_event.py -> /internal/hook-events).
+            // Only check for session completion signals.
             for (const line of newText.split("\n")) {
               const trimmed = line.trim();
               if (!trimmed) continue;
               try {
                 const ev = JSON.parse(trimmed) as Record<string, unknown>;
-                if (ev.type === "tool_use" && typeof ev.name === "string") {
-                  const toolName = ev.name;
-                  const toolInput = (ev.input && typeof ev.input === "object")
-                    ? ev.input as Record<string, unknown>
-                    : {};
-                  if (TASK_TOOL_NAMES.has(toolName)) {
-                    syncTaskToGateway(toolName, toolInput).catch(() => {});
-                  }
-                  if (!SILENT_TOOLS.has(toolName)) {
-                    const activityText = buildToolActivityText(toolName, toolInput);
-                    const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
-                    const command = toolInput.command as string | undefined;
-                    postSubagentActivity(subagentName, "tool_start", toolName, activityText, {
-                      ...(filePath && { filePath }),
-                      ...(command && { command }),
-                    }).catch(() => {});
-                  }
-                } else if (ev.type === "tool_result") {
-                  postSubagentActivity(subagentName, "tool_end").catch(() => {});
-                } else if (ev.type === "result") {
+                if (ev.type === "result") {
                   team.completed = true;
                   team.exitCode = 0;
                 }
