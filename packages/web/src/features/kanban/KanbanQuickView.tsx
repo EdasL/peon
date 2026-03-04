@@ -1,17 +1,10 @@
 import { useMemo } from 'react';
 import { ArrowRight } from 'lucide-react';
-import type { KanbanTask, TaskStatus, TaskPriority } from './types';
-import { COLUMN_LABELS } from './types';
+import type { KanbanTask, DisplayColumn } from './types';
+import { DISPLAY_COLUMN_LABELS } from './types';
 import { useKanban } from './hooks/useKanban';
 
-const PRIORITY_DOT: Record<TaskPriority, string> = {
-  critical: 'bg-red-500',
-  high: 'bg-orange-400',
-  normal: 'bg-blue-400',
-  low: 'bg-zinc-400',
-};
-
-const QUICK_STATUSES: TaskStatus[] = ['todo', 'in-progress', 'review'];
+const QUICK_COLUMNS: DisplayColumn[] = ['todo', 'in-progress'];
 const MAX_ROWS = 5;
 
 interface KanbanQuickViewProps {
@@ -26,10 +19,6 @@ function TaskRow({ task, onClick }: { task: KanbanTask; onClick: () => void }) {
       onClick={onClick}
       className="w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-left text-xs hover:bg-muted/60 transition-colors group cursor-pointer"
     >
-      <span
-        className={`shrink-0 w-1.5 h-1.5 rounded-full ${PRIORITY_DOT[task.priority]}`}
-        title={task.priority}
-      />
       <span className="truncate flex-1 text-foreground/80 group-hover:text-foreground">
         {task.title}
       </span>
@@ -42,12 +31,12 @@ function TaskRow({ task, onClick }: { task: KanbanTask; onClick: () => void }) {
   );
 }
 
-function StatusSection({
-  status,
+function ColumnSection({
+  column,
   tasks,
   onOpenTask,
 }: {
-  status: TaskStatus;
+  column: DisplayColumn;
   tasks: KanbanTask[];
   onOpenTask: (task: KanbanTask) => void;
 }) {
@@ -58,7 +47,7 @@ function StatusSection({
     <div className="mb-2 last:mb-0">
       <div className="flex items-center gap-1.5 px-1.5 mb-0.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          {COLUMN_LABELS[status]}
+          {DISPLAY_COLUMN_LABELS[column]}
         </span>
         <span className="text-[10px] text-muted-foreground/60">{tasks.length}</span>
       </div>
@@ -75,23 +64,23 @@ function StatusSection({
 }
 
 export function KanbanQuickView({ projectId, onOpenBoard, onOpenTask }: KanbanQuickViewProps) {
-  const { tasksByStatus, statusCounts, loading, error } = useKanban(projectId);
+  const { getTasksForColumn, columnCounts, loading, error } = useKanban(projectId);
 
   const sections = useMemo(() => {
-    return QUICK_STATUSES.map(s => ({
-      status: s,
-      tasks: tasksByStatus(s),
+    return QUICK_COLUMNS.map(col => ({
+      column: col,
+      tasks: getTasksForColumn(col),
     }));
-  }, [tasksByStatus]);
+  }, [getTasksForColumn]);
 
-  const totalActive = (statusCounts.todo || 0) + (statusCounts['in-progress'] || 0) + (statusCounts.review || 0);
+  const totalActive = (columnCounts.todo || 0) + (columnCounts['in-progress'] || 0);
   const allEmpty = totalActive === 0;
 
   return (
     <div className="h-full flex flex-col min-h-0">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/40">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs font-medium text-foreground/90">Kanban</span>
+          <span className="text-xs font-medium text-foreground/90">Board</span>
           {totalActive > 0 && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium">
               {totalActive}
@@ -112,18 +101,18 @@ export function KanbanQuickView({ projectId, onOpenBoard, onOpenTask }: KanbanQu
           <p className="text-[11px] text-destructive px-1.5">{error}</p>
         )}
         {loading && !error && (
-          <p className="text-[11px] text-muted-foreground/50 px-1.5 animate-pulse">Loading…</p>
+          <p className="text-[11px] text-muted-foreground/50 px-1.5 animate-pulse">Loading...</p>
         )}
         {!loading && allEmpty && !error && (
           <p className="text-[11px] text-muted-foreground/40 px-1.5 py-4 text-center">
             No active tasks
           </p>
         )}
-        {!loading && !allEmpty && sections.map(({ status, tasks }) =>
+        {!loading && !allEmpty && sections.map(({ column, tasks }) =>
           tasks.length > 0 ? (
-            <StatusSection
-              key={status}
-              status={status}
+            <ColumnSection
+              key={column}
+              column={column}
               tasks={tasks}
               onOpenTask={onOpenTask}
             />

@@ -3,7 +3,7 @@ import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
 import { requireAuth, getSession } from "../auth/middleware.js"
 import { db } from "../db/connection.js"
-import { chatMessages, projects, teams, teamMembers, users } from "../db/schema.js"
+import { chatMessages, projects, teams, users } from "../db/schema.js"
 import { eq, and, asc } from "drizzle-orm"
 import { getPeonPlatform } from "../peon/platform.js"
 

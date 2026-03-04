@@ -1,7 +1,6 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"
-import { useEffect, useState, useCallback, useMemo } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useAuth } from "@/hooks/use-auth"
-import { useAgentActivity } from "@/hooks/use-agent-activity"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
@@ -14,11 +13,10 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import { ChatPanel } from "@/components/chat/ChatPanel"
-import { ActivityFeed } from "@/components/project/ActivityFeed"
 import { ProvisioningOverlay } from "@/components/project/ProvisioningOverlay"
 import { StatusBar } from "@/components/project/StatusBar"
 import { OpenClawProvider } from "@/contexts/OpenClawContext"
-import { SessionList } from "@/features/sessions"
+import { TeamPanel } from "@/features/sessions"
 import { KanbanPanel } from "@/features/kanban"
 import type { Project, TeamMember } from "@/lib/api"
 import * as api from "@/lib/api"
@@ -34,8 +32,6 @@ import {
   RefreshCw,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
 } from "lucide-react"
 
 function ProjectSkeleton() {
@@ -61,13 +57,6 @@ function ProjectSkeleton() {
             <Skeleton className="h-40" />
           </div>
         </div>
-        <div className="w-[280px] border-l border-border/40 p-2 space-y-2">
-          <Skeleton className="h-3 w-16 mx-1 mt-1" />
-          <Skeleton className="h-5 w-full" />
-          <Skeleton className="h-5 w-3/4" />
-          <Skeleton className="h-5 w-full" />
-          <Skeleton className="h-5 w-5/6" />
-        </div>
       </div>
     </div>
   )
@@ -77,35 +66,10 @@ type CenterView = "chat" | "board"
 
 function ProjectBody({
   projectId,
-  templateId,
 }: {
   projectId: string
-  templateId?: string
 }) {
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
-
-  const refreshTeam = useCallback(() => {
-    api.getProjectTeams(projectId).then(({ teams }) => {
-      const first = teams[0]
-      if (first?.members.length) setTeamMembers(first.members)
-    }).catch(() => {})
-  }, [projectId])
-
-  useEffect(() => { refreshTeam() }, [refreshTeam])
-
-  const agentNames = useMemo(() => {
-    if (teamMembers.length > 0) {
-      return teamMembers.map((m) => m.roleName.toLowerCase())
-    }
-    if (!templateId) return undefined
-    const tmpl = getTemplate(templateId)
-    return tmpl?.agents.map((a) => a.role.toLowerCase())
-  }, [teamMembers, templateId])
-
-  const { feed } = useAgentActivity(projectId, agentNames)
-
   const [leftOpen, setLeftOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(true)
 
   const [searchParams, setSearchParams] = useSearchParams()
   const centerView = (searchParams.get("view") as CenterView) || "chat"
@@ -122,7 +86,7 @@ function ProjectBody({
         {leftOpen && (
           <div className="w-[240px] flex-shrink-0 border-r border-border/40 flex flex-col min-h-0 bg-zinc-950/50">
             <div className="flex-1 min-h-0 overflow-auto">
-              <SessionList />
+              <TeamPanel />
             </div>
           </div>
         )}
@@ -161,15 +125,6 @@ function ProjectBody({
               Board
             </button>
 
-            <div className="flex-1" />
-
-            <button
-              onClick={() => setRightOpen(!rightOpen)}
-              className="text-zinc-500 hover:text-zinc-300 p-1 rounded transition-colors ml-1"
-              title={rightOpen ? "Close right panel" : "Open right panel"}
-            >
-              {rightOpen ? <PanelRightClose className="size-3.5" /> : <PanelRightOpen className="size-3.5" />}
-            </button>
           </div>
 
           <div className="flex-1 min-h-0 relative">
@@ -182,14 +137,6 @@ function ProjectBody({
           </div>
         </div>
 
-        {/* Right panel: Activity */}
-        {rightOpen && (
-          <div className="w-[280px] flex-shrink-0 border-l border-border/40 flex flex-col min-h-0 bg-zinc-950/50">
-            <div className="flex-1 min-h-0 overflow-auto">
-              <ActivityFeed events={feed} teamMembers={teamMembers} templateId={templateId} embedded />
-            </div>
-          </div>
-        )}
       </div>
 
       <StatusBar />
@@ -451,10 +398,7 @@ export function ProjectPage() {
         </header>
 
         {/* Body: left panel + center + right panel + bottom status bar */}
-        <ProjectBody
-          projectId={id}
-          templateId={project?.templateId}
-        />
+        <ProjectBody projectId={id} />
       </div>
     </OpenClawProvider>
   )

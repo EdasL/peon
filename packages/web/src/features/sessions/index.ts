@@ -1,4 +1,6 @@
 export { SessionList } from "./SessionList"
+export { TeamPanel } from "./TeamPanel"
+export type { AgentStatus } from "./TeamPanel"
 export { SessionNode } from "./SessionNode"
 export { SessionInfoPanel } from "./SessionInfoPanel"
 export { SpawnAgentDialog } from "./SpawnAgentDialog"

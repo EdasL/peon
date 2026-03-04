@@ -100,7 +100,7 @@ export function createInternalTaskRoutes(): Hono {
       description: body.description ?? "",
       status: body.status ?? "pending",
       owner: body.owner ?? null,
-      boardColumn: body.boardColumn ?? "backlog",
+      boardColumn: body.boardColumn ?? "todo",
       metadata: body.metadata ?? undefined,
       updatedAt: body.updatedAt ?? Date.now(),
       blocks: body.blocks ?? [],

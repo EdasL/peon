@@ -1,16 +1,31 @@
+export type DisplayColumn = 'todo' | 'in-progress' | 'done';
+
 export type TaskStatus = 'backlog' | 'todo' | 'in-progress' | 'review' | 'done' | 'cancelled';
 export type TaskPriority = 'critical' | 'high' | 'normal' | 'low';
 
-export const COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in-progress', 'review', 'done'];
+export const DISPLAY_COLUMNS: DisplayColumn[] = ['todo', 'in-progress', 'done'];
 
-export const COLUMN_LABELS: Record<TaskStatus, string> = {
-  backlog: 'Backlog',
+export const DISPLAY_COLUMN_LABELS: Record<DisplayColumn, string> = {
   todo: 'To Do',
   'in-progress': 'In Progress',
-  review: 'Review',
   done: 'Done',
-  cancelled: 'Cancelled',
 };
+
+/** Maps raw board column from DB to one of 3 display columns */
+export function toDisplayColumn(boardColumn: string): DisplayColumn {
+  switch (boardColumn) {
+    case 'backlog':
+    case 'todo':
+      return 'todo';
+    case 'in_progress':
+      return 'in-progress';
+    case 'qa':
+    case 'done':
+      return 'done';
+    default:
+      return 'todo';
+  }
+}
 
 export type TaskActor = 'operator' | `agent:${string}`;
 
@@ -35,6 +50,7 @@ export interface KanbanTask {
   title: string;
   description?: string;
   status: TaskStatus;
+  displayColumn: DisplayColumn;
   priority: TaskPriority;
   createdBy: TaskActor;
   createdAt: number;
@@ -53,4 +69,6 @@ export interface KanbanTask {
   estimateMin?: number;
   actualMin?: number;
   feedback: TaskFeedback[];
+  /** Whether the owning agent is currently working (has in_progress task status) */
+  isWorking?: boolean;
 }

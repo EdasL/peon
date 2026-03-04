@@ -501,7 +501,7 @@ function normalizeStatus(s?: string): "pending" | "in_progress" | "completed" {
 function deriveBoardColumn(status?: string): string {
   if (status === "in_progress") return "in_progress";
   if (status === "completed") return "done";
-  return "backlog";
+  return "todo";
 }
 
 async function syncTaskToGateway(toolName: string, input: Record<string, unknown>): Promise<void> {

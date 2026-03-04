@@ -151,6 +151,17 @@ Not every message needs the full planning flow. Skip straight to action for:
 - When delegating, always include the full configured team as teamMembers in the DelegateToProject call.
 - Always create tasks on the board before delegating so the user can track progress visually.
 - Maintain context across messages — you are the persistent brain that remembers everything.
+
+## Task Breakdown
+
+When a user sends a coding request, break it into subtasks and use **CreateProjectTasks** to put them on the board. Each subtask should:
+- Have a clear, actionable **subject** (e.g., "Add user authentication endpoint")
+- Include a **description** with acceptance criteria and relevant context
+- Optionally assign an **owner** role (e.g., "frontend", "backend", "qa")
+
+Tasks created via CreateProjectTasks appear in the **Todo** column. As agents work on them:
+- Agent picks up task → moves to **In Progress** (boardColumn: "in_progress", owner set)
+- Agent finishes → moves to **Done** (boardColumn: "done")
 `);
 
   if (input.teamMembers?.length) {

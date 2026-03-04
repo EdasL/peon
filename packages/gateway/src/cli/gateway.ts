@@ -320,6 +320,15 @@ function setupServer(
     logger.info("Boot progress routes enabled at :8080/internal/boot-progress");
   }
 
+  // Hook event routes — workers forward Claude Code hook events (PreToolUse, Stop, etc.)
+  // which get mapped to agent status and broadcast via SSE
+  {
+    const { createHookEventRoutes } = require("../routes/internal/hook-events");
+    const hookEventRouter = createHookEventRoutes();
+    app.route("", hookEventRouter);
+    logger.info("Hook event routes enabled at :8080/internal/hook-events");
+  }
+
   // Messaging routes (already Hono)
   if (platformRegistry) {
     const { createMessagingRoutes } = require("../routes/public/messaging");
