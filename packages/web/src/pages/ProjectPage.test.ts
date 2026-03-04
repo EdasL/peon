@@ -1,10 +1,15 @@
 import { describe, test, expect } from "bun:test"
 import { readFileSync } from "fs"
-import { join } from "path"
+import { join, dirname } from "path"
+import { fileURLToPath } from "url"
+
+const __dirname = typeof import.meta.dir !== "undefined"
+  ? import.meta.dir
+  : dirname(fileURLToPath(import.meta.url))
 
 describe("ProjectPage", () => {
   const source = readFileSync(
-    join(import.meta.dir, "ProjectPage.tsx"),
+    join(__dirname, "ProjectPage.tsx"),
     "utf-8"
   )
 
