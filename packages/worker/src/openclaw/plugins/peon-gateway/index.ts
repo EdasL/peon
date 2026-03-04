@@ -698,12 +698,20 @@ async function delegateToProject(
     }
   }
 
-  // Write CLAUDE.md — prefer explicit content, fall back to init/placeholder
+  // Write CLAUDE.md — team-lead preamble + explicit content or init/placeholder
   const claudeMdRoot = join(projectDir, "CLAUDE.md");
   const claudeMdDot = join(claudeDir, "CLAUDE.md");
 
+  const teamLeadPreamble = `# Team Lead Instructions
+
+You are the lead agent. Before writing any code, you MUST spawn teammates using agent teams. Do not implement anything yourself except coordination and task breakdown. Spawn at minimum: backend, frontend, and qa teammates. Only start working once the team is active.
+
+Use TaskCreate to break work into tasks, assign them to teammates, and track progress. Review results before marking tasks complete.
+
+`;
+
   if (params.claudeMd) {
-    await writeFile(claudeMdDot, params.claudeMd, "utf-8");
+    await writeFile(claudeMdDot, teamLeadPreamble + params.claudeMd, "utf-8");
   } else {
     const hasCLAUDEmd =
       await stat(claudeMdRoot).then(() => true, () => false) ||
@@ -724,7 +732,18 @@ async function delegateToProject(
       if (!initSucceeded) {
         const stderr = initResult.stderr?.toString() || "";
         console.error(`[DelegateToProject] claude init failed for ${params.projectId} (exit=${initResult.status}): ${stderr}`);
-        await writeFile(claudeMdDot, `# Project: ${params.projectId}\n\nManaged project workspace.\n`, "utf-8");
+      }
+      // Always write team-lead preamble into .claude/CLAUDE.md
+      const existing = await readFile(claudeMdDot, "utf-8").catch(() => "");
+      if (!existing.includes("Team Lead Instructions")) {
+        await writeFile(claudeMdDot, teamLeadPreamble + existing, "utf-8");
+      }
+    } else {
+      // CLAUDE.md exists — prepend team-lead preamble if not already there
+      const target = await stat(claudeMdDot).then(() => claudeMdDot, () => claudeMdRoot);
+      const existing = await readFile(target, "utf-8").catch(() => "");
+      if (!existing.includes("Team Lead Instructions")) {
+        await writeFile(claudeMdDot, teamLeadPreamble + existing, "utf-8");
       }
     }
   }
@@ -784,10 +803,11 @@ async function delegateToProject(
   const allowedTools = params.allowedTools || "Read,Edit,Write,Bash,Grep,Glob";
   const hasTeam = !!(params.teamMembers?.length && params.teamMembers.length > 0);
 
+  const teamLeadPrefix = "You are a team lead. Your first action must be to create an agent team. Do not write a single line of code before your team is spawned and assigned tasks.\n\n";
   const teamSpawnPrompt = hasTeam
     ? buildTeamSpawnPrompt(params.teamMembers!)
     : "";
-  const fullTask = teamSpawnPrompt + params.task;
+  const fullTask = teamLeadPrefix + teamSpawnPrompt + params.task;
 
   const team: TeamProcess = {
     sessionName,
