@@ -68,7 +68,7 @@ export class OpenClawProcess {
 
     this.process = spawn(
       "openclaw",
-      ["gateway", "--port", String(this.port), "--bind", "loopback"],
+      ["gateway", "--port", String(this.port), "--bind", "lan"],
       {
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env },

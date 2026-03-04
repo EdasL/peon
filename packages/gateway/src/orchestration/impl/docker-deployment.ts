@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createLogger, ErrorCode, OrchestratorError } from "@lobu/core";
@@ -50,6 +51,35 @@ class ResourceParser {
 }
 
 const logger = createLogger("orchestrator");
+
+const OPENCLAW_CONTAINER_PORT = 18789;
+
+/**
+ * Registry of OpenClaw connection info for active worker containers.
+ * Keyed by deployment name — the gateway uses this to connect to each
+ * container's OpenClaw gateway for real-time event streaming.
+ */
+interface OpenClawRegistryEntry {
+  wsUrl: string;
+  token: string;
+}
+
+const openclawRegistry = new Map<string, OpenClawRegistryEntry>();
+
+/** Get the OpenClaw WS URL for a container by deployment name. */
+export function getOpenClawWsUrl(deploymentName: string): string | undefined {
+  return openclawRegistry.get(deploymentName)?.wsUrl;
+}
+
+/** Get the OpenClaw auth token for a container by deployment name. */
+export function getOpenClawToken(deploymentName: string): string | undefined {
+  return openclawRegistry.get(deploymentName)?.token;
+}
+
+/** Get all registered OpenClaw entries (deploymentName -> entry). */
+export function getAllOpenClawEntries(): ReadonlyMap<string, OpenClawRegistryEntry> {
+  return openclawRegistry;
+}
 
 export class DockerDeploymentManager extends BaseDeploymentManager {
   private docker: Docker;
@@ -137,6 +167,67 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
           `Failed to create internal network ${networkName}: ${createError instanceof Error ? createError.message : String(createError)}`
         );
       }
+    }
+  }
+
+  /**
+   * Scan running worker containers and re-populate the in-memory OpenClaw
+   * registry. Called on gateway startup so that already-running containers
+   * are immediately reachable via the WS proxy.
+   */
+  async reconcileOpenClawRegistry(): Promise<void> {
+    try {
+      const containers = await this.docker.listContainers({
+        filters: {
+          label: ["app.kubernetes.io/component=worker"],
+          status: ["running"],
+        },
+      });
+
+      const isContainerMode = this.isRunningInContainer();
+      const composeProjectName = process.env.COMPOSE_PROJECT_NAME || "peon";
+      const networkName = process.env.WORKER_NETWORK || `${composeProjectName}_peon-internal`;
+
+      for (const containerInfo of containers) {
+        const deploymentName = containerInfo.Names[0]?.substring(1) || "";
+        if (!deploymentName || openclawRegistry.has(deploymentName)) continue;
+
+        try {
+          const container = this.docker.getContainer(containerInfo.Id);
+          const info = await container.inspect();
+
+          // Extract the token from the container's env vars
+          const envVars = info.Config.Env ?? [];
+          const tokenEnv = envVars.find((e: string) => e.startsWith("OPENCLAW_GATEWAY_TOKEN="));
+          const token = tokenEnv?.split("=").slice(1).join("=") ?? "";
+
+          let wsUrl: string | null = null;
+          if (isContainerMode) {
+            const netInfo = info.NetworkSettings.Networks?.[networkName];
+            const containerIp = netInfo?.IPAddress;
+            if (containerIp) {
+              wsUrl = `ws://${containerIp}:${OPENCLAW_CONTAINER_PORT}`;
+            }
+          } else {
+            const portMap = info.NetworkSettings.Ports?.[`${OPENCLAW_CONTAINER_PORT}/tcp`];
+            const binding = portMap?.[0];
+            if (binding?.HostPort) {
+              wsUrl = `ws://127.0.0.1:${binding.HostPort}`;
+            }
+          }
+
+          if (wsUrl && token) {
+            openclawRegistry.set(deploymentName, { wsUrl, token });
+            logger.info(`Recovered OpenClaw registry for ${deploymentName}: ${wsUrl}`);
+          }
+        } catch (err) {
+          logger.warn(`Could not inspect container ${deploymentName} for registry recovery: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      logger.info(`OpenClaw registry reconciled: ${openclawRegistry.size} entries`);
+    } catch (err) {
+      logger.warn(`OpenClaw registry reconciliation failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -377,6 +468,10 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
         }
       }
 
+      // Generate a random token for OpenClaw gateway auth (required for bind=lan)
+      const openclawToken = crypto.randomBytes(32).toString("hex");
+      commonEnvVars.OPENCLAW_GATEWAY_TOKEN = openclawToken;
+
       // Environment variables from base class already include:
       // HTTP_PROXY, HTTPS_PROXY, NO_PROXY, NODE_ENV, DEBUG
       // Provider credentials are injected via provider modules in generateEnvironmentVariables()
@@ -392,22 +487,36 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
       // Get the Docker Compose project name from environment or use default
       const composeProjectName = process.env.COMPOSE_PROJECT_NAME || "peon";
 
+      // Expose the OpenClaw gateway port so the Peon gateway can connect
+      // via Docker networking (container mode) or published port (host mode).
+      const publishOpenClawPort = !this.isRunningInContainer();
+
       const createOptions: Docker.ContainerCreateOptions = {
         name: deploymentName,
         Image: this.getWorkerImageReference(),
         Env: envVars,
+        ExposedPorts: {
+          [`${OPENCLAW_CONTAINER_PORT}/tcp`]: {},
+        },
         Labels: {
           ...BASE_WORKER_LABELS,
           "peon.io/created": new Date().toISOString(),
           "peon.io/agent-id": agentId,
           // Docker Compose labels to associate with the project
           "com.docker.compose.project": composeProjectName,
-          "com.docker.compose.service": deploymentName, // Use unique service name
+          "com.docker.compose.service": deploymentName,
           "com.docker.compose.oneoff": "False",
           // Add platform-specific metadata
           ...resolvePlatformDeploymentMetadata(messageData),
         },
         HostConfig: {
+          // When gateway runs on host, publish OpenClaw port to a dynamic
+          // host port so the gateway can connect to the container's OpenClaw WS.
+          ...(publishOpenClawPort && {
+            PortBindings: {
+              [`${OPENCLAW_CONTAINER_PORT}/tcp`]: [{ HostPort: "0" }],
+            },
+          }),
           // Use named volumes in production for better isolation
           // Use bind mounts in development for hot reload
           ...(process.env.NODE_ENV === "development" && isRunningInDocker
@@ -538,6 +647,40 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
         );
       }
 
+      // Register the OpenClaw WS URL so the gateway can connect to this
+      // container's OpenClaw gateway for real-time event streaming.
+      try {
+        const info = await container.inspect();
+        let wsUrl: string | null = null;
+
+        if (publishOpenClawPort) {
+          const portMap = info.NetworkSettings.Ports?.[`${OPENCLAW_CONTAINER_PORT}/tcp`];
+          const binding = portMap?.[0];
+          if (binding?.HostPort) {
+            wsUrl = `ws://127.0.0.1:${binding.HostPort}`;
+          }
+        } else {
+          // Container mode — use the container's IP on the shared network
+          const networkName = process.env.WORKER_NETWORK || `${composeProjectName}_peon-internal`;
+          const networkInfo = info.NetworkSettings.Networks?.[networkName];
+          const containerIp = networkInfo?.IPAddress;
+          if (containerIp) {
+            wsUrl = `ws://${containerIp}:${OPENCLAW_CONTAINER_PORT}`;
+          }
+        }
+
+        if (wsUrl) {
+          openclawRegistry.set(deploymentName, { wsUrl, token: openclawToken });
+          logger.info(`Registered OpenClaw WS URL for ${deploymentName}: ${wsUrl}`);
+        } else {
+          logger.warn(`Could not determine OpenClaw WS URL for ${deploymentName}`);
+        }
+      } catch (inspectErr) {
+        logger.warn(
+          `Could not inspect container for OpenClaw WS URL: ${inspectErr instanceof Error ? inspectErr.message : String(inspectErr)}`
+        );
+      }
+
       logger.info(`✅ Created and started Docker container: ${deploymentName}`);
     } catch (error) {
       throw new OrchestratorError(
@@ -590,6 +733,7 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
       // Remove container
       await container.remove();
       this.activityTimestamps.delete(deploymentName);
+      openclawRegistry.delete(deploymentName);
       logger.info(`✅ Removed container: ${deploymentName}`);
     } catch (error) {
       const dockerError = error as { statusCode?: number };

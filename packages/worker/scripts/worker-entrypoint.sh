@@ -207,7 +207,7 @@ CREDEOF
     echo "  Claude CLI credentials written to $CLAUDE_CONFIG_DIR/.credentials.json"
 
     # OpenClaw agent auth store — the embedded agent reads credentials from here
-    OPENCLAW_AGENT_DIR="${HOME:-/workspace}/.openclaw/agents/main/agent"
+    OPENCLAW_AGENT_DIR="${HOME:-/workspace}/.openclaw/agents/master/agent"
     mkdir -p "$OPENCLAW_AGENT_DIR"
     cat > "$OPENCLAW_AGENT_DIR/auth-profiles.json" << AUTHEOF
 {
@@ -230,7 +230,7 @@ AUTHEOF
 elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
     echo "🔐 Writing API key credentials..."
 
-    OPENCLAW_AGENT_DIR="${HOME:-/workspace}/.openclaw/agents/main/agent"
+    OPENCLAW_AGENT_DIR="${HOME:-/workspace}/.openclaw/agents/master/agent"
     mkdir -p "$OPENCLAW_AGENT_DIR"
     cat > "$OPENCLAW_AGENT_DIR/auth-profiles.json" << AUTHEOF
 {
@@ -300,8 +300,9 @@ else
   "gateway": {
     "mode": "local",
     "port": ${OPENCLAW_PORT},
-    "bind": "loopback",
-    "auth": { "mode": "none" }
+    "bind": "lan",
+    "auth": { "mode": "token", "token": "${OPENCLAW_GATEWAY_TOKEN:-fallback-token}" },
+    "controlUi": { "allowedOrigins": ["*"] }
   },
   "agents": {
     "defaults": {
@@ -329,11 +330,17 @@ CFGEOF
 fi
 cd "$WORKSPACE_DIR"
 
+# Ensure a gateway token exists for OpenClaw auth (required for bind=lan)
+if [ -z "$OPENCLAW_GATEWAY_TOKEN" ]; then
+    OPENCLAW_GATEWAY_TOKEN=$(head -c 32 /dev/urandom | xxd -p | tr -d '\n')
+    export OPENCLAW_GATEWAY_TOKEN
+fi
+
 # OpenClaw gateway makes direct HTTPS calls to LLM provider APIs
 # (api.anthropic.com). Unset the worker HTTP proxy env vars so it
 # connects directly instead of routing through the authenticated proxy.
 HTTP_PROXY= HTTPS_PROXY= http_proxy= https_proxy= \
-  openclaw gateway --port "$OPENCLAW_PORT" --bind loopback &
+  openclaw gateway --port "$OPENCLAW_PORT" --bind lan --token "$OPENCLAW_GATEWAY_TOKEN" &
 OPENCLAW_PID=$!
 echo "  OpenClaw gateway PID: $OPENCLAW_PID"
 
@@ -352,7 +359,7 @@ while [ "$OPENCLAW_READY" = "false" ] && [ "$OPENCLAW_RETRY" -lt "$OPENCLAW_MAX_
             echo "❌ OpenClaw gateway process died unexpectedly"
             # Try starting it again
             HTTP_PROXY= HTTPS_PROXY= http_proxy= https_proxy= \
-              openclaw gateway --port "$OPENCLAW_PORT" --bind loopback &
+              openclaw gateway --port "$OPENCLAW_PORT" --bind lan --token "$OPENCLAW_GATEWAY_TOKEN" &
             OPENCLAW_PID=$!
             echo "  Restarted OpenClaw gateway PID: $OPENCLAW_PID"
         fi
@@ -372,11 +379,11 @@ export OPENCLAW_PID
 # OpenClaw gateway from the npm package — no install needed.
 # Non-bundled skills must be fetched from ClawHub into ~/.openclaw/skills/.
 echo "  Installing OpenClaw skills from ClawHub..."
-CLAWHUB_SKILLS="summarize oracle clawhub"
-CLAWHUB_WORKDIR="${HOME:-/workspace}/.openclaw/skills"
-mkdir -p "$CLAWHUB_WORKDIR"
+CLAWHUB_SKILLS="summarize oracle"
+CLAWHUB_WORKDIR="${HOME:-/workspace}/.openclaw"
+mkdir -p "$CLAWHUB_WORKDIR/skills"
 for skill in $CLAWHUB_SKILLS; do
-    if [ -d "$CLAWHUB_WORKDIR/$skill" ]; then
+    if [ -d "$CLAWHUB_WORKDIR/skills/$skill" ]; then
         echo "  Skill $skill already installed, skipping"
     elif command -v clawhub &>/dev/null; then
         clawhub install "$skill" --workdir "$CLAWHUB_WORKDIR" --no-input 2>&1 \

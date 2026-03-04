@@ -150,6 +150,9 @@ export class HttpWorkerTransport implements WorkerTransport {
 
   async signalCompletion(): Promise<void> {
     const accumulated = this.accumulatedStreamContent.join("");
+    logger.info(
+      `[WORKER-HTTP] signalCompletion: content length=${accumulated.length} chars, delta count=${this.accumulatedStreamContent.length}`
+    );
     await this.sendResponse({
       messageId: this.originalMessageTs,
       channelId: this.channelId,

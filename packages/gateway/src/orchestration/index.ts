@@ -214,6 +214,11 @@ export class Orchestrator {
         await this.deploymentManager.reconcileWorkerDeploymentImages();
       }
 
+      // Re-populate the in-memory OpenClaw registry from running containers
+      if (this.deploymentManager instanceof DockerDeploymentManager) {
+        await this.deploymentManager.reconcileOpenClawRegistry();
+      }
+
       // Start queue consumer
       await this.queueConsumer.start();
 

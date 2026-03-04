@@ -14,11 +14,12 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import { ChatPanel } from "@/components/chat/ChatPanel"
-import { AgentTimeline } from "@/components/project/AgentTimeline"
-import { AgentSidebar } from "@/components/project/AgentSidebar"
 import { ActivityFeed } from "@/components/project/ActivityFeed"
 import { ProvisioningOverlay } from "@/components/project/ProvisioningOverlay"
-import { KanbanBoard } from "@/components/board/KanbanBoard"
+import { StatusBar } from "@/components/project/StatusBar"
+import { OpenClawProvider } from "@/contexts/OpenClawContext"
+import { SessionList } from "@/features/sessions"
+import { KanbanPanel } from "@/features/kanban"
 import type { Project, TeamMember } from "@/lib/api"
 import * as api from "@/lib/api"
 import { getTemplate } from "@/lib/templates"
@@ -26,12 +27,15 @@ import {
   ArrowLeft,
   AlertCircle,
   MessageSquare,
-  FileCode,
   LayoutGrid,
   Power,
   Settings,
   LogOut,
   RefreshCw,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react"
 
 function ProjectSkeleton() {
@@ -69,34 +73,26 @@ function ProjectSkeleton() {
   )
 }
 
-/** 3-column body — single useAgentActivity call, data passed to sidebars */
+type CenterView = "chat" | "board"
+
 function ProjectBody({
   projectId,
   templateId,
-  centerView,
-  onCenterViewChange,
 }: {
   projectId: string
   templateId?: string
-  centerView: "timeline" | "chat" | "board"
-  onCenterViewChange: (v: "timeline" | "chat" | "board") => void
 }) {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
-  const [teamId, setTeamId] = useState<string | null>(null)
 
   const refreshTeam = useCallback(() => {
     api.getProjectTeams(projectId).then(({ teams }) => {
       const first = teams[0]
-      if (first) {
-        setTeamId(first.id)
-        if (first.members.length) setTeamMembers(first.members)
-      }
+      if (first?.members.length) setTeamMembers(first.members)
     }).catch(() => {})
   }, [projectId])
 
   useEffect(() => { refreshTeam() }, [refreshTeam])
 
-  // Prefer DB team member names, fall back to template
   const agentNames = useMemo(() => {
     if (teamMembers.length > 0) {
       return teamMembers.map((m) => m.roleName.toLowerCase())
@@ -106,134 +102,105 @@ function ProjectBody({
     return tmpl?.agents.map((a) => a.role.toLowerCase())
   }, [teamMembers, templateId])
 
-  const { tasks, agents, feed, loading, connected, currentToolAction } = useAgentActivity(
-    projectId,
-    agentNames
+  const { feed } = useAgentActivity(projectId, agentNames)
+
+  const [leftOpen, setLeftOpen] = useState(true)
+  const [rightOpen, setRightOpen] = useState(true)
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const centerView = (searchParams.get("view") as CenterView) || "chat"
+
+  const setCenterView = useCallback(
+    (v: CenterView) => setSearchParams({ view: v }, { replace: true }),
+    [setSearchParams],
   )
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden">
-      {/* Left: Agent sidebar (220px) */}
-      <AgentSidebar
-        agents={agents}
-        loading={loading}
-        connected={connected}
-        currentToolAction={currentToolAction}
-        templateId={templateId}
-        teamMembers={teamMembers}
-        teamId={teamId}
-        onTeamChange={refreshTeam}
-        feedCount={feed.length}
-      />
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* Left panel: Sessions */}
+        {leftOpen && (
+          <div className="w-[240px] flex-shrink-0 border-r border-border/40 flex flex-col min-h-0 bg-zinc-950/50">
+            <div className="flex-1 min-h-0 overflow-auto">
+              <SessionList />
+            </div>
+          </div>
+        )}
 
-      {/* Center: Timeline / Chat */}
-      <div className="flex flex-col flex-1 min-w-0 h-full">
-        {/* Tab bar */}
-        <div className="flex items-center gap-1 border-b border-border/40 px-3 py-1.5 bg-zinc-950 flex-shrink-0">
-          <button
-            onClick={() => onCenterViewChange("timeline")}
-            className={[
-              "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
-              centerView === "timeline"
-                ? "bg-zinc-800 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300",
-            ].join(" ")}
-          >
-            <FileCode className="size-3.5" />
-            Code Changes
-          </button>
-          <button
-            onClick={() => onCenterViewChange("board")}
-            className={[
-              "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
-              centerView === "board"
-                ? "bg-zinc-800 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300",
-            ].join(" ")}
-          >
-            <LayoutGrid className="size-3.5" />
-            Board
-          </button>
-          <button
-            onClick={() => onCenterViewChange("chat")}
-            className={[
-              "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
-              centerView === "chat"
-                ? "bg-zinc-800 text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-300",
-            ].join(" ")}
-          >
-            <MessageSquare className="size-3.5" />
-            Chat
-          </button>
+        {/* Center content area */}
+        <div className="flex flex-col flex-1 min-w-0 h-full">
+          <div className="flex items-center gap-1 border-b border-border/40 px-3 py-1.5 bg-zinc-950 flex-shrink-0">
+            <button
+              onClick={() => setLeftOpen(!leftOpen)}
+              className="text-zinc-500 hover:text-zinc-300 p-1 rounded transition-colors mr-1"
+              title={leftOpen ? "Close left panel" : "Open left panel"}
+            >
+              {leftOpen ? <PanelLeftClose className="size-3.5" /> : <PanelLeftOpen className="size-3.5" />}
+            </button>
+
+            <button
+              onClick={() => setCenterView("chat")}
+              className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                centerView === "chat"
+                  ? "bg-zinc-800 text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              <MessageSquare className="size-3.5" />
+              Chat
+            </button>
+            <button
+              onClick={() => setCenterView("board")}
+              className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                centerView === "board"
+                  ? "bg-zinc-800 text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              <LayoutGrid className="size-3.5" />
+              Board
+            </button>
+
+            <div className="flex-1" />
+
+            <button
+              onClick={() => setRightOpen(!rightOpen)}
+              className="text-zinc-500 hover:text-zinc-300 p-1 rounded transition-colors ml-1"
+              title={rightOpen ? "Close right panel" : "Open right panel"}
+            >
+              {rightOpen ? <PanelRightClose className="size-3.5" /> : <PanelRightOpen className="size-3.5" />}
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 relative">
+            <div className={`absolute inset-0 ${centerView === "chat" ? "" : "hidden"}`}>
+              <ChatPanel projectId={projectId} />
+            </div>
+            <div className={`absolute inset-0 ${centerView === "board" ? "" : "hidden"}`}>
+              <KanbanPanel projectId={projectId} />
+            </div>
+          </div>
         </div>
 
-        {/* All panels always mounted to avoid remount on tab switch */}
-        <div className="flex-1 min-h-0 relative">
-          <div
-            className={[
-              "absolute inset-0",
-              centerView === "timeline" ? "block" : "hidden",
-            ].join(" ")}
-          >
-            <AgentTimeline events={feed} teamMembers={teamMembers} templateId={templateId} />
+        {/* Right panel: Activity */}
+        {rightOpen && (
+          <div className="w-[280px] flex-shrink-0 border-l border-border/40 flex flex-col min-h-0 bg-zinc-950/50">
+            <div className="flex-1 min-h-0 overflow-auto">
+              <ActivityFeed events={feed} teamMembers={teamMembers} templateId={templateId} embedded />
+            </div>
           </div>
-          <div
-            className={[
-              "absolute inset-0",
-              centerView === "board" ? "block" : "hidden",
-            ].join(" ")}
-          >
-            <KanbanBoard tasks={tasks} teamMembers={teamMembers} templateId={templateId} />
-          </div>
-          <div
-            className={[
-              "absolute inset-0",
-              centerView === "chat" ? "block" : "hidden",
-            ].join(" ")}
-          >
-            <ChatPanel projectId={projectId} />
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Right: Activity feed (280px) */}
-      <ActivityFeed events={feed} teamMembers={teamMembers} templateId={templateId} />
+      <StatusBar />
     </div>
   )
-}
-
-const VALID_VIEWS = ["timeline", "chat", "board"] as const
-type CenterView = (typeof VALID_VIEWS)[number]
-
-function parseViewFromUrl(searchParams: URLSearchParams): CenterView {
-  const v = searchParams.get("view")
-  if (v === "timeline" || v === "chat" || v === "board") return v
-  return "chat"
 }
 
 export function ProjectPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
   const { user, logout } = useAuth()
-
-  const centerViewFromUrl = parseViewFromUrl(searchParams)
-  const [centerView, setCenterView] = useState<CenterView>(centerViewFromUrl)
-
-  // Sync view from URL when URL changes (e.g. back/forward)
-  useEffect(() => {
-    const v = parseViewFromUrl(searchParams)
-    setCenterView(v)
-  }, [searchParams])
-
-  const handleCenterViewChange = useCallback(
-    (v: CenterView) => {
-      setCenterView(v)
-      setSearchParams({ view: v }, { replace: true })
-    },
-    [setSearchParams]
-  )
 
   const initials =
     user?.name
@@ -256,7 +223,6 @@ export function ProjectPage() {
       .getProject(id)
       .then(({ project }) => {
         setProject(project)
-        // If project has been "creating" for over 3 minutes, treat as running (recovery fallback)
         const ageMs = Date.now() - new Date(project.createdAt).getTime()
         const effectiveStatus =
           project.status === "creating" && ageMs > 3 * 60 * 1000
@@ -267,7 +233,6 @@ export function ProjectPage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  // Poll status: fast during provisioning, slow as a fallback for running/stopped
   useEffect(() => {
     if (!id || !status || status === "error") return
     const intervalMs = status === "creating" ? 3_000 : 30_000
@@ -275,7 +240,6 @@ export function ProjectPage() {
       api
         .getProjectStatus(id)
         .then(({ status: s }) => {
-          // API returns "starting" during provisioning — map to frontend's "creating"
           const mapped = s === ("starting" as string) ? "creating" : s
           setStatus(mapped as Project["status"])
         })
@@ -284,7 +248,6 @@ export function ProjectPage() {
     return () => clearInterval(interval)
   }, [id, status])
 
-  // SSE subscription for real-time status updates — stays connected across status transitions
   useEffect(() => {
     if (!id) return
     const es = new EventSource(`/api/projects/${id}/chat/stream`, {
@@ -383,116 +346,116 @@ export function ProjectPage() {
   }
 
   const tmpl = project?.templateId ? getTemplate(project.templateId) : null
+  const isRunning = status === "running"
 
   return (
-    <div className="h-screen flex flex-col bg-zinc-950 overflow-hidden">
-      {status === "stopped" && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-amber-950/30 border-b border-amber-800/30 text-amber-400 text-xs flex-shrink-0">
-          <Power className="h-3.5 w-3.5" />
-          <span className="flex-1">
-            {statusMessage ?? "Container is stopped. Activity data is from the last session."}
-          </span>
-          <button
-            onClick={handleRestart}
-            className="px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/50 text-amber-300 font-medium transition-colors"
-          >
-            Restart
-          </button>
-        </div>
-      )}
-
-      {/* Header */}
-      <header className="flex-shrink-0 border-b border-border/40 px-3 py-2 flex items-center gap-2 bg-zinc-950">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-zinc-500 hover:text-zinc-300"
-          onClick={() => navigate("/dashboard")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-
-        <h1 className="font-semibold text-sm text-zinc-100">
-          {project?.name ?? "Project"}
-        </h1>
-
-        {status === "running" && (
-          <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Running
-          </span>
-        )}
+    <OpenClawProvider projectId={isRunning ? id : null}>
+      <div className="h-screen flex flex-col bg-zinc-950 overflow-hidden">
         {status === "stopped" && (
-          <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" />
-            Stopped
-          </span>
+          <div className="flex items-center gap-2 px-4 py-2 bg-amber-950/30 border-b border-amber-800/30 text-amber-400 text-xs flex-shrink-0">
+            <Power className="h-3.5 w-3.5" />
+            <span className="flex-1">
+              {statusMessage ?? "Container is stopped. Activity data is from the last session."}
+            </span>
+            <button
+              onClick={handleRestart}
+              className="px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/50 text-amber-300 font-medium transition-colors"
+            >
+              Restart
+            </button>
+          </div>
         )}
 
-        {headerTeamMembers.length > 0 ? (
-          <div className="flex items-center gap-1.5 ml-1">
-            {headerTeamMembers.map((m) => (
-              <span
-                key={m.id}
-                className={`size-2 rounded-full ${m.color} opacity-70`}
-                title={m.displayName}
-              />
-            ))}
-            <span className="text-[11px] text-zinc-600">{headerTeamMembers.length} members</span>
-          </div>
-        ) : tmpl ? (
-          <div className="flex items-center gap-1.5 ml-1">
-            {tmpl.agents.map((a) => (
-              <span
-                key={a.role}
-                className={`size-2 rounded-full ${a.color} opacity-70`}
-                title={a.role}
-              />
-            ))}
-            <span className="text-[11px] text-zinc-600">{tmpl.name}</span>
-          </div>
-        ) : null}
+        {/* Header */}
+        <header className="flex-shrink-0 border-b border-border/40 px-3 py-2 flex items-center gap-2 bg-zinc-950">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-zinc-500 hover:text-zinc-300"
+            onClick={() => navigate("/dashboard")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
 
-        <div className="ml-auto flex items-center gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-zinc-700">
-                <Avatar size="sm">
-                  {user?.avatarUrl && (
-                    <AvatarImage src={user.avatarUrl} alt={user.name} />
-                  )}
-                  <AvatarFallback>{initials}</AvatarFallback>
-                </Avatar>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel className="font-normal">
-                <div className="text-sm font-medium">{user?.name}</div>
-                <div className="text-xs text-muted-foreground">{user?.email}</div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate("/settings")}>
-                <Settings />
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={logout}>
-                <LogOut />
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
+          <h1 className="font-semibold text-sm text-zinc-100">
+            {project?.name ?? "Project"}
+          </h1>
 
-      {/* 3-column body */}
-      <ProjectBody
-        projectId={id}
-        templateId={project?.templateId}
-        centerView={centerView}
-        onCenterViewChange={handleCenterViewChange}
-      />
-    </div>
+          {isRunning && (
+            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Running
+            </span>
+          )}
+          {status === "stopped" && (
+            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" />
+              Stopped
+            </span>
+          )}
+
+          {headerTeamMembers.length > 0 ? (
+            <div className="flex items-center gap-1.5 ml-1">
+              {headerTeamMembers.map((m) => (
+                <span
+                  key={m.id}
+                  className={`size-2 rounded-full ${m.color} opacity-70`}
+                  title={m.displayName}
+                />
+              ))}
+              <span className="text-[11px] text-zinc-600">{headerTeamMembers.length} members</span>
+            </div>
+          ) : tmpl ? (
+            <div className="flex items-center gap-1.5 ml-1">
+              {tmpl.agents.map((a) => (
+                <span
+                  key={a.role}
+                  className={`size-2 rounded-full ${a.color} opacity-70`}
+                  title={a.role}
+                />
+              ))}
+              <span className="text-[11px] text-zinc-600">{tmpl.name}</span>
+            </div>
+          ) : null}
+
+          <div className="ml-auto flex items-center gap-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-zinc-700">
+                  <Avatar size="sm">
+                    {user?.avatarUrl && (
+                      <AvatarImage src={user.avatarUrl} alt={user.name} />
+                    )}
+                    <AvatarFallback>{initials}</AvatarFallback>
+                  </Avatar>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="text-sm font-medium">{user?.name}</div>
+                  <div className="text-xs text-muted-foreground">{user?.email}</div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/settings")}>
+                  <Settings />
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={logout}>
+                  <LogOut />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+
+        {/* Body: left panel + center + right panel + bottom status bar */}
+        <ProjectBody
+          projectId={id}
+          templateId={project?.templateId}
+        />
+      </div>
+    </OpenClawProvider>
   )
 }
-

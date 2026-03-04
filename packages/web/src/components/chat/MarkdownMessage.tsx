@@ -3,6 +3,7 @@ import remarkGfm from "remark-gfm"
 
 export function MarkdownMessage({ content }: { content: string }) {
   return (
+    <div className="break-words min-w-0">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
@@ -13,7 +14,7 @@ export function MarkdownMessage({ content }: { content: string }) {
         ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 last:mb-0">{children}</ol>,
         li: ({ children }) => <li className="mb-0.5">{children}</li>,
         a: ({ href, children }) => (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80">
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80 break-all">
             {children}
           </a>
         ),
@@ -21,7 +22,7 @@ export function MarkdownMessage({ content }: { content: string }) {
           const isBlock = className?.includes("language-")
           if (isBlock) {
             return (
-              <pre className="my-2 rounded-md bg-zinc-900 p-3 overflow-x-auto">
+              <pre className="my-2 rounded-md bg-zinc-900 p-3 overflow-x-auto max-w-full min-w-0">
                 <code className="text-xs font-mono text-zinc-100">{children}</code>
               </pre>
             )
@@ -45,5 +46,6 @@ export function MarkdownMessage({ content }: { content: string }) {
     >
       {content}
     </ReactMarkdown>
+    </div>
   )
 }

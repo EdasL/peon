@@ -22,7 +22,6 @@ import {
   getProviderAuthHintFromError,
 } from "../shared/provider-auth-hints";
 import { writeOpenClawConfig, clearOpenClawSession } from "./config-bridge";
-import { buildToolActivityText } from "./tool-activity";
 import { OpenClawCoreInstructionProvider } from "./instructions";
 import { PROVIDER_REGISTRY_ALIASES, resolveModelRef } from "./model-resolver";
 import { OpenClawWsClient, type OpenClawEvent } from "./openclaw-ws-client";
@@ -549,11 +548,13 @@ Use it when the user references past discussions or you need context.`);
       });
 
       let errorMessage: string | null = null;
+      let totalDeltaCharsReceived = 0;
 
       for await (const event of events) {
         this.processOpenClawEvent(
           event,
           (delta) => {
+            totalDeltaCharsReceived += delta.length;
             pendingDelta += delta;
             scheduleDeltaFlush();
           },
@@ -564,7 +565,14 @@ Use it when the user references past discussions or you need context.`);
       }
 
       // Flush any remaining delta
+      const pendingBeforeFlush = pendingDelta.length;
       await flushDelta();
+
+      logger.info(
+        `OpenClaw event loop finished: errorMessage=${errorMessage ?? "none"}, ` +
+        `deltaCharsReceived=${totalDeltaCharsReceived}, pendingAtFlush=${pendingBeforeFlush}, ` +
+        `pendingAfterFlush=${pendingDelta.length}`
+      );
 
       if (errorMessage) {
         const errorWithHint = await this.maybeBuildAuthHintMessage(
@@ -635,35 +643,20 @@ Use it when the user references past discussions or you need context.`);
         break;
 
       case "thinking":
-        // Thinking events — could stream if verbose mode
         logger.debug(`[openclaw:thinking] ${event.delta.substring(0, 100)}...`);
-        this.postAgentActivity({ type: "thinking", text: event.delta });
         break;
 
       case "tool_start": {
         logger.info(`[openclaw:tool] Starting: ${event.name}`);
-        const input = event.input ?? {};
-        const activityText = buildToolActivityText(event.name, input);
-        const filePath = (input.file_path ?? input.path) as string | undefined;
-        const command = input.command as string | undefined;
-        this.postAgentActivity({
-          type: "tool_start",
-          tool: event.name,
-          ...(activityText && { text: activityText }),
-          ...(filePath && { filePath }),
-          ...(command && { command }),
-        });
         break;
       }
 
       case "tool_end":
         logger.info(`[openclaw:tool] Completed: ${event.name}`);
-        this.postAgentActivity({ type: "tool_end", tool: event.name });
         break;
 
       case "turn_end":
         logger.info("OpenClaw turn completed");
-        this.postAgentActivity({ type: "turn_end" });
         break;
 
       case "error":
@@ -673,41 +666,9 @@ Use it when the user references past discussions or you need context.`);
     }
   }
 
-  /**
-   * Fire-and-forget: POST an agent activity event to the gateway so it can
-   * fan it out to SSE clients watching the project in real time.
-   * Never throws — failures are logged but never propagate to the caller.
-   */
-  private postAgentActivity(event: {
-    type: string;
-    tool?: string;
-    text?: string;
-    message?: string;
-    filePath?: string;
-    command?: string;
-  }): void {
-    const gatewayUrl = process.env.DISPATCHER_URL;
-    const workerToken = process.env.WORKER_TOKEN;
-    if (!gatewayUrl || !workerToken) return;
-
-    fetch(`${gatewayUrl}/internal/agent-activity`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${workerToken}`,
-      },
-      body: JSON.stringify({
-        ...event,
-        agentName: "lead",
-        timestamp: Date.now(),
-      }),
-      signal: AbortSignal.timeout(3000),
-    }).catch((err) => {
-      logger.debug(
-        `Failed to post agent activity (${event.type}): ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
-  }
+  // Agent activity events are now streamed directly from the OpenClaw gateway
+  // to the Peon gateway via WebSocket (connection-manager.ts). The old
+  // fire-and-forget HTTP relay (postAgentActivity) has been removed.
 
   // ---------------------------------------------------------------------------
   // Helpers

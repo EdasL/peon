@@ -221,6 +221,20 @@ export async function waitForContainerReady(
           step: "container",
           label: "Environment provisioned",
         })
+        // Connect the gateway's OpenClaw event stream to this container
+        try {
+          const { getOpenClawWsUrl, getOpenClawToken } = await import("../orchestration/impl/docker-deployment.js")
+          const { connectToContainer } = await import("../openclaw/connection-manager.js")
+          const wsUrl = getOpenClawWsUrl(deploymentName)
+          const token = getOpenClawToken(deploymentName)
+          if (wsUrl) {
+            // Wait a few seconds for OpenClaw gateway inside the container to start
+            await new Promise((r) => setTimeout(r, 5_000))
+            await connectToContainer(projectId, deploymentName, wsUrl, token)
+          }
+        } catch (err) {
+          console.error(`Failed to connect OpenClaw event stream for ${projectId}:`, err)
+        }
         return
       }
       if (status === "error") {

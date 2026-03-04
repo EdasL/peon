@@ -82,3 +82,15 @@ export type {
   WorkerTransport,
   WorkerTransportConfig,
 } from "./worker/transport";
+
+// OpenClaw protocol client
+export {
+  OpenClawProtocolClient,
+  loadOrCreateDeviceIdentity,
+} from "./openclaw/protocol-client";
+export type {
+  DeviceIdentity,
+  WsFrame,
+  RawEventHandler,
+  ProtocolClientOptions,
+} from "./openclaw/protocol-client";

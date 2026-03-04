@@ -10,6 +10,8 @@ interface ActivityFeedProps {
   teamMembers?: TeamMember[]
   templateId?: string
   maxEvents?: number
+  /** When true, renders without the outer aside wrapper (parent controls sizing) */
+  embedded?: boolean
 }
 
 function formatTime(ts: number): string {
@@ -138,7 +140,7 @@ function FeedRow({
   )
 }
 
-export function ActivityFeed({ events, teamMembers, templateId, maxEvents = 100 }: ActivityFeedProps) {
+export function ActivityFeed({ events, teamMembers, templateId, maxEvents = 100, embedded = false }: ActivityFeedProps) {
   const topRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const [userScrolled, setUserScrolled] = useState(false)
@@ -178,8 +180,13 @@ export function ActivityFeed({ events, teamMembers, templateId, maxEvents = 100 
     prevCountRef.current = events.length
   }, [events.length, userScrolled])
 
+  const Wrapper = embedded ? "div" : "aside"
+  const wrapperClass = embedded
+    ? "flex h-full flex-col bg-zinc-950"
+    : "flex h-full w-[280px] flex-shrink-0 flex-col border-l border-border/40 bg-zinc-950"
+
   return (
-    <aside className="flex h-full w-[280px] flex-shrink-0 flex-col border-l border-border/40 bg-zinc-950">
+    <Wrapper className={wrapperClass}>
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/40">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -246,6 +253,6 @@ export function ActivityFeed({ events, teamMembers, templateId, maxEvents = 100 
           </div>
         )}
       </ScrollArea>
-    </aside>
+    </Wrapper>
   )
 }

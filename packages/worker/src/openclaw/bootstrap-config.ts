@@ -8,6 +8,7 @@
  * AFTER the gateway is running and a session context is fetched.
  */
 
+import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -50,16 +51,24 @@ export async function writeBootstrapConfig(
   // Ensure directories exist
   await fs.mkdir(workspaceDir, { recursive: true });
 
+  // OpenClaw v2026.2.26+ refuses bind=lan without auth. Use a token
+  // passed via OPENCLAW_GATEWAY_TOKEN env var (set by docker-deployment.ts),
+  // or generate a random one if not provided.
+  const gatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN
+    || crypto.randomBytes(32).toString("hex");
+
   const config = {
     gateway: {
       mode: "local",
       port,
-      bind: "loopback",
-      // Both OpenClaw and the worker run inside the same container on
-      // loopback — no external access is possible, so auth is unnecessary.
-      // Post-ClawJacked patch (2026.2.25) device pairing rejects fresh
-      // key pairs, making token+device auth unworkable without pre-registration.
-      auth: { mode: "none" },
+      // Bind to LAN so the Peon gateway can connect from outside the container
+      // via Docker networking. Security is maintained by token auth plus Docker
+      // network isolation (peon-internal).
+      bind: "lan",
+      auth: { mode: "token", token: gatewayToken },
+      controlUi: {
+        allowedOrigins: ["*"],
+      },
     },
     agents: {
       defaults: {
@@ -103,14 +112,12 @@ export async function writeBootstrapConfig(
   // Use stderr directly — this function is invoked via `bun -e` where
   // stdout is a signaling channel (the entrypoint checks the exit code).
   console.error(`[bootstrap-config] Bootstrap config written to ${getConfigPath()} (port=${port})`);
-  return { authToken: "unused" };
+  return { authToken: gatewayToken };
 }
 
 /**
- * Read the auth token from an existing bootstrap config file.
- * With auth.mode=none, no token is needed — always returns null.
- * Kept for backwards compatibility.
+ * Read the auth token from the OPENCLAW_GATEWAY_TOKEN env var.
  */
 export function getBootstrapAuthToken(): string | null {
-  return null;
+  return process.env.OPENCLAW_GATEWAY_TOKEN ?? null;
 }

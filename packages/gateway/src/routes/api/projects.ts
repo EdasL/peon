@@ -13,6 +13,7 @@ import {
   restartContainer,
 } from "../../web/container-manager.js"
 import { broadcastToProject } from "../../web/chat-routes.js"
+import { disconnectProject, disconnectByDeployment } from "../../openclaw/connection-manager.js"
 
 // ---------------------------------------------------------------------------
 // Name generation — adjective + noun pairs
@@ -244,6 +245,26 @@ projectsRouter.get("/:id/status", async (c) => {
   return c.json({ status: containerStatus, projectId: project.id })
 })
 
+// GET /api/projects/:id/openclaw — return direct WS connection info for the project's OpenClaw gateway
+projectsRouter.get("/:id/openclaw", async (c) => {
+  const session = getSession(c)
+  const project = await db.query.projects.findFirst({
+    where: and(eq(projects.id, c.req.param("id")), eq(projects.userId, session.userId)),
+    columns: { deploymentName: true, status: true },
+  })
+  if (!project) return c.json({ error: "Not found" }, 404)
+  if (!project.deploymentName || project.status !== "running") {
+    return c.json({ error: "Container not running" }, 503)
+  }
+
+  const { getOpenClawWsUrl, getOpenClawToken } = await import("../../orchestration/impl/docker-deployment.js")
+  const wsUrl = getOpenClawWsUrl(project.deploymentName)
+  if (!wsUrl) return c.json({ error: "OpenClaw gateway not available" }, 503)
+
+  const token = getOpenClawToken(project.deploymentName)
+  return c.json({ wsUrl, token: token ?? null })
+})
+
 function mapDbStatus(dbStatus: string): "starting" | "running" | "stopped" | "error" {
   switch (dbStatus) {
     case "creating": return "starting"
@@ -339,8 +360,12 @@ projectsRouter.delete("/:id", async (c) => {
     columns: { id: true },
   })
 
+  // Disconnect OpenClaw event stream for this project
+  disconnectProject(deleted.id)
+
   // Only remove the container when the user has no remaining projects
   if (remainingProjects.length === 0 && deleted.deploymentName) {
+    disconnectByDeployment(deleted.deploymentName)
     removeContainer(deleted.deploymentName).catch((err) => {
       console.error(`Failed to remove container ${deleted.deploymentName}:`, err)
     })

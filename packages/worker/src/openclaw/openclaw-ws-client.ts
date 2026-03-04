@@ -178,8 +178,11 @@ export class OpenClawWsClient {
   /** Tracks length of accumulated text in chat delta events for diffing. */
   private chatAccumulatedLen = 0;
 
+  private authToken: string | undefined;
+
   constructor(opts: { url: string; authToken?: string }) {
     this.url = opts.url;
+    this.authToken = opts.authToken || process.env.OPENCLAW_GATEWAY_TOKEN || undefined;
   }
 
   // -------------------------------------------------------------------------
@@ -331,6 +334,7 @@ export class OpenClawWsClient {
     const platform = "linux";
     const clientId = "gateway-client";
     const clientMode = "backend";
+    const token = this.authToken || null;
 
     const payload = buildDeviceAuthPayloadV3({
       deviceId: identity.deviceId,
@@ -339,7 +343,7 @@ export class OpenClawWsClient {
       role,
       scopes,
       signedAtMs,
-      token: null,
+      token,
       nonce: challengeNonce,
       platform,
     });
@@ -359,13 +363,12 @@ export class OpenClawWsClient {
           platform,
           mode: clientMode,
         },
+        auth: token ? { token } : undefined,
         role,
         scopes,
         caps: ["tool-events"],
         commands: [],
         permissions: {},
-        locale: "en-US",
-        userAgent: "peon-worker/1.0.0",
         device: {
           id: identity.deviceId,
           publicKey: publicKeyRawBase64Url(identity.publicKeyPem),
@@ -501,8 +504,22 @@ export class OpenClawWsClient {
 
     if (state === "final") {
       const events: OpenClawEvent[] = [];
+      const lenBefore = this.chatAccumulatedLen;
       const trailing = this.extractTextDelta(data);
       if (trailing) events.push(trailing);
+
+      const msg = data.message as Record<string, unknown> | undefined;
+      const stopReason =
+        (data.stopReason ?? data.stop_reason ?? msg?.stopReason ?? msg?.stop_reason) as string | undefined;
+      const usage = (data.usage ?? msg?.usage) as Record<string, unknown> | undefined;
+      logger.info(
+        `Chat final: totalLen=${this.chatAccumulatedLen}, trailing=${this.chatAccumulatedLen - lenBefore}, ` +
+        `stopReason=${stopReason}, usage=${JSON.stringify(usage)}`
+      );
+      if (stopReason === "max_tokens") {
+        logger.warn("⚠️ Response truncated due to max_tokens limit!");
+      }
+
       events.push({ type: "turn_end" });
       return events;
     }
@@ -554,7 +571,11 @@ export class OpenClawWsClient {
     if (stream === "lifecycle" && evtData) {
       const phase = evtData.phase as string | undefined;
       if (phase === "end") {
-        return [{ type: "turn_end" }];
+        // Do NOT emit turn_end here — the chat "final" event is the
+        // authoritative end-of-turn and may carry trailing text that
+        // would be lost if we already set finished=true.
+        logger.debug("Agent lifecycle end received (waiting for chat final)");
+        return [];
       }
       if (phase === "error") {
         return [{

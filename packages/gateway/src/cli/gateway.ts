@@ -24,6 +24,7 @@ import { chatRouter } from "../web/chat-routes.js";
 import { masterChatRouter } from "../web/master-chat-routes.js";
 import { initBroadcast } from "../web/redis-broadcast.js";
 import { claudeOAuthRouter } from "../routes/api/claude-oauth.js";
+import { setupOpenClawWsProxy } from "../openclaw/ws-proxy.js";
 
 const logger = createLogger("gateway-startup");
 
@@ -757,6 +758,9 @@ Agents can be configured with custom MCP (Model Context Protocol) servers:
     // Everything else goes through Hono
     honoListener(incoming, outgoing);
   });
+
+  // OpenClaw WS proxy — bridges browser clients to their container's OpenClaw gateway
+  setupOpenClawWsProxy(httpServer);
 
   httpServer.listen(port);
   logger.info(`Server listening on port ${port}`);

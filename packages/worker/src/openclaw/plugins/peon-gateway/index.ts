@@ -564,39 +564,17 @@ async function syncTaskToGateway(toolName: string, input: Record<string, unknown
 // Tools we never want to surface as activity (too noisy / internal)
 const SILENT_TOOLS = new Set(["TodoRead", "TodoWrite"]);
 
+// Sub-agent activity events are now streamed directly from the OpenClaw
+// gateway to the Peon gateway via WebSocket (connection-manager.ts).
+// The old fire-and-forget HTTP relay (postSubagentActivity) has been removed.
 async function postSubagentActivity(
-  agentName: string,
-  type: "tool_start" | "tool_end" | "turn_end",
-  tool?: string,
-  text?: string,
-  extra?: { filePath?: string; command?: string },
+  _agentName: string,
+  _type: "tool_start" | "tool_end" | "turn_end",
+  _tool?: string,
+  _text?: string,
+  _extra?: { filePath?: string; command?: string },
 ): Promise<void> {
-  const g = gw();
-  if (!g.gatewayUrl || !g.workerToken) return;
-
-  const body: Record<string, unknown> = {
-    type,
-    agentName,
-    timestamp: Date.now(),
-    ...(tool && { tool }),
-    ...(text && { text }),
-    ...(extra?.filePath && { filePath: extra.filePath }),
-    ...(extra?.command && { command: extra.command }),
-  };
-
-  try {
-    await fetch(`${g.gatewayUrl}/internal/agent-activity`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${g.workerToken}`,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(3000),
-    });
-  } catch {
-    // Fire-and-forget
-  }
+  // No-op — events now flow via OpenClaw WS -> connection-manager -> SSE
 }
 
 // ---------------------------------------------------------------------------

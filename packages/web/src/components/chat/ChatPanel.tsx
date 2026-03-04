@@ -56,7 +56,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   const visibleError = error && error !== dismissedError ? error : null
 
   return (
-    <div className="flex flex-col h-full bg-zinc-950">
+    <div className="flex flex-col h-full min-w-0 overflow-hidden bg-zinc-950">
       {/* Header */}
       <div className="px-4 py-2.5 border-b border-border/40 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -100,13 +100,13 @@ export function ChatPanel({ projectId }: { projectId: string }) {
       )}
 
       {/* Messages */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0 min-w-0">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-5 w-5 animate-spin text-zinc-700" />
           </div>
         ) : (
-          <div className="px-4 py-3 space-y-4">
+          <div className="px-4 py-3 space-y-4 min-w-0 overflow-hidden">
             {messages.length === 0 && !streamingContent && (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <MessageSquare className="h-8 w-8 text-zinc-800 mb-3" />
@@ -135,13 +135,13 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
                 <div
                   className={cn(
-                    "flex flex-col max-w-[80%]",
+                    "flex flex-col max-w-[80%] min-w-0",
                     msg.role === "user" ? "items-end" : "items-start"
                   )}
                 >
                   <div
                     className={cn(
-                      "rounded-xl px-3.5 py-2 text-sm leading-relaxed",
+                      "rounded-xl px-3.5 py-2 text-sm leading-relaxed break-words",
                       msg.role === "user"
                         ? "bg-blue-600 text-white rounded-br-sm"
                         : "bg-zinc-800/80 text-zinc-100 rounded-bl-sm"
@@ -166,8 +166,8 @@ export function ChatPanel({ projectId }: { projectId: string }) {
                 <div className="flex size-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-900/60 text-[10px] font-bold text-blue-300 mt-0.5">
                   TL
                 </div>
-                <div className="flex flex-col items-start max-w-[80%]">
-                  <div className="rounded-xl rounded-bl-sm px-3.5 py-2 text-sm bg-zinc-800/80 text-zinc-100 leading-relaxed">
+                <div className="flex flex-col items-start max-w-[80%] min-w-0">
+                  <div className="rounded-xl rounded-bl-sm px-3.5 py-2 text-sm bg-zinc-800/80 text-zinc-100 leading-relaxed break-words">
                     {streamingContent === THINKING_SENTINEL ? (
                       <TypingDots />
                     ) : (
