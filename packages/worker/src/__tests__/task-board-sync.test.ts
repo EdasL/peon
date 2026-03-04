@@ -122,6 +122,48 @@ describe("Task status transitions", () => {
 })
 
 // ---------------------------------------------------------------------------
+// 3b. UpdateTaskStatus — status→boardColumn mapping
+// ---------------------------------------------------------------------------
+
+describe("UpdateTaskStatus status mapping", () => {
+  const statusMap: Record<string, { status: string; boardColumn: string }> = {
+    in_progress: { status: "in_progress", boardColumn: "in_progress" },
+    done: { status: "completed", boardColumn: "done" },
+    blocked: { status: "pending", boardColumn: "todo" },
+    todo: { status: "pending", boardColumn: "todo" },
+  }
+
+  test("in_progress → in_progress column", () => {
+    const mapped = statusMap["in_progress"]!
+    expect(mapped.status).toBe("in_progress")
+    expect(mapped.boardColumn).toBe("in_progress")
+  })
+
+  test("done → done column", () => {
+    const mapped = statusMap["done"]!
+    expect(mapped.status).toBe("completed")
+    expect(mapped.boardColumn).toBe("done")
+  })
+
+  test("blocked → todo column (visible but pending)", () => {
+    const mapped = statusMap["blocked"]!
+    expect(mapped.status).toBe("pending")
+    expect(mapped.boardColumn).toBe("todo")
+  })
+
+  test("todo → todo column", () => {
+    const mapped = statusMap["todo"]!
+    expect(mapped.status).toBe("pending")
+    expect(mapped.boardColumn).toBe("todo")
+  })
+
+  test("unknown status falls back to todo", () => {
+    const mapped = statusMap["unknown_status"] ?? statusMap["todo"]!
+    expect(mapped.boardColumn).toBe("todo")
+  })
+})
+
+// ---------------------------------------------------------------------------
 // 4. CreateProjectTasks — mock gateway call
 // ---------------------------------------------------------------------------
 

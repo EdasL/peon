@@ -483,6 +483,57 @@ async function createProjectTasks(
   return text(lines.join("\n"));
 }
 
+async function updateTaskStatus(
+  _id: string,
+  params: { taskId: string; status: string; owner?: string },
+): Promise<ToolResult> {
+  const g = gw();
+  if (!g.gatewayUrl || !g.workerToken) {
+    return text("Error: gateway not configured");
+  }
+  if (!params.taskId) {
+    return text("Error: taskId is required");
+  }
+
+  const statusMap: Record<string, { status: string; boardColumn: string }> = {
+    in_progress: { status: "in_progress", boardColumn: "in_progress" },
+    done: { status: "completed", boardColumn: "done" },
+    blocked: { status: "pending", boardColumn: "todo" },
+    todo: { status: "pending", boardColumn: "todo" },
+  };
+
+  const fallback = { status: "pending", boardColumn: "todo" };
+  const mapped = statusMap[params.status] ?? fallback;
+
+  const body: Record<string, unknown> = {
+    id: params.taskId,
+    subject: `Task ${params.taskId}`, // Preserved on upsert — gateway keeps existing subject
+    description: "",
+    status: mapped.status,
+    boardColumn: mapped.boardColumn,
+    updatedAt: Date.now(),
+  };
+  if (params.owner) body.owner = params.owner;
+
+  try {
+    const res = await fetch(`${g.gatewayUrl}/internal/tasks`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${g.workerToken}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      return text(`Error updating task ${params.taskId}: ${res.statusText}`);
+    }
+    return text(`Task ${params.taskId} updated to "${params.status}".`);
+  } catch (err) {
+    return text(`Error updating task ${params.taskId}: ${String(err)}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Task sync helpers — forward Claude Code's TaskCreate/TaskUpdate/TaskList
 // tool calls to the gateway's internal task API so they appear in the board.
@@ -870,6 +921,8 @@ Use TaskCreate to break work into tasks, assign them to teammates, and track pro
         const maxWaitMs = 30 * 60 * 1000; // 30 min for team tasks
         const start = Date.now();
         let idleCount = 0;
+        let lastHeartbeatAt = Date.now();
+        const heartbeatIntervalMs = 10 * 60 * 1000; // 10 minutes
 
         while (Date.now() - start < maxWaitMs) {
           if (!await hasSession(sessionName)) {
@@ -901,6 +954,19 @@ Use TaskCreate to break work into tasks, assign them to teammates, and track pro
             }
           } else {
             idleCount++;
+          }
+
+          // Heartbeat: every 10 minutes, nudge idle teammates
+          const now = Date.now();
+          if (now - lastHeartbeatAt >= heartbeatIntervalMs) {
+            lastHeartbeatAt = now;
+            const elapsedMin = Math.floor((now - start) / 60_000);
+            // If no new output for a while, send a nudge to the lead session
+            if (idleCount > 20) { // ~10s of no output at 500ms polling
+              const nudge = `[Heartbeat ${elapsedMin}m] Team appears idle. Check teammate statuses and assign next tasks from BACKLOG.md. Update task statuses on the board.`;
+              await sendKeys(sessionName, nudge).catch(() => {});
+              console.error(`[DelegateToProject] Heartbeat nudge sent to ${params.projectId} at ${elapsedMin}m`);
+            }
           }
 
           if (team.completed) break;
@@ -1134,6 +1200,13 @@ export default function register(api: any): void {
     description: "Create tasks on a project's kanban board before delegating work. Use this to break down a user request into well-defined tasks that appear in the Todo column.",
     parameters: { type: "object", properties: { projectId: { type: "string", description: "Project identifier" }, tasks: { type: "array", description: "Tasks to create on the board", items: { type: "object", properties: { subject: { type: "string", description: "Short task title" }, description: { type: "string", description: "Detailed description of what needs to be done" }, owner: { type: "string", description: "Team member role to assign (e.g. 'frontend', 'backend')" } }, required: ["subject"] } } }, required: ["projectId", "tasks"] },
     execute: createProjectTasks,
+  });
+
+  api.registerTool({
+    name: "UpdateTaskStatus",
+    description: "Move a task between board columns. Updates the board in real time.",
+    parameters: { type: "object", properties: { taskId: { type: "string", description: "Task ID to update" }, status: { type: "string", description: "New status: 'in_progress', 'done', 'blocked', or 'todo'" }, owner: { type: "string", description: "Optional agent role that owns this task" } }, required: ["taskId", "status"] },
+    execute: updateTaskStatus,
   });
 
   api.registerTool({

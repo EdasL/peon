@@ -18,10 +18,27 @@ export interface WorkerTask {
 
 export async function handleWorkerTaskUpdate(projectId: string, task: WorkerTask) {
   const boardColumn = task.boardColumn as Task["boardColumn"]
+
+  // Build the update set — only overwrite subject/description when
+  // non-placeholder values are provided, so status-only updates
+  // (like UpdateTaskStatus) don't clobber existing task titles.
+  const isPlaceholder = !task.subject || task.subject.startsWith("Task ")
+  const updateSet: Record<string, unknown> = {
+    status: task.status,
+    owner: task.owner,
+    boardColumn,
+    metadata: task.metadata ?? null,
+    updatedAt: new Date(),
+  }
+  if (!isPlaceholder) {
+    updateSet.subject = task.subject
+    updateSet.description = task.description
+  }
+
   await db.insert(tasks).values({
     id: task.id,
     projectId,
-    subject: task.subject,
+    subject: task.subject || `Task ${task.id}`,
     description: task.description,
     status: task.status,
     owner: task.owner,
@@ -29,15 +46,7 @@ export async function handleWorkerTaskUpdate(projectId: string, task: WorkerTask
     metadata: task.metadata ?? null,
   }).onConflictDoUpdate({
     target: tasks.id,
-    set: {
-      subject: task.subject,
-      description: task.description,
-      status: task.status,
-      owner: task.owner,
-      boardColumn,
-      metadata: task.metadata ?? null,
-      updatedAt: new Date(),
-    },
+    set: updateSet,
   })
 
   broadcastToProject(projectId, "task_update", task)

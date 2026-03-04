@@ -197,3 +197,34 @@ describe("Board column values", () => {
     expect(task.boardColumn).toBe("todo")
   })
 })
+
+// ---------------------------------------------------------------------------
+// 4. Placeholder subject detection for status-only updates
+// ---------------------------------------------------------------------------
+
+describe("Placeholder subject detection", () => {
+  function isPlaceholder(subject: string | undefined): boolean {
+    return !subject || subject.startsWith("Task ")
+  }
+
+  test("empty subject is a placeholder", () => {
+    expect(isPlaceholder("")).toBe(true)
+  })
+
+  test("undefined subject is a placeholder", () => {
+    expect(isPlaceholder(undefined)).toBe(true)
+  })
+
+  test("'Task peon-123' is a placeholder", () => {
+    expect(isPlaceholder("Task peon-123")).toBe(true)
+  })
+
+  test("real subject is not a placeholder", () => {
+    expect(isPlaceholder("Add login page")).toBe(false)
+  })
+
+  test("subject starting with 'Task' but with content is not placeholder if it has space after", () => {
+    // "Task " prefix → placeholder; "TaskManager" → not placeholder
+    expect(isPlaceholder("TaskManager")).toBe(false)
+  })
+})

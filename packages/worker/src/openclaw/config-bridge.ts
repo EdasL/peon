@@ -89,6 +89,7 @@ export async function writeOpenClawConfig(
   const writes: Promise<void>[] = [
     writeSoulMd(soulDir, input),
     writeAgentsMd(soulDir),
+    writeBootstrapMd(soulDir),
     updateOpenClawAgentsConfig(openclawDir, input.providerConfig),
     writeGatewaySkill(gatewaySkillsDir, input.gatewayInstructions),
     writePeonToolsSkill(peonToolsDir),
@@ -104,7 +105,7 @@ export async function writeOpenClawConfig(
       fs.mkdir(fallbackDir, { recursive: true }).then(async () => {
         await writeSoulMd(fallbackDir, input);
         await writeAgentsMd(fallbackDir);
-        await fs.unlink(path.join(fallbackDir, "BOOTSTRAP.md")).catch(() => {});
+        await writeBootstrapMd(fallbackDir);
       }),
     );
   }
@@ -139,13 +140,16 @@ Walk through this flow — don't skip steps:
 **IMPORTANT: If no BACKLOG.md exists in the workspace, proactively start this step
 as soon as the user sends their first message. Don't wait for them to ask.**
 
-Ask the user (use AskUserQuestion for structured choices):
-- What do you want to build? (feature, full app, bug fix, refactor)
-- What's the repo URL / tech stack?
-- Any constraints? (deadline, must use X library, avoid Y)
-- Who should be on the team? (suggest: lead + backend + frontend + qa, or lead + fullstack + qa for small projects)
+Greet the user — brief, direct, no fluff:
+"Hey. I'm your Peon lead — I coordinate your team and make sure work gets done."
 
-Keep it to 3–5 questions. Don't over-interrogate.
+Ask exactly what you need:
+- What are you building? (brief description)
+- GitHub repo URL (or start fresh)
+- What's the first thing the team should tackle?
+
+No identity questions. No name/emoji/creature. Straight to work.
+Keep it to 3 questions max. Don't over-interrogate.
 
 ### Step 2: Create BACKLOG.md
 Once you have enough context, create \`BACKLOG.md\` in the workspace:
@@ -267,6 +271,35 @@ When the user connects a project for the first time (no BACKLOG.md exists):
 }
 
 /**
+ * BOOTSTRAP.md — first-run behavior for the lead agent.
+ * Written alongside SOUL.md to every workspace directory.
+ */
+async function writeBootstrapMd(workspaceDir: string): Promise<void> {
+  const bootstrapMd = `# BOOTSTRAP.md
+
+You are the Peon lead agent. A user has just created or opened this project.
+
+If this is a new project (no BACKLOG.md exists):
+1. Greet the user — brief, direct, no fluff
+2. Ask: what are they building, what's the GitHub repo, what's the first task
+3. Once they answer: analyze the repo, write BACKLOG.md, push tasks to board, spawn the team
+
+If BACKLOG.md already exists:
+1. Read it
+2. Check which tasks are done vs pending
+3. Tell the user the current state and ask what to tackle next
+
+Do not ask for names, emojis, or personal details. This is a work context.
+`;
+
+  await fs.writeFile(
+    path.join(workspaceDir, "BOOTSTRAP.md"),
+    bootstrapMd,
+    "utf-8"
+  );
+}
+
+/**
  * Build the "Your Team" SOUL.md section from configured team members.
  * Constrains the orchestrator to only use these roles when delegating.
  */
@@ -369,6 +402,7 @@ These tools integrate with the Peon gateway to provide user-facing capabilities.
 - **GetChannelHistory** — Fetch previous messages in the thread
 - **AskUserQuestion** — Post a question with button options
 - **CreateProjectTasks** — Create tasks on a project's kanban board (Todo column). Use this to break down a user request into trackable tasks before delegating. Pass projectId and an array of { subject, description?, owner? }.
+- **UpdateTaskStatus** — Move a task between board columns. Pass taskId, status ('in_progress' | 'done' | 'blocked'), and optional owner. Updates the board in real time.
 - **DelegateToProject** — Send a coding task to your team. ALWAYS include the full configured team as teamMembers (from the "Your Team" section in your instructions). The lead session spawns teammates automatically.
 - **CheckTeamStatus** — Check if a Claude Code team is still working
 - **GetTeamResult** — Get the result from a completed team task
