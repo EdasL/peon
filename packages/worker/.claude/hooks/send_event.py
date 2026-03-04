@@ -52,10 +52,21 @@ def main():
         payload["toolName"] = hook_context["tool_name"]
     if "tool_use_id" in hook_context:
         payload["toolUseId"] = hook_context["tool_use_id"]
+    if "tool_input" in hook_context and isinstance(hook_context["tool_input"], dict):
+        payload["toolInput"] = hook_context["tool_input"]
     if "notification_type" in hook_context:
         payload["notificationType"] = hook_context["notification_type"]
     if "error" in hook_context:
         payload["error"] = str(hook_context["error"])[:500]
+    # TaskCompleted hook fields
+    if "task_id" in hook_context:
+        payload["taskId"] = hook_context["task_id"]
+    if "task_subject" in hook_context:
+        payload["taskSubject"] = hook_context["task_subject"]
+    if "task_description" in hook_context:
+        payload["taskDescription"] = hook_context["task_description"]
+    if "teammate_name" in hook_context:
+        payload["teammateName"] = hook_context["teammate_name"]
     if args.project_id:
         payload["projectId"] = args.project_id
 

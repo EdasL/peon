@@ -510,8 +510,13 @@ def main():
     payload = {"eventType": a.event_type, "agentId": a.source_app, "timestamp": int(__import__("time").time()*1000)}
     if "tool_name" in ctx: payload["toolName"] = ctx["tool_name"]
     if "tool_use_id" in ctx: payload["toolUseId"] = ctx["tool_use_id"]
+    if "tool_input" in ctx and isinstance(ctx["tool_input"], dict): payload["toolInput"] = ctx["tool_input"]
     if "notification_type" in ctx: payload["notificationType"] = ctx["notification_type"]
     if "error" in ctx: payload["error"] = str(ctx["error"])[:500]
+    if "task_id" in ctx: payload["taskId"] = ctx["task_id"]
+    if "task_subject" in ctx: payload["taskSubject"] = ctx["task_subject"]
+    if "task_description" in ctx: payload["taskDescription"] = ctx["task_description"]
+    if "teammate_name" in ctx: payload["teammateName"] = ctx["teammate_name"]
     if a.project_id: payload["projectId"] = a.project_id
     gw = a.gateway_url or os.environ.get("GATEWAY_URL","http://localhost:8080")
     tk = a.worker_token or os.environ.get("WORKER_TOKEN","")
@@ -754,11 +759,12 @@ async function delegateToProject(
       hooks: [{ type: "command", command: `${hookCmd} --event-type ${eventType} --source-app \${AGENT_ID:-default}` }],
     });
 
+    // Valid Claude Code hook events — NOT tool names
     const allEvents = [
       "PreToolUse", "PostToolUse", "PostToolUseFailure",
       "Notification", "Stop", "SessionEnd",
       "SubagentStart", "SubagentStop",
-      "TaskStart", "TaskComplete", "TaskCreate", "TaskUpdate",
+      "TaskCompleted", "TeammateIdle",
     ];
 
     const settings: Record<string, unknown> = {

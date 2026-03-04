@@ -23,6 +23,8 @@ describe("mapHookEventToStatus", () => {
     ["Stop", undefined, "idle"],
     ["SessionEnd", undefined, "idle"],
     ["SubagentStop", undefined, "idle"],
+    ["TeammateIdle", undefined, "idle"],
+    ["TaskCompleted", undefined, "idle"],
 
     // Notification — only idle_prompt triggers idle
     ["Notification", "idle_prompt", "idle"],
@@ -54,7 +56,7 @@ describe("HookEventPayload validation", () => {
   })
 
   test("all idle events produce 'idle' status", () => {
-    const idleEvents = ["Stop", "SessionEnd", "SubagentStop"]
+    const idleEvents = ["Stop", "SessionEnd", "SubagentStop", "TeammateIdle", "TaskCompleted"]
     for (const event of idleEvents) {
       expect(mapHookEventToStatus(event)).toBe("idle")
     }
@@ -116,6 +118,44 @@ describe("POST /internal/hook-events integration", () => {
 
     expect(sseEvent.status).toBe("error")
     expect(sseEvent.error).toBe("Command failed with exit code 1")
+  })
+
+  test("PreToolUse with TaskCreate tool carries task data in toolInput", () => {
+    // When Claude calls TaskCreate, PreToolUse fires with tool_name=TaskCreate
+    // and tool_input containing the task fields
+    const payload = {
+      eventType: "PreToolUse",
+      agentId: "lead",
+      timestamp: Date.now(),
+      projectId: "proj-123",
+      toolName: "TaskCreate",
+      toolInput: {
+        subject: "Implement auth with GitHub OAuth",
+        description: "Add OAuth flow",
+        activeForm: "Implementing auth",
+      },
+    }
+
+    // Status is "working" because it's a PreToolUse event
+    expect(mapHookEventToStatus(payload.eventType)).toBe("working")
+    // Task data is in toolInput
+    expect(payload.toolInput.subject).toBe("Implement auth with GitHub OAuth")
+    expect(payload.toolName).toBe("TaskCreate")
+  })
+
+  test("TaskCompleted hook event produces idle status", () => {
+    const payload = {
+      eventType: "TaskCompleted",
+      agentId: "researcher",
+      timestamp: Date.now(),
+      projectId: "proj-123",
+      taskId: "task-001",
+      taskSubject: "Research auth options",
+    }
+
+    expect(mapHookEventToStatus(payload.eventType)).toBe("idle")
+    expect(payload.taskId).toBe("task-001")
+    expect(payload.taskSubject).toBe("Research auth options")
   })
 
   test("projectId from payload is used directly (no DB lookup needed)", () => {

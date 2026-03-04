@@ -28,16 +28,15 @@ export interface HookEventPayload {
   timestamp: number
   toolName?: string
   toolUseId?: string
+  toolInput?: Record<string, unknown>
   notificationType?: string
   error?: string
   projectId?: string
-  // Task fields forwarded from TaskCreate/TaskUpdate hook events
+  // TaskCompleted hook fields
   taskId?: string
-  subject?: string
-  description?: string
-  status?: string
-  owner?: string
-  metadata?: Record<string, unknown>
+  taskSubject?: string
+  taskDescription?: string
+  teammateName?: string
 }
 
 export interface AgentStatusEvent {
@@ -79,6 +78,8 @@ export function mapHookEventToStatus(
     case "Stop":
     case "SessionEnd":
     case "SubagentStop":
+    case "TeammateIdle":
+    case "TaskCompleted":
       return "idle"
 
     case "Notification":
@@ -165,22 +166,46 @@ export function createHookEventRoutes(): Hono {
       return c.json({ ok: true })
     }
 
-    // Handle task events: forward to task-sync so board updates via hooks
-    if ((body.eventType === "TaskCreate" || body.eventType === "TaskUpdate") && body.taskId && body.subject) {
+    // Handle task events: extract task data from tool_input when tool is TaskCreate/TaskUpdate
+    const isTaskTool = body.toolName === "TaskCreate" || body.toolName === "TaskUpdate"
+    if (isTaskTool && body.toolInput) {
+      const ti = body.toolInput
+      const taskId = (ti.taskId ?? ti.id ?? `cc-${Date.now()}`) as string
+      const subject = (ti.subject ?? "") as string
+      if (subject) {
+        const taskStatus = (ti.status as string) ?? "pending"
+        const task: WorkerTask = {
+          id: taskId,
+          subject,
+          description: (ti.description as string) ?? "",
+          status: taskStatus === "in_progress" ? "in_progress" : taskStatus === "completed" ? "completed" : "pending",
+          owner: (ti.owner as string) ?? null,
+          boardColumn: taskStatus === "in_progress" ? "in_progress" : taskStatus === "completed" ? "done" : "todo",
+          metadata: (ti.metadata as Record<string, unknown>) ?? undefined,
+          updatedAt: body.timestamp || Date.now(),
+          blocks: (ti.addBlocks as string[]) ?? [],
+          blockedBy: (ti.addBlockedBy as string[]) ?? [],
+        }
+        await handleWorkerTaskUpdate(projectId, task)
+        logger.debug(`hook-events: ${body.toolName} task=${taskId} for project=${projectId}`)
+      }
+    }
+
+    // Handle TaskCompleted hook event — mark the task as completed
+    if (body.eventType === "TaskCompleted" && body.taskId) {
       const task: WorkerTask = {
         id: body.taskId,
-        subject: body.subject,
-        description: body.description ?? "",
-        status: (body.status as WorkerTask["status"]) ?? "pending",
-        owner: body.owner ?? null,
-        boardColumn: body.status === "in_progress" ? "in_progress" : body.status === "completed" ? "done" : "todo",
-        metadata: body.metadata,
+        subject: body.taskSubject ?? `Task ${body.taskId}`,
+        description: body.taskDescription ?? "",
+        status: "completed",
+        owner: body.teammateName ?? body.agentId,
+        boardColumn: "done",
         updatedAt: body.timestamp || Date.now(),
         blocks: [],
         blockedBy: [],
       }
       await handleWorkerTaskUpdate(projectId, task)
-      logger.debug(`hook-events: ${body.eventType} task=${body.taskId} for project=${projectId}`)
+      logger.debug(`hook-events: TaskCompleted task=${body.taskId} for project=${projectId}`)
     }
 
     const status = mapHookEventToStatus(body.eventType, body.notificationType)
