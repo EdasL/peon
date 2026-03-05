@@ -38,6 +38,7 @@
     "lucide-react": "^0.576.0",
     "radix-ui": "^1.4.3",
     "react": "^19.1.0",
+    "react-chat-elements": "^12.0.18",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.0",
     "remotion": "^4.0.432",

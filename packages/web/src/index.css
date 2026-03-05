@@ -103,3 +103,52 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+/* react-chat-elements dark overrides for hero animation */
+.rce-dark-user .rce-container-mbox,
+.rce-dark-peon .rce-container-mbox {
+  min-width: unset;
+}
+.rce-dark-user .rce-mbox,
+.rce-dark-peon .rce-mbox {
+  box-shadow: none;
+  padding: 11px 18px 11px;
+  min-width: unset;
+  margin: 0;
+}
+.rce-dark-user .rce-mbox-text,
+.rce-dark-peon .rce-mbox-text {
+  color: inherit;
+  font-size: inherit;
+}
+.rce-dark-user .rce-mbox-text::after,
+.rce-dark-peon .rce-mbox-text::after {
+  content: none;
+}
+.rce-dark-user .rce-mbox-time,
+.rce-dark-peon .rce-mbox-time {
+  display: none;
+}
+.rce-dark-user .rce-mbox-forward,
+.rce-dark-peon .rce-mbox-forward,
+.rce-dark-user .rce-mbox-status,
+.rce-dark-peon .rce-mbox-status {
+  display: none;
+}
+.rce-dark-peon .rce-mbox-title {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  cursor: default;
+}
+.rce-dark-peon .rce-mbox-title:hover {
+  text-decoration: none;
+}
+.rce-dark-user .rce-mbox-right-notch {
+  filter: none;
+}
+.rce-dark-peon .rce-mbox-left-notch {
+  filter: none;
+}
