@@ -9,3 +9,4 @@ bun.lock
 workspaces/
 docs/
 *.tsbuildinfo
+.claude/settings.local.json
