@@ -104,6 +104,56 @@
   }
 }
 
+/* @chatscope overrides for ChatPanel — match warm light theme */
+.chat-panel-root .cs-message-list {
+  background: transparent;
+  padding: 8px 0;
+}
+.chat-panel-root .cs-message-list__scroll-wrapper {
+  padding: 0 12px;
+}
+.chat-panel-root .cs-message__content {
+  background: #FFFFFF !important;
+  color: #1A1916 !important;
+  border: 1px solid #E2E0DA;
+  border-radius: 6px !important;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 10px 14px;
+  box-shadow: none !important;
+}
+.chat-panel-root .cs-message--outgoing .cs-message__content {
+  background: #1A1916 !important;
+  color: #F7F6F2 !important;
+  border-color: #1A1916;
+}
+.chat-panel-root .cs-message--outgoing .cs-message__content a {
+  color: #93C5FD;
+}
+.chat-panel-root .cs-message__footer {
+  font-size: 10px;
+  margin-top: 2px;
+}
+.chat-panel-root .cs-typing-indicator {
+  background: transparent;
+  padding: 4px 12px;
+}
+.chat-panel-root .cs-typing-indicator__text {
+  color: #8C8980;
+  font-size: 12px;
+}
+.chat-panel-root .cs-typing-indicator__dot {
+  background-color: #8C8980;
+}
+/* Hide avatar spacer since we don't use avatars */
+.chat-panel-root .cs-message__avatar {
+  display: none;
+}
+/* Remove content-header that chatscope may add */
+.chat-panel-root .cs-message__content-wrapper {
+  max-width: 85%;
+}
+
 /* react-chat-elements dark overrides for hero animation */
 .rce-dark-user .rce-container-mbox,
 .rce-dark-peon .rce-container-mbox {

@@ -1,10 +1,16 @@
 import { useState, useRef, useEffect } from "react"
 import { useChat } from "@/hooks/use-chat"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, MessageSquare, Send, X, RefreshCw } from "lucide-react"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { cn } from "@/lib/utils"
+import "@chatscope/chat-ui-kit-styles/dist/default/styles.min.css"
+import {
+  MessageList,
+  Message,
+  MessageGroup,
+  TypingIndicator,
+} from "@chatscope/chat-ui-kit-react"
 
 const THINKING_SENTINEL = "Thinking..."
 
@@ -41,11 +47,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
     if (connected) setHasConnectedOnce(true)
   }, [connected])
   const [dismissedError, setDismissedError] = useState<string | null>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, streamingContent])
+  const msgListRef = useRef<HTMLDivElement>(null)
 
   const handleSend = () => {
     if (!input.trim()) return
@@ -56,7 +58,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   const visibleError = error && error !== dismissedError ? error : null
 
   return (
-    <div className="flex flex-col h-full min-w-0 overflow-hidden bg-background">
+    <div className="chat-panel-root flex flex-col h-full min-w-0 overflow-hidden bg-background">
       {/* Header */}
       <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -99,74 +101,76 @@ export function ChatPanel({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {/* Messages — flat, no bubbles */}
-      <ScrollArea className="flex-1 min-h-0 min-w-0">
+      {/* Messages */}
+      <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/40" />
           </div>
+        ) : messages.length === 0 && !streamingContent ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <MessageSquare className="h-8 w-8 text-muted-foreground/30 mb-3" />
+            <p className="text-sm text-muted-foreground">
+              Describe a feature or bug to get started
+            </p>
+            <p className="text-xs text-muted-foreground/60 mt-1">
+              Your team will pick up the work automatically
+            </p>
+          </div>
         ) : (
-          <div className="min-w-0 overflow-hidden">
-            {messages.length === 0 && !streamingContent && (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <MessageSquare className="h-8 w-8 text-muted-foreground/30 mb-3" />
-                <p className="text-sm text-muted-foreground">
-                  Describe a feature or bug to get started
-                </p>
-                <p className="text-xs text-muted-foreground/60 mt-1">
-                  Your team will pick up the work automatically
-                </p>
-              </div>
-            )}
+          <MessageList
+            ref={msgListRef}
+            autoScrollToBottom
+            autoScrollToBottomOnMount
+            typingIndicator={
+              streamingContent === THINKING_SENTINEL ? (
+                <TypingIndicator content="Team Lead is thinking" />
+              ) : null
+            }
+          >
             {messages.map((msg) => (
-              <div
+              <Message
                 key={msg.id}
-                className={cn(
-                  "px-4 py-3 border-b border-border/50",
-                  msg.role === "assistant" && "bg-muted/30"
-                )}
+                model={{
+                  direction: msg.role === "user" ? "outgoing" : "incoming",
+                  position: "single",
+                }}
               >
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-[11px] font-medium text-muted-foreground">
-                    {msg.role === "user" ? "You" : "Team Lead"}
-                  </span>
-                  {msg.createdAt && (
-                    <span className="text-[10px] text-muted-foreground/50">
-                      {formatTime(msg.createdAt)}
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm leading-relaxed break-words">
+                <Message.CustomContent>
                   {msg.role === "assistant" ? (
                     <MarkdownMessage content={msg.content} />
                   ) : (
-                    msg.content
+                    <span className="text-sm leading-relaxed">{msg.content}</span>
                   )}
-                </div>
-              </div>
-            ))}
-            {streamingContent && (
-              <div className="px-4 py-3 bg-muted/30">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-[11px] font-medium text-muted-foreground">
-                    Team Lead
+                </Message.CustomContent>
+                <Message.Footer>
+                  <span className="text-[10px] text-muted-foreground/50">
+                    {msg.role === "user" ? "You" : "Team Lead"}
+                    {msg.createdAt && ` \u00b7 ${formatTime(msg.createdAt)}`}
                   </span>
-                </div>
-                <div className="text-sm leading-relaxed break-words">
-                  {streamingContent === THINKING_SENTINEL ? (
-                    <TypingDots />
-                  ) : (
-                    <MarkdownMessage content={streamingContent + "▍"} />
-                  )}
-                </div>
-              </div>
+                </Message.Footer>
+              </Message>
+            ))}
+            {streamingContent && streamingContent !== THINKING_SENTINEL && (
+              <Message
+                model={{
+                  direction: "incoming",
+                  position: "single",
+                }}
+              >
+                <Message.CustomContent>
+                  <MarkdownMessage content={streamingContent + "\u258D"} />
+                </Message.CustomContent>
+                <Message.Footer>
+                  <span className="text-[10px] text-muted-foreground/50">Team Lead</span>
+                </Message.Footer>
+              </Message>
             )}
-            <div ref={bottomRef} />
-          </div>
+          </MessageList>
         )}
-      </ScrollArea>
+      </div>
 
-      {/* Input — flat, border only */}
+      {/* Input */}
       <div className="p-3 border-t border-border">
         <div className="flex gap-2 items-start">
           <div className="flex-1 relative">
