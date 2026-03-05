@@ -325,9 +325,10 @@ projectsRouter.post("/:id/restart", async (c) => {
     }
   }
 
-  // Container restart issued — poll for readiness (it takes a moment to become "running")
+  // Container restart issued — poll for readiness (it takes a moment to become "running").
+  // isRestart: workspace already exists, so skip "initializing" → go straight to "running".
   const { waitForContainerReady } = await import("../../web/project-launcher.js")
-  waitForContainerReady(project.id, project.deploymentName)
+  waitForContainerReady(project.id, project.deploymentName, { isRestart: true })
   return c.json({ status: "creating" })
 })
 

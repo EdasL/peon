@@ -148,6 +148,7 @@ export class PeonResponseRenderer implements ResponseRenderer {
         userId: userId ?? undefined,
         role: "assistant" as const,
         content,
+        contentBlocks: payload.contentBlocks ?? undefined,
       })
       .returning()
 

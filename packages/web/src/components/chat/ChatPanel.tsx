@@ -3,6 +3,7 @@ import { useChat } from "@/hooks/use-chat"
 import { Button } from "@/components/ui/button"
 import { Loader2, MessageSquare, Send, X, RefreshCw } from "lucide-react"
 import { MarkdownMessage } from "./MarkdownMessage"
+import { RichMessage } from "./RichMessage"
 import { cn } from "@/lib/utils"
 import "@chatscope/chat-ui-kit-styles/dist/default/styles.min.css"
 import {
@@ -138,7 +139,11 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
               >
                 <Message.CustomContent>
                   {msg.role === "assistant" ? (
-                    <MarkdownMessage content={msg.content} />
+                    msg.contentBlocks?.length ? (
+                      <RichMessage blocks={msg.contentBlocks} />
+                    ) : (
+                      <MarkdownMessage content={msg.content} />
+                    )
                   ) : (
                     <span className="text-sm leading-relaxed">{msg.content}</span>
                   )}

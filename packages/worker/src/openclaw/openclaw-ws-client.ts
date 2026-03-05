@@ -130,7 +130,7 @@ export type OpenClawEvent =
   | { type: "thinking"; delta: string }
   | { type: "tool_start"; name: string; input: Record<string, unknown> }
   | { type: "tool_end"; name: string; result: string }
-  | { type: "turn_end" }
+  | { type: "turn_end"; contentBlocks?: unknown[] }
   | { type: "error"; message: string };
 
 /** A frame received over the WebSocket (protocol 3). */
@@ -520,7 +520,10 @@ export class OpenClawWsClient {
         logger.warn("⚠️ Response truncated due to max_tokens limit!");
       }
 
-      events.push({ type: "turn_end" });
+      const rawBlocks = msg?.content as unknown[] | undefined;
+      const contentBlocks = Array.isArray(rawBlocks) ? rawBlocks : undefined;
+
+      events.push({ type: "turn_end", contentBlocks });
       return events;
     }
 

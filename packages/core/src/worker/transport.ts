@@ -26,6 +26,12 @@ export interface WorkerTransport {
   setModuleData(moduleData: Record<string, unknown>): void;
 
   /**
+   * Set rich content blocks from the AI response (text, tool_use, thinking).
+   * Attached to the completion payload for rich message rendering.
+   */
+  setContentBlocks(blocks: unknown[]): void;
+
+  /**
    * Send a streaming delta to the gateway
    *
    * @param delta - The content delta to send

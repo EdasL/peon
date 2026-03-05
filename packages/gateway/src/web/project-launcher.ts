@@ -204,16 +204,17 @@ ${teamSpawnInstruction ? `\n${teamSpawnInstruction}` : ""}`,
  * get stuck in "creating" waiting for a boot-progress "ready" that already
  * fired.
  *
- * The final transition to "running" happens in the response renderer when
- * the agent sends its first message.
+ * For restarts (`isRestart`), the workspace already exists so we skip
+ * "initializing" and transition straight to "running" once the worker is up.
+ * For first-time creation the final transition to "running" happens in the
+ * response renderer when the agent sends its first message.
  *
  * Fires-and-forgets internally — the caller is not blocked.
  */
 export async function waitForContainerReady(
   projectId: string,
   deploymentName: string,
-  timeoutMs = 120_000,
-  intervalMs = 3_000,
+  { timeoutMs = 120_000, intervalMs = 3_000, isRestart = false } = {},
 ): Promise<void> {
   const { getContainerStatus } = await import("./container-manager.js")
   const { broadcastToProject } = await import("./chat-routes.js")
@@ -243,10 +244,18 @@ export async function waitForContainerReady(
           console.error(`Failed to connect OpenClaw event stream for ${projectId}:`, err)
         }
 
-        // If the container was already running on first poll, the worker's
-        // boot-progress "ready" step already fired for earlier projects and
-        // won't fire again. Fast-track this project to "initializing".
-        if (isFirstPoll) {
+        if (isRestart) {
+          // Workspace already exists — skip "initializing" and go straight to "running"
+          for (const step of ["workspace", "engine", "ready", "setup"] as const) {
+            broadcastToProject(projectId, "boot_progress", { step, label: step })
+          }
+          await db.update(projects)
+            .set({ status: "running", updatedAt: new Date() })
+            .where(eq(projects.id, projectId))
+          broadcastToProject(projectId, "project_status", { status: "running" })
+        } else if (isFirstPoll) {
+          // Container was already running — boot-progress "ready" won't fire
+          // again, so fast-track to "initializing".
           for (const step of ["workspace", "engine", "ready"] as const) {
             broadcastToProject(projectId, "boot_progress", { step, label: step })
           }

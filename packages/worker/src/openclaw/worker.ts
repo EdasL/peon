@@ -657,6 +657,9 @@ Use it when the user references past discussions or you need context.`);
 
       case "turn_end":
         logger.info("OpenClaw turn completed");
+        if (event.contentBlocks) {
+          this.workerTransport.setContentBlocks(event.contentBlocks);
+        }
         break;
 
       case "error":

@@ -326,6 +326,9 @@ export interface ThreadResponsePayload {
   /** Platform-specific metadata forwarded from the original message */
   platformMetadata?: Record<string, unknown>;
 
+  /** Rich content blocks from the AI response (text, tool_use, thinking) */
+  contentBlocks?: unknown[];
+
   // Exec-specific response fields (for jobType === "exec")
   execId?: string; // Exec job ID for response routing
   execStream?: "stdout" | "stderr"; // Which stream this delta is from

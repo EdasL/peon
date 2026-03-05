@@ -271,11 +271,23 @@ export interface OAuthConnection {
   connectedAt?: string
 }
 
+export interface ContentBlock {
+  type: "text" | "tool_use" | "tool_result" | "thinking"
+  text?: string
+  thinking?: string
+  name?: string
+  input?: Record<string, unknown>
+  id?: string
+  content?: string | ContentBlock[]
+  tool_use_id?: string
+}
+
 export interface ChatMessage {
   id: string
   projectId: string
   role: "user" | "assistant"
   content: string
+  contentBlocks?: ContentBlock[]
   createdAt: string
 }
 
