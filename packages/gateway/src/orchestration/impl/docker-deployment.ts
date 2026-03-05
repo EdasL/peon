@@ -190,7 +190,18 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
 
       for (const containerInfo of containers) {
         const deploymentName = containerInfo.Names[0]?.substring(1) || "";
-        if (!deploymentName || openclawRegistry.has(deploymentName)) continue;
+        if (!deploymentName) continue;
+
+        // Seed activity timestamp for all running containers so they survive
+        // the first reconciliation pass after a gateway restart. Without this,
+        // containers appear idle since their Docker creation time and get
+        // immediately stopped.
+        if (!this.activityTimestamps.has(deploymentName)) {
+          this.activityTimestamps.set(deploymentName, new Date());
+          logger.info(`Seeded activity timestamp for running container ${deploymentName}`);
+        }
+
+        if (openclawRegistry.has(deploymentName)) continue;
 
         try {
           const container = this.docker.getContainer(containerInfo.Id);
@@ -225,7 +236,7 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
         }
       }
 
-      logger.info(`OpenClaw registry reconciled: ${openclawRegistry.size} entries`);
+      logger.info(`OpenClaw registry reconciled: ${openclawRegistry.size} entries, ${this.activityTimestamps.size} activity timestamps seeded`);
     } catch (err) {
       logger.warn(`OpenClaw registry reconciliation failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -320,7 +331,6 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
       return containers.map((containerInfo: Docker.ContainerInfo) => {
         const deploymentName = containerInfo.Names[0]?.substring(1) || ""; // Remove leading '/'
 
-        // Get last activity from in-memory tracking, labels, or creation time
         const trackedActivity = this.activityTimestamps.get(deploymentName);
         const lastActivityStr =
           containerInfo.Labels?.["peon.io/last-activity"] ||
@@ -330,12 +340,23 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
           ? new Date(lastActivityStr)
           : new Date(containerInfo.Created * 1000);
 
-        // Use the most recent timestamp from any source
-        const lastActivity =
-          trackedActivity && trackedActivity > labelActivity
-            ? trackedActivity
-            : labelActivity;
-        const replicas = containerInfo.State === "running" ? 1 : 0;
+        const isRunning = containerInfo.State === "running";
+
+        // If a container is running but we have no in-memory timestamp,
+        // treat it as active NOW rather than falling back to the stale
+        // Docker creation label. This prevents running containers from
+        // being immediately stopped after a gateway restart.
+        let lastActivity: Date;
+        if (trackedActivity) {
+          lastActivity = trackedActivity > labelActivity ? trackedActivity : labelActivity;
+        } else if (isRunning) {
+          lastActivity = new Date();
+          this.activityTimestamps.set(deploymentName, lastActivity);
+        } else {
+          lastActivity = labelActivity;
+        }
+
+        const replicas = isRunning ? 1 : 0;
         return buildDeploymentInfoSummary({
           deploymentName,
           lastActivity,
