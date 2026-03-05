@@ -199,39 +199,103 @@ function HeroDemoComposition() {
             filter: `blur(${chatBlur}px)`,
           }}
         >
-          {/* Message 1 — user, left-aligned */}
-          <div style={{ width: 340, display: "flex", justifyContent: "flex-end" }}>
+          {/* Message 1 — user, right-aligned */}
+          <div style={{ width: 380, display: "flex", justifyContent: "flex-end" }}>
             <div
               style={{
                 opacity: msg1Opacity,
                 transform: `translateY(${msg1Y}px)`,
-                background: "#1E1D1B",
-                color: "#FFFFFF",
-                fontSize: 15,
-                padding: "10px 16px",
-                borderRadius: 12,
-                fontFamily: FONT,
+                position: "relative",
               }}
             >
-              yo, ready to ship?
+              <div
+                style={{
+                  background: "rgba(255,255,255,0.07)",
+                  backdropFilter: "blur(24px)",
+                  WebkitBackdropFilter: "blur(24px)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  color: "#FFFFFF",
+                  fontSize: 14,
+                  fontWeight: 400,
+                  letterSpacing: "0.01em",
+                  padding: "11px 18px",
+                  borderRadius: "16px 16px 4px 16px",
+                  fontFamily: FONT,
+                  lineHeight: 1.45,
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.3)",
+                }}
+              >
+                yo, ready to ship?
+              </div>
+              {/* Tail */}
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  right: -6,
+                  width: 12,
+                  height: 12,
+                  background: "rgba(255,255,255,0.07)",
+                  clipPath: "polygon(0 0, 100% 100%, 0 100%)",
+                }}
+              />
             </div>
           </div>
 
           {/* Message 2 — Peon, left-aligned */}
-          <div style={{ width: 340, display: "flex", justifyContent: "flex-start" }}>
+          <div style={{ width: 380, display: "flex", justifyContent: "flex-start" }}>
             <div
               style={{
                 opacity: msg2Opacity,
                 transform: `translateY(${msg2Y}px)`,
-                background: "#2A2926",
-                color: "#F0EDE8",
-                fontSize: 15,
-                padding: "10px 16px",
-                borderRadius: 12,
-                fontFamily: FONT,
+                position: "relative",
               }}
             >
-              been shipping. want to see?
+              <div
+                style={{
+                  textTransform: "uppercase",
+                  fontSize: 9,
+                  letterSpacing: 3,
+                  color: "rgba(232,176,85,0.5)",
+                  fontWeight: 600,
+                  fontFamily: FONT,
+                  marginBottom: 4,
+                  marginLeft: 2,
+                }}
+              >
+                peon
+              </div>
+              <div
+                style={{
+                  background: "rgba(232,176,85,0.08)",
+                  backdropFilter: "blur(24px)",
+                  WebkitBackdropFilter: "blur(24px)",
+                  border: "1px solid rgba(232,176,85,0.12)",
+                  color: "#F0EDE8",
+                  fontSize: 14,
+                  fontWeight: 400,
+                  letterSpacing: "0.01em",
+                  padding: "11px 18px",
+                  borderRadius: "16px 16px 16px 4px",
+                  fontFamily: FONT,
+                  lineHeight: 1.45,
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.3)",
+                }}
+              >
+                been shipping. want to see?
+              </div>
+              {/* Tail */}
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: -6,
+                  width: 12,
+                  height: 12,
+                  background: "rgba(232,176,85,0.08)",
+                  clipPath: "polygon(100% 0, 100% 100%, 0 100%)",
+                }}
+              />
             </div>
           </div>
         </div>
