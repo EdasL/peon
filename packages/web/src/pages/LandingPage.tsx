@@ -12,251 +12,324 @@ import {
 
 // ─── Remotion hero composition ───
 
-const CHAT_MESSAGE = "Build me GitHub OAuth login."
+const TOTAL_FRAMES = 360
 
-const DEMO_TASKS = [
-  { id: 1, title: "Set up OAuth provider config", agent: "backend", color: "#22C55E" },
-  { id: 2, title: "Create login callback route", agent: "backend", color: "#22C55E" },
-  { id: 3, title: "Add GitHub sign-in button", agent: "frontend", color: "#8C8980" },
-]
+function FemrunPhone() {
+  const PINK = "#E87070"
+  return (
+    <div
+      style={{
+        width: 220,
+        height: 440,
+        borderRadius: 36,
+        background: "#1A1A1A",
+        border: "2px solid #2A2A2A",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        boxShadow: "0 40px 80px rgba(0,0,0,0.7)",
+      }}
+    >
+      <div style={{ flex: 1, background: "#0F0F0F", padding: "32px 20px 20px" }}>
+        <div
+          style={{
+            fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: 3,
+            color: PINK,
+            fontWeight: 600,
+            fontFamily: "'Instrument Sans', system-ui, sans-serif",
+          }}
+        >
+          femrun
+        </div>
+        <div
+          style={{
+            marginTop: 16,
+            fontSize: 22,
+            fontWeight: 600,
+            color: "#FFFFFF",
+            fontFamily: "'Instrument Sans', system-ui, sans-serif",
+          }}
+        >
+          Week 3 · Day 2
+        </div>
 
-const TYPING_START = 20
-const TYPING_END = 80
-const SENT_AT = 85
-const TASKS_START = 100
-const TASK_STAGGER = 12
-const IN_PROGRESS_AT = 150
-const TOTAL_FRAMES = 270
+        <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Easy Run card */}
+          <div
+            style={{
+              background: "#1A1A1A",
+              borderRadius: 8,
+              padding: "12px 14px",
+              borderLeft: `3px solid ${PINK}`,
+            }}
+          >
+            <div style={{ fontSize: 13, color: "#F0EDE8", fontWeight: 500, fontFamily: "'Instrument Sans', system-ui, sans-serif" }}>
+              Easy Run · 45 min
+            </div>
+          </div>
+          {/* Strength card */}
+          <div
+            style={{
+              background: "#1A1A1A",
+              borderRadius: 8,
+              padding: "12px 14px",
+              borderLeft: "3px solid #888",
+            }}
+          >
+            <div style={{ fontSize: 13, color: "#F0EDE8", fontWeight: 500, fontFamily: "'Instrument Sans', system-ui, sans-serif" }}>
+              Strength · 30 min
+            </div>
+          </div>
+          {/* Rest card */}
+          <div
+            style={{
+              background: "#141414",
+              borderRadius: 8,
+              padding: "12px 14px",
+            }}
+          >
+            <div style={{ fontSize: 13, color: "#666", fontWeight: 500, fontFamily: "'Instrument Sans', system-ui, sans-serif" }}>
+              Rest
+            </div>
+          </div>
+        </div>
+
+        {/* Progress dots */}
+        <div style={{ marginTop: 24, display: "flex", justifyContent: "center", gap: 8 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: PINK }} />
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: PINK }} />
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#333", border: "1px solid #444" }} />
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function HeroDemoComposition() {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
+  const FONT = "'Instrument Sans', system-ui, sans-serif"
 
-  const typedRatio = interpolate(frame, [TYPING_START, TYPING_END], [0, 1], {
+  // ── Act 1: Chat (0–110) ──
+  const msg1Spring = spring({ frame: frame - 15, fps, config: { damping: 22, stiffness: 80 } })
+  const msg1Opacity = frame >= 15 ? interpolate(msg1Spring, [0, 1], [0, 1]) : 0
+  const msg1Y = frame >= 15 ? interpolate(msg1Spring, [0, 1], [10, 0]) : 10
+
+  const msg2Spring = spring({ frame: frame - 55, fps, config: { damping: 22, stiffness: 80 } })
+  const msg2Opacity = frame >= 55 ? interpolate(msg2Spring, [0, 1], [0, 1]) : 0
+  const msg2Y = frame >= 55 ? interpolate(msg2Spring, [0, 1], [10, 0]) : 10
+
+  // ── Act 2: Launch (110–145) ──
+  const launchProgress = interpolate(frame, [110, 145], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
-    easing: Easing.linear,
+    easing: Easing.bezier(0.4, 0, 1, 1),
   })
-  const charsTyped = Math.floor(typedRatio * CHAT_MESSAGE.length)
-  const isTyping = frame >= TYPING_START && frame < SENT_AT
-  const isSent = frame >= SENT_AT
+  const chatX = frame >= 110 ? interpolate(launchProgress, [0, 1], [0, -160]) : 0
+  const chatBlur = frame >= 110 ? interpolate(launchProgress, [0, 1], [0, 28]) : 0
 
-  const cursorVisible = isTyping && Math.floor(frame / 8) % 2 === 0
+  // Background flicker in Act 2
+  const flickerOpacity = (frame >= 120 && frame < 124) ? 0.3 : 1
 
-  const sentSpring = spring({ frame: frame - SENT_AT, fps, config: { damping: 15, stiffness: 120 } })
-  const sentOpacity = isSent ? interpolate(sentSpring, [0, 1], [0, 1]) : 0
-  const sentY = isSent ? interpolate(sentSpring, [0, 1], [10, 0]) : 10
+  // ── Act 3: Phone reveal (145–290) ──
+  const phoneSpring = spring({ frame: frame - 145, fps, config: { damping: 18, stiffness: 55 } })
+  const phoneScale = frame >= 145 ? interpolate(phoneSpring, [0, 1], [0.75, 1]) : 0.75
+  const phoneY = frame >= 145 ? interpolate(phoneSpring, [0, 1], [50, 0]) : 50
+  const phoneOpacity = frame >= 145 ? interpolate(phoneSpring, [0, 1], [0, 1]) : 0
 
-  const taskSprings = DEMO_TASKS.map((_, i) => {
-    const taskFrame = TASKS_START + i * TASK_STAGGER
-    if (frame < taskFrame) return { opacity: 0, y: 14, scale: 0.97 }
-    const s = spring({ frame: frame - taskFrame, fps, config: { damping: 14, stiffness: 100 } })
-    return {
-      opacity: interpolate(s, [0, 1], [0, 1]),
-      y: interpolate(s, [0, 1], [14, 0]),
-      scale: interpolate(s, [0, 1], [0.97, 1]),
-    }
+  // Underglow
+  const glowOpacity = interpolate(frame, [210, 260], [0, 0.15], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
   })
 
-  const isInProgress = frame >= IN_PROGRESS_AT
-  const progressSpring = isInProgress
-    ? spring({ frame: frame - IN_PROGRESS_AT, fps, config: { damping: 12, stiffness: 100 } })
-    : 0
-  const dotScale = interpolate(progressSpring, [0, 1], [0, 1])
-  const dotPulse = isInProgress ? 0.5 + 0.5 * Math.sin((frame - IN_PROGRESS_AT) * 0.15) : 0
+  // Wordmark + subtitle
+  const wordmarkOpacity = interpolate(frame, [230, 245], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  })
+  const subtitleOpacity = interpolate(frame, [250, 265], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  })
 
-  const FG = "#1A1916"
-  const MUTED = "#8C8980"
-  const BORDER = "#E2E0DA"
-  const BG = "#F7F6F2"
-  const CARD = "#FFFFFF"
-  const GREEN = "#22C55E"
+  // ── Act 4: The Question (290–360) ──
+  const act4FadeOut = interpolate(frame, [290, 298], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  })
+
+  const QUESTION = "Ready to ship a new app everyday?"
+  const typingStart = 305
+  const charsTyped = frame >= typingStart ? Math.min(Math.floor((frame - typingStart) / 2), QUESTION.length) : 0
+  const questionText = QUESTION.slice(0, charsTyped)
+
+  const questionFadeOut = interpolate(frame, [350, 358], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  })
+
+  // Determine which act we're in for rendering
+  const showChat = frame < 145
+  const showPhone = frame >= 145 && frame < 290
+  const showQuestion = frame >= 290
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: BG,
-        fontFamily: "'Instrument Sans', system-ui, sans-serif",
+        backgroundColor: "#0D0C0B",
+        fontFamily: FONT,
       }}
     >
-      {/* Title bar */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          padding: "10px 16px",
-          borderBottom: `1px solid ${BORDER}`,
-        }}
-      >
-        <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#EF4444" }} />
-        <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#F59E0B" }} />
-        <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#22C55E" }} />
-        <span style={{ marginLeft: 10, fontSize: 11, color: MUTED, letterSpacing: "0.5px" }}>
-          peon.work
-        </span>
-      </div>
-
-      {/* Split */}
-      <div style={{ display: "flex", flex: 1 }}>
-        {/* Left: Chat */}
+      {/* Acts 1 & 2: Chat bubbles */}
+      {showChat && (
         <div
           style={{
-            flex: 1,
+            position: "absolute",
+            inset: 0,
             display: "flex",
             flexDirection: "column",
-            justifyContent: "flex-end",
-            padding: 20,
-            borderRight: `1px solid ${BORDER}`,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            opacity: flickerOpacity,
+            transform: `translateX(${chatX}%)`,
+            filter: `blur(${chatBlur}px)`,
           }}
         >
-          <div
-            style={{
-              fontSize: 10,
-              textTransform: "uppercase",
-              letterSpacing: 2,
-              color: MUTED,
-              marginBottom: 14,
-              fontWeight: 500,
-            }}
-          >
-            Chat
-          </div>
-
-          {isSent && (
-            <div style={{ opacity: sentOpacity, transform: `translateY(${sentY}px)`, marginBottom: 14 }}>
-              <div
-                style={{
-                  display: "inline-block",
-                  background: FG,
-                  borderRadius: 4,
-                  padding: "9px 13px",
-                  fontSize: 13,
-                  color: "#F7F6F2",
-                }}
-              >
-                {CHAT_MESSAGE}
-              </div>
+          {/* Message 1 — user, left-aligned */}
+          <div style={{ width: 340, display: "flex", justifyContent: "flex-start" }}>
+            <div
+              style={{
+                opacity: msg1Opacity,
+                transform: `translateY(${msg1Y}px)`,
+                background: "#1E1D1B",
+                color: "#FFFFFF",
+                fontSize: 15,
+                padding: "10px 16px",
+                borderRadius: 12,
+                fontFamily: FONT,
+              }}
+            >
+              yo, ready to ship?
             </div>
-          )}
+          </div>
+
+          {/* Message 2 — Peon, right-aligned */}
+          <div style={{ width: 340, display: "flex", justifyContent: "flex-end" }}>
+            <div
+              style={{
+                opacity: msg2Opacity,
+                transform: `translateY(${msg2Y}px)`,
+                background: "#2A2926",
+                color: "#F0EDE8",
+                fontSize: 15,
+                padding: "10px 16px",
+                borderRadius: 12,
+                fontFamily: FONT,
+              }}
+            >
+              been shipping. want to see?
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Act 3: Phone reveal */}
+      {showPhone && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: act4FadeOut,
+          }}
+        >
+          {/* Underglow */}
+          <div
+            style={{
+              position: "absolute",
+              width: 400,
+              height: 400,
+              borderRadius: "50%",
+              background: "radial-gradient(circle, #E87070 0%, transparent 70%)",
+              opacity: glowOpacity,
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -30%)",
+              pointerEvents: "none",
+            }}
+          />
 
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              border: `1px solid ${BORDER}`,
-              borderRadius: 4,
-              padding: "9px 13px",
-              gap: 8,
-              background: CARD,
+              transform: `scale(${phoneScale}) translateY(${phoneY}px)`,
+              opacity: phoneOpacity,
             }}
           >
-            <span
-              style={{
-                flex: 1,
-                fontSize: 13,
-                color: isTyping ? FG : MUTED,
-                minHeight: 20,
-                display: "flex",
-                alignItems: "center",
-              }}
-            >
-              {isTyping ? (
-                <>
-                  {CHAT_MESSAGE.slice(0, charsTyped)}
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: 2,
-                      height: 15,
-                      background: cursorVisible ? FG : "transparent",
-                      marginLeft: 1,
-                    }}
-                  />
-                </>
-              ) : (
-                "Message your team..."
-              )}
-            </span>
-            <span
-              style={{
-                fontSize: 11,
-                padding: "2px 8px",
-                borderRadius: 3,
-                fontWeight: 500,
-                background: isTyping && charsTyped >= CHAT_MESSAGE.length ? FG : BORDER,
-                color: isTyping && charsTyped >= CHAT_MESSAGE.length ? "#F7F6F2" : MUTED,
-              }}
-            >
-              Send
-            </span>
+            <FemrunPhone />
+          </div>
+
+          {/* Wordmark */}
+          <div
+            style={{
+              marginTop: 20,
+              opacity: wordmarkOpacity,
+              color: "#FFFFFF",
+              fontSize: 13,
+              letterSpacing: 6,
+              textTransform: "uppercase",
+              fontWeight: 400,
+              fontFamily: FONT,
+            }}
+          >
+            femrun
+          </div>
+
+          {/* Subtitle */}
+          <div
+            style={{
+              marginTop: 6,
+              opacity: subtitleOpacity,
+              color: "#8C8980",
+              fontSize: 11,
+              fontFamily: FONT,
+            }}
+          >
+            women's running coach
           </div>
         </div>
+      )}
 
-        {/* Right: Board */}
-        <div style={{ flex: 1, padding: 20 }}>
-          <div style={{ display: "flex", gap: 16, marginBottom: 14 }}>
-            <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 2, color: MUTED, fontWeight: 500 }}>
-              {isInProgress ? "Board" : "To Do"}
-            </span>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {DEMO_TASKS.map((task, i) => {
-              const s = taskSprings[i]
-              const isActive = isInProgress && task.id === 1
-              return (
-                <div
-                  key={task.id}
-                  style={{
-                    opacity: s.opacity,
-                    transform: `translateY(${s.y}px) scale(${s.scale})`,
-                    border: `1px solid ${isActive ? GREEN : BORDER}`,
-                    borderLeft: isActive ? `3px solid ${GREEN}` : `1px solid ${BORDER}`,
-                    background: CARD,
-                    borderRadius: 4,
-                    padding: "8px 12px",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    {isActive && (
-                      <div
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          background: `rgba(34,197,94,${0.6 + dotPulse * 0.4})`,
-                          transform: `scale(${dotScale})`,
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
-                    <span style={{ fontSize: 13, color: FG, lineHeight: 1.3, fontWeight: 500 }}>
-                      {task.title}
-                    </span>
-                  </div>
-                  <div style={{ marginTop: 4 }}>
-                    <span style={{ fontSize: 11, color: MUTED, fontFamily: "'JetBrains Mono', monospace" }}>
-                      {task.agent}
-                    </span>
-                    {isActive && (
-                      <span style={{ fontSize: 9, color: GREEN, marginLeft: 8, textTransform: "uppercase", letterSpacing: 1, fontWeight: 500 }}>
-                        In Progress
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-
-            {frame < TASKS_START && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 100, fontSize: 12, color: MUTED }}>
-                No tasks yet
-              </div>
-            )}
-          </div>
+      {/* Act 4: The Question */}
+      {showQuestion && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: questionFadeOut,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 20,
+              fontWeight: 400,
+              color: "#FFFFFF",
+              fontFamily: FONT,
+            }}
+          >
+            {questionText}
+          </span>
         </div>
-      </div>
+      )}
     </AbsoluteFill>
   )
 }
@@ -364,7 +437,7 @@ export function LandingPage() {
             durationInFrames={TOTAL_FRAMES}
             fps={30}
             compositionWidth={720}
-            compositionHeight={400}
+            compositionHeight={420}
             loop
             autoPlay
             style={{ width: "100%" }}
