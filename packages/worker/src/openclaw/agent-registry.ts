@@ -8,6 +8,7 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { execSync } from "node:child_process";
 import { createLogger } from "@lobu/core";
 import { getConfigDir, getConfigPath } from "./bootstrap-config.js";
 
@@ -73,8 +74,33 @@ export async function ensureProjectAgent(
   }
 
   const workspace = `/workspace/projects/${projectId}`;
-  config.agents.list.push({ id: agentId, workspace, name: projectName });
-  await writeConfig(config);
+
+  // Use the OpenClaw CLI to register the agent so the running gateway picks it up.
+  // Manually editing openclaw.json doesn't trigger a reload in the running gateway.
+  try {
+    execSync(
+      `openclaw agents add "${projectName}" --workspace "${workspace}" --non-interactive --json`,
+      { stdio: "pipe", timeout: 15_000 },
+    );
+    // Re-read config to get the agent ID assigned by the CLI
+    const updated = await readConfig();
+    const newAgent = updated.agents?.list?.find((a) => a.workspace === workspace);
+    if (newAgent && newAgent.id !== agentId) {
+      // Rename to our expected ID format
+      newAgent.id = agentId;
+      await writeConfig(updated);
+    } else if (!newAgent) {
+      // Fallback: add manually
+      config.agents.list.push({ id: agentId, workspace, name: projectName });
+      await writeConfig(config);
+    }
+    logger.info({ agentId, workspace }, "Registered project agent via CLI");
+  } catch (err) {
+    // Fallback: write config directly (gateway won't hot-reload but at least persists)
+    logger.warn({ err, agentId }, "CLI agent add failed, falling back to direct config write");
+    config.agents.list.push({ id: agentId, workspace, name: projectName });
+    await writeConfig(config);
+  }
 
   await fs.mkdir(agentDir, { recursive: true });
   await fs.mkdir(workspace, { recursive: true });

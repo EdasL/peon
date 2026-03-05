@@ -47,6 +47,29 @@ if [[ -z "${DEPLOYMENT_NAME:-}" ]]; then
     exit 1
 fi
 
+# Fix plugin directory permissions (Windows volume mounts show as 777 and chmod is ignored)
+# Mirror the full path tree and copy only the plugin files, then symlink everything else
+# so relative imports (e.g. ../../tmux-manager.js) still resolve.
+PLUGIN_NAME="peon-gateway"
+PLUGIN_SRC="/app/packages/worker/src/openclaw/plugins/$PLUGIN_NAME"
+MIRROR_BASE="/tmp/openclaw-mirror/app/packages/worker/src/openclaw"
+PLUGIN_DST="$MIRROR_BASE/plugins/$PLUGIN_NAME"
+if [ -d "$PLUGIN_SRC" ]; then
+    rm -rf /tmp/openclaw-mirror
+    mkdir -p "$PLUGIN_DST"
+    # Copy plugin files with proper permissions
+    cp "$PLUGIN_SRC/index.ts" "$PLUGIN_DST/"
+    cp "$PLUGIN_SRC/openclaw.plugin.json" "$PLUGIN_DST/"
+    chmod 755 "$MIRROR_BASE" "$MIRROR_BASE/plugins" "$PLUGIN_DST"
+    chmod 644 "$PLUGIN_DST"/*
+    # Symlink all sibling .ts/.js files so relative imports resolve
+    for f in /app/packages/worker/src/openclaw/*.ts /app/packages/worker/src/openclaw/*.js; do
+        [ -f "$f" ] && ln -sf "$f" "$MIRROR_BASE/$(basename "$f")"
+    done
+    export OPENCLAW_PLUGIN_DIR="$MIRROR_BASE/plugins"
+    echo "🔧 Mirrored plugin to $PLUGIN_DST with fixed permissions"
+fi
+
 # Setup workspace directory
 echo "📁 Setting up workspace directory..."
 WORKSPACE_DIR="/workspace"

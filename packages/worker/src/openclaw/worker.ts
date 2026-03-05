@@ -391,6 +391,7 @@ Use it when the user references past discussions or you need context.`);
     const finalInstructions = instructionParts.filter(Boolean).join("\n\n");
 
     // Write OpenClaw config files (SOUL.md, skills, agents config)
+    // Always use master agent — project agents require gateway hot-reload not yet supported.
     const pmeta = this.config.platformMetadata as Record<string, unknown> | undefined;
     const teamMembers = Array.isArray(pmeta?.teamMembers)
       ? (pmeta.teamMembers as Array<{ roleName: string; displayName: string; systemPrompt: string }>)
@@ -401,7 +402,7 @@ Use it when the user references past discussions or you need context.`);
       customInstructions: finalInstructions,
       providerConfig: pc,
       cliBackends: pc.cliBackends,
-      openclawAgentId: (pmeta?.openclawAgentId as string) ?? "master",
+      openclawAgentId: "master",
       teamMembers,
     });
 
@@ -529,15 +530,10 @@ Use it when the user references past discussions or you need context.`);
         });
       }, HEARTBEAT_INTERVAL_MS);
 
-      // Ensure per-project agent exists if this message targets a project
-      const meta = this.config.platformMetadata as Record<string, unknown> | undefined;
-      const openclawAgentId = (meta?.openclawAgentId as string) ?? "master";
-      if (openclawAgentId !== "master" && meta?.projectId && meta?.projectName) {
-        await ensureProjectAgent(
-          meta.projectId as string,
-          meta.projectName as string,
-        );
-      }
+      // Use master agent for all sessions — project agents require OpenClaw gateway
+      // hot-reload which isn't reliably supported yet. The master agent has the
+      // same credentials and capabilities; project isolation is handled by session keys.
+      const openclawAgentId = "master";
 
       // Send message to OpenClaw and process streaming events
       const sessionKey = `agent:${openclawAgentId}:peon:${this.config.conversationId}`;
