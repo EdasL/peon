@@ -32,7 +32,7 @@ function MemberCard({
   const [promptOpen, setPromptOpen] = useState(false)
 
   return (
-    <div className="rounded-md border border-border/40 bg-zinc-900/60 p-3">
+    <div className="rounded-sm border border-border bg-card p-3">
       <div className="flex items-start gap-3">
         <span
           className={cn("mt-2 inline-block size-3 flex-shrink-0 rounded-full", member.color)}
@@ -41,25 +41,25 @@ function MemberCard({
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex gap-2">
             <div className="flex-1 min-w-0">
-              <label className="text-[10px] text-zinc-600 uppercase tracking-wide mb-0.5 block">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5 block">
                 Role key
               </label>
               <Input
                 value={member.role}
                 onChange={(e) => onChange({ ...member, role: e.target.value })}
                 placeholder="e.g. frontend"
-                className="h-7 text-xs bg-zinc-950 border-zinc-800 text-zinc-200"
+                className="h-7 text-xs"
               />
             </div>
             <div className="flex-1 min-w-0">
-              <label className="text-[10px] text-zinc-600 uppercase tracking-wide mb-0.5 block">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5 block">
                 Display name
               </label>
               <Input
                 value={member.name}
                 onChange={(e) => onChange({ ...member, name: e.target.value })}
                 placeholder="e.g. Frontend Developer"
-                className="h-7 text-xs bg-zinc-950 border-zinc-800 text-zinc-200"
+                className="h-7 text-xs"
               />
             </div>
           </div>
@@ -68,7 +68,7 @@ function MemberCard({
             <button
               type="button"
               onClick={() => setPromptOpen((v) => !v)}
-              className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
             >
               {promptOpen ? (
                 <ChevronUp className="size-3" />
@@ -83,7 +83,7 @@ function MemberCard({
                 value={member.prompt}
                 onChange={(e) => onChange({ ...member, prompt: e.target.value })}
                 rows={5}
-                className="mt-1 w-full resize-none rounded-md border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-[11px] text-zinc-300 leading-relaxed focus:outline-none focus:ring-1 focus:ring-zinc-700"
+                className="mt-1 w-full resize-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-[11px] text-foreground leading-relaxed focus:outline-none focus:ring-1 focus:ring-ring"
               />
             )}
           </div>
@@ -94,7 +94,7 @@ function MemberCard({
           aria-label={`Remove ${member.name}`}
           disabled={total <= 1}
           onClick={onDelete}
-          className="mt-1 flex-shrink-0 text-zinc-700 hover:text-zinc-400 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+          className="mt-1 flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
         >
           <X className="size-3.5" />
         </button>
@@ -133,7 +133,7 @@ function AddMemberDropdown({
         variant="outline"
         size="sm"
         disabled
-        className="w-full border-dashed border-zinc-700 text-zinc-600 bg-transparent text-xs"
+        className="w-full border-dashed text-xs"
       >
         All roles added
       </Button>
@@ -147,14 +147,14 @@ function AddMemberDropdown({
         variant="outline"
         size="sm"
         onClick={() => setOpen((v) => !v)}
-        className="w-full border-dashed border-zinc-700 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 bg-transparent text-xs"
+        className="w-full border-dashed text-xs"
       >
         <Plus className="size-3.5 mr-1.5" />
         Add member
       </Button>
 
       {open && (
-        <div className="absolute z-10 mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 py-1 shadow-lg">
+        <div className="absolute z-10 mt-1 w-full rounded-sm border border-border bg-card py-1 shadow-lg">
           {availableRoles.map((role) => (
             <button
               key={role}
@@ -163,11 +163,11 @@ function AddMemberDropdown({
                 onAdd(role)
                 setOpen(false)
               }}
-              className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors flex items-center gap-2"
+              className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-muted transition-colors flex items-center gap-2"
             >
               <span className={cn("inline-block size-2 rounded-full", ROLE_COLORS[role])} />
               <span className="font-medium">{ROLE_NAMES[role]}</span>
-              <span className="text-zinc-600 ml-auto">{role}</span>
+              <span className="text-muted-foreground ml-auto">{role}</span>
             </button>
           ))}
         </div>

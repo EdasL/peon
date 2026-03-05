@@ -7,7 +7,7 @@ export function getStatusBadgeText(state: GranularAgentState): string {
 
 export function getStatusBadgeClasses(state: GranularAgentState): string {
   if (state.toolName) {
-    return "bg-blue-500/20 text-blue-400 animate-pulse"
+    return "bg-primary/10 text-foreground animate-pulse"
   }
 
   switch (state.status) {

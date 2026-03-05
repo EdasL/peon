@@ -2,8 +2,8 @@ import { getTemplate } from "@/lib/templates"
 import type { TeamMember } from "@/lib/api"
 
 const FALLBACK_COLORS: Record<string, string> = {
-  lead: "bg-blue-500",
-  "team-lead": "bg-blue-500",
+  lead: "bg-primary",
+  "team-lead": "bg-primary",
   frontend: "bg-emerald-500",
   backend: "bg-violet-500",
   qa: "bg-amber-500",
@@ -27,7 +27,7 @@ export function getAgentColor(agentName: string, teamMembers?: TeamMember[], tem
       if (match) return match.color
     }
   }
-  return FALLBACK_COLORS[agentName.toLowerCase()] ?? "bg-zinc-500"
+  return FALLBACK_COLORS[agentName.toLowerCase()] ?? "bg-muted-foreground"
 }
 
 export function getAgentDisplayName(agentName: string, teamMembers?: TeamMember[]): string {

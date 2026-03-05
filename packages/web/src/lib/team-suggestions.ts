@@ -113,14 +113,14 @@ export const ROLE_NAMES: Record<string, string> = {
 }
 
 export const ROLE_COLORS: Record<string, string> = {
-  lead: "bg-blue-500",
+  lead: "bg-slate-700",
   frontend: "bg-emerald-500",
   backend: "bg-violet-500",
   qa: "bg-amber-500",
   designer: "bg-pink-500",
   infra: "bg-orange-500",
   mobile: "bg-cyan-500",
-  engineer: "bg-zinc-500",
+  engineer: "bg-stone-500",
 }
 
 export const ALL_ROLES = [
@@ -139,7 +139,7 @@ function makeMember(role: string): SuggestedMember {
     role,
     name: ROLE_NAMES[role] ?? role,
     prompt: ROLE_PROMPTS[role] ?? "",
-    color: ROLE_COLORS[role] ?? "bg-zinc-500",
+    color: ROLE_COLORS[role] ?? "bg-stone-500",
   }
 }
 

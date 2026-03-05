@@ -20,7 +20,7 @@ interface AgentSidebarProps {
 }
 
 const MEMBER_COLORS = [
-  "bg-blue-500",
+  "bg-primary",
   "bg-emerald-500",
   "bg-violet-500",
   "bg-amber-500",
@@ -37,9 +37,9 @@ function StatusPulse({ status }: { status: AgentState["status"] }) {
     <span
       className={cn(
         "inline-block size-1.5 rounded-full flex-shrink-0",
-        status === "working" && "bg-emerald-500 animate-pulse",
-        status === "idle" && "bg-zinc-600",
-        status === "error" && "bg-red-500"
+        status === "working" && "bg-[#22C55E] animate-pulse",
+        status === "idle" && "border border-[#C8C5BC]",
+        status === "error" && "bg-[#EF4444]"
       )}
     />
   )
@@ -93,12 +93,12 @@ function AgentCard({
   return (
     <div
       className={cn(
-        "group rounded-md border px-2.5 py-2 transition-colors relative",
+        "group rounded-sm border px-2.5 py-2 transition-colors relative",
         agent.status === "working"
-          ? "border-emerald-800/40 bg-emerald-950/20"
+          ? "border-emerald-300/60 bg-emerald-50"
           : agent.status === "error"
-            ? "border-red-800/40 bg-red-950/20"
-            : "border-border/30 bg-zinc-900/40"
+            ? "border-red-300/60 bg-red-50"
+            : "border-border bg-card"
       )}
     >
       {memberId && teamId && onRemove && (
@@ -108,7 +108,7 @@ function AgentCard({
             "absolute top-1.5 right-1.5 size-4 rounded-full flex items-center justify-center transition-all",
             confirming
               ? "bg-red-600 text-white opacity-100"
-              : "text-zinc-700 opacity-0 group-hover:opacity-100 hover:text-red-400"
+              : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-red-500"
           )}
           title={confirming ? "Click again to confirm removal" : "Remove member"}
         >
@@ -130,15 +130,15 @@ function AgentCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <StatusPulse status={agent.status} />
-            <span className="text-xs font-medium leading-none text-zinc-200 truncate flex-1 min-w-0">
+            <span className="text-xs font-medium leading-none text-foreground truncate flex-1 min-w-0">
               {displayName}
             </span>
             <span
               className={cn(
                 "text-[9px] font-semibold uppercase tracking-wider flex-shrink-0",
-                agent.status === "working" && "text-emerald-500",
-                agent.status === "idle" && "text-zinc-600",
-                agent.status === "error" && "text-red-400"
+                agent.status === "working" && "text-emerald-600",
+                agent.status === "idle" && "text-muted-foreground",
+                agent.status === "error" && "text-red-500"
               )}
             >
               {agent.status}
@@ -149,13 +149,13 @@ function AgentCard({
             <p
               className={cn(
                 "mt-1 text-[11px] leading-tight line-clamp-2",
-                isToolAction ? "text-cyan-500" : "text-zinc-500"
+                isToolAction ? "text-foreground/70" : "text-muted-foreground"
               )}
             >
               {displayText}
             </p>
           ) : (
-            <p className="mt-1 text-[11px] text-zinc-700">No active task</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">No active task</p>
           )}
         </div>
       </div>
@@ -199,13 +199,13 @@ function AddMemberForm({
   }
 
   return (
-    <div className="rounded-md border border-border/50 bg-zinc-900/60 p-2.5 space-y-2">
+    <div className="rounded-sm border border-border bg-card p-2.5 space-y-2">
       <input
         type="text"
         placeholder="Role (e.g. devops)"
         value={roleName}
         onChange={(e) => setRoleName(e.target.value)}
-        className="w-full bg-zinc-800/80 border border-border/30 rounded px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-zinc-600"
+        className="w-full bg-background border border-border rounded-sm px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-ring"
         autoFocus
       />
       <input
@@ -213,17 +213,17 @@ function AddMemberForm({
         placeholder="Display name"
         value={displayName}
         onChange={(e) => setDisplayName(e.target.value)}
-        className="w-full bg-zinc-800/80 border border-border/30 rounded px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-zinc-600"
+        className="w-full bg-background border border-border rounded-sm px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-ring"
       />
       <textarea
         placeholder="System prompt (optional)"
         value={systemPrompt}
         onChange={(e) => setSystemPrompt(e.target.value)}
         rows={2}
-        className="w-full bg-zinc-800/80 border border-border/30 rounded px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-zinc-600 resize-none"
+        className="w-full bg-background border border-border rounded-sm px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-ring resize-none"
       />
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] text-zinc-600 mr-1">Color</span>
+        <span className="text-[10px] text-muted-foreground mr-1">Color</span>
         {MEMBER_COLORS.map((c) => (
           <button
             key={c}
@@ -231,7 +231,7 @@ function AddMemberForm({
             className={cn(
               "size-4 rounded-full transition-all",
               c,
-              color === c ? "ring-2 ring-white/50 scale-110" : "opacity-50 hover:opacity-80"
+              color === c ? "ring-2 ring-foreground/30 scale-110" : "opacity-50 hover:opacity-80"
             )}
           />
         ))}
@@ -240,14 +240,14 @@ function AddMemberForm({
         <button
           onClick={handleSubmit}
           disabled={!canSubmit || saving}
-          className="flex items-center gap-1 rounded bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 px-2 py-1 text-[11px] font-medium text-zinc-200 transition-colors"
+          className="flex items-center gap-1 rounded-sm bg-primary hover:bg-primary/90 disabled:opacity-40 px-2 py-1 text-[11px] font-medium text-primary-foreground transition-colors"
         >
           <Check className="size-3" />
           {saving ? "Adding..." : "Add"}
         </button>
         <button
           onClick={onDone}
-          className="rounded px-2 py-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="rounded-sm px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
         >
           Cancel
         </button>
@@ -290,31 +290,31 @@ export function AgentSidebar({
   )
 
   return (
-    <aside className="flex h-full w-[220px] flex-shrink-0 flex-col border-r border-border/40 bg-zinc-950">
+    <aside className="flex h-full w-[220px] flex-shrink-0 flex-col border-r border-border bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/40">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Team
         </span>
         <div className="flex items-center gap-2">
           {!connected && (
-            <span className="flex items-center gap-1 text-[9px] text-amber-500">
+            <span className="flex items-center gap-1 text-[9px] text-amber-600">
               <span className="inline-block size-1.5 rounded-full bg-amber-500 animate-pulse" />
               offline
             </span>
           )}
           {loading && (
-            <span className="text-[9px] text-zinc-700">syncing</span>
+            <span className="text-[9px] text-muted-foreground">syncing</span>
           )}
           {connected && !loading && workingCount > 0 && (
-            <span className="text-[9px] font-semibold text-emerald-500 tabular-nums">
+            <span className="text-[9px] font-semibold text-emerald-600 tabular-nums">
               {workingCount} active
             </span>
           )}
           {teamId && (
             <button
               onClick={() => setShowAddForm(true)}
-              className="size-5 rounded flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
+              className="size-5 rounded-sm flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               title="Add team member"
             >
               <Plus className="size-3" />
@@ -335,7 +335,7 @@ export function AgentSidebar({
 
         {agents.length === 0 && !hasTeam ? (
           <div className="px-2 py-6 text-center space-y-3">
-            <p className="text-[11px] text-zinc-600 leading-relaxed">
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
               No team configured yet
             </p>
             <button
@@ -347,7 +347,7 @@ export function AgentSidebar({
           </div>
         ) : agents.length === 0 ? (
           <div className="px-2 py-6 text-center">
-            <p className="text-[11px] text-zinc-700 leading-relaxed">
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
               Agents will appear once tasks are created
             </p>
           </div>
@@ -372,8 +372,8 @@ export function AgentSidebar({
 
       {/* Footer: event count */}
       {feedCount > 0 && (
-        <div className="border-t border-border/40 px-3 py-2">
-          <span className="text-[10px] text-zinc-700 tabular-nums">
+        <div className="border-t border-border px-3 py-2">
+          <span className="text-[10px] text-muted-foreground tabular-nums">
             {feedCount} event{feedCount !== 1 ? "s" : ""}
           </span>
         </div>
