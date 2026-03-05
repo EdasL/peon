@@ -200,7 +200,7 @@ function HeroDemoComposition() {
           }}
         >
           {/* Message 1 — user, left-aligned */}
-          <div style={{ width: 340, display: "flex", justifyContent: "flex-start" }}>
+          <div style={{ width: 340, display: "flex", justifyContent: "flex-end" }}>
             <div
               style={{
                 opacity: msg1Opacity,
@@ -217,8 +217,8 @@ function HeroDemoComposition() {
             </div>
           </div>
 
-          {/* Message 2 — Peon, right-aligned */}
-          <div style={{ width: 340, display: "flex", justifyContent: "flex-end" }}>
+          {/* Message 2 — Peon, left-aligned */}
+          <div style={{ width: 340, display: "flex", justifyContent: "flex-start" }}>
             <div
               style={{
                 opacity: msg2Opacity,
