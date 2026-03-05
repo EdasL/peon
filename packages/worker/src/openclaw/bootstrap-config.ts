@@ -15,7 +15,9 @@ import * as path from "node:path";
 
 const DEFAULT_PORT = 18789;
 const SKILLS_DIR = "/app/packages/worker/src/openclaw/skills";
-const PLUGIN_DIR = "/app/packages/worker/src/openclaw/plugins/peon-gateway";
+const PLUGIN_DIR = process.env.OPENCLAW_PLUGIN_DIR
+  ? `${process.env.OPENCLAW_PLUGIN_DIR}/peon-gateway`
+  : "/app/packages/worker/src/openclaw/plugins/peon-gateway";
 
 interface BootstrapOptions {
   port?: number;

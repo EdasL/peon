@@ -115,7 +115,9 @@ RUN mkdir -p /workspace && \
     chown -R worker:worker /app/packages/core/dist && \
     chown -R worker:worker /app/packages/worker/dist && \
     chown -R worker:worker /app/packages/worker/scripts 2>/dev/null || true && \
-    chown -R worker:worker /app
+    chown -R worker:worker /app && \
+    # Ensure plugin directories are not world-writable (OpenClaw blocks mode=777)
+    find /app/packages/worker/src/openclaw/plugins -type d -exec chmod 755 {} + 2>/dev/null || true
 
 # Ensure worker home directory and bin are set up
 RUN mkdir -p /home/worker/bin && \
