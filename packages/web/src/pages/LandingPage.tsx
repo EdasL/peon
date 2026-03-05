@@ -23,14 +23,14 @@ function FemrunPhone() {
         height: 440,
         borderRadius: 36,
         background: "#1A1A1A",
-        border: "2px solid #2A2A2A",
+        border: "3px solid #2A2A2A",
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
         boxShadow: "0 40px 80px rgba(0,0,0,0.7)",
       }}
     >
-      <div style={{ flex: 1, background: "#0F0F0F", padding: "32px 20px 20px" }}>
+      <div style={{ flex: 1, background: "#0F0F0F", padding: "32px 20px 20px", display: "flex", flexDirection: "column" }}>
         <div
           style={{
             fontSize: 11,
@@ -97,10 +97,10 @@ function FemrunPhone() {
         </div>
 
         {/* Progress dots */}
-        <div style={{ marginTop: 24, display: "flex", justifyContent: "center", gap: 8 }}>
+        <div style={{ marginTop: "auto", paddingTop: 24, display: "flex", justifyContent: "center", gap: 8 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: PINK }} />
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: PINK }} />
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#333", border: "1px solid #444" }} />
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#333", border: "1px solid #555" }} />
         </div>
       </div>
     </div>
