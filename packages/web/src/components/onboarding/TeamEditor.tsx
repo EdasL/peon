@@ -7,7 +7,6 @@ import {
   ROLE_NAMES,
   ROLE_COLORS,
   ROLE_TAGLINES,
-  ROLE_BORDER_COLORS,
   ROLE_TEXT_COLORS,
   makeMember,
 } from "@/lib/team-suggestions"
@@ -31,7 +30,7 @@ function MemberCard({
 }) {
   const [promptOpen, setPromptOpen] = useState(false)
   const initial = (ROLE_NAMES[member.role] ?? member.role)[0]?.toUpperCase() ?? "?"
-  const borderColor = ROLE_BORDER_COLORS[member.role] ?? "border-l-stone-500"
+
   const textColor = ROLE_TEXT_COLORS[member.role] ?? "text-stone-500"
   const bgColor = ROLE_COLORS[member.role] ?? "bg-stone-500"
   const tagline = ROLE_TAGLINES[member.role] ?? ""
@@ -40,8 +39,7 @@ function MemberCard({
     <div
       className={cn(
         "relative rounded-lg border border-border/60 bg-card pl-0 transition-all",
-        "border-l-[3px]",
-        borderColor,
+
       )}
     >
       <div className="px-4 py-3">
