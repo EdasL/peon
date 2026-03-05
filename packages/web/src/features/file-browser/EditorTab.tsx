@@ -53,7 +53,7 @@ export function EditorTab({
       {locked && <LockKeyhole size={11} className="text-primary" />}
 
       {dirty && !locked && (
-        <span className="text-primary text-[10px] leading-none">●</span>
+        <span className="text-primary text-[11px] leading-none">●</span>
       )}
 
       <span className="max-w-[120px] truncate">{label}</span>

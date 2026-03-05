@@ -21,7 +21,7 @@ export const projects = pgTable("projects", {
   repoUrl: text("repo_url"),
   repoBranch: text("repo_branch").default("main"),
   templateId: text("template_id"),
-  status: text("status", { enum: ["creating", "running", "stopped", "error"] }).default("stopped").notNull(),
+  status: text("status", { enum: ["creating", "initializing", "running", "stopped", "error"] }).default("stopped").notNull(),
   deploymentName: text("deployment_name"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

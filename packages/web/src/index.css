@@ -46,6 +46,16 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-status-success: var(--status-success);
+  --color-status-success-bg: var(--status-success-bg);
+  --color-status-success-border: var(--status-success-border);
+  --color-status-success-text: var(--status-success-text);
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-warning-border: var(--status-warning-border);
+  --color-status-warning-text: var(--status-warning-text);
+  --color-status-error-bg: var(--status-error-bg);
+  --color-status-error-border: var(--status-error-border);
+  --color-status-error-text: var(--status-error-text);
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
@@ -66,7 +76,7 @@
   --secondary:           #EEECEA;
   --secondary-foreground:#1A1916;
   --muted:               #EEECEA;
-  --muted-foreground:    #8C8980;
+  --muted-foreground:    #706D66;
   --accent:              #EEECEA;
   --accent-foreground:   #1A1916;
   --destructive:         #EF4444;
@@ -80,6 +90,18 @@
   --chart-3: #22C55E;
   --chart-4: #C8C5BC;
   --chart-5: #EF4444;
+
+  /* Status — semantic feedback colors */
+  --status-success:        #22C55E;
+  --status-success-bg:     #F0FDF4;
+  --status-success-border: #BBF7D0;
+  --status-success-text:   #166534;
+  --status-warning-bg:     #FFFBEB;
+  --status-warning-border: #FDE68A;
+  --status-warning-text:   #92400E;
+  --status-error-bg:       #FEF2F2;
+  --status-error-border:   #FECACA;
+  --status-error-text:     #991B1B;
 
   /* Sidebar — dark contrast nav */
   --sidebar:                    #1A1916;
@@ -128,7 +150,9 @@
   border-color: #1A1916;
 }
 .chat-panel-root .cs-message--outgoing .cs-message__content a {
-  color: #93C5FD;
+  color: #E2E0DA;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .chat-panel-root .cs-message__footer {
   font-size: 10px;
@@ -139,11 +163,11 @@
   padding: 4px 12px;
 }
 .chat-panel-root .cs-typing-indicator__text {
-  color: #8C8980;
+  color: #706D66;
   font-size: 12px;
 }
 .chat-panel-root .cs-typing-indicator__dot {
-  background-color: #8C8980;
+  background-color: #706D66;
 }
 /* Hide avatar spacer since we don't use avatars */
 .chat-panel-root .cs-message__avatar {

@@ -110,7 +110,7 @@ export function StatusBar() {
           : "OFFLINE"
 
   return (
-    <div className="h-6 bg-muted/30 border-t border-border flex items-center px-2 sm:px-3 text-[10px] font-mono uppercase tracking-wide text-muted-foreground shrink-0 select-none">
+    <div className="h-6 bg-muted/30 border-t border-border flex items-center px-2 sm:px-3 text-[11px] font-mono uppercase tracking-wide text-muted-foreground shrink-0 select-none">
       <div className="flex items-center gap-0 flex-1 min-w-0 overflow-hidden whitespace-nowrap">
         {/* Connection status */}
         <span className={`flex items-center gap-1.5 ${statusColor} shrink-0`}>

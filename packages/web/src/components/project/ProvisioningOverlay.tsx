@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react"
-import { Loader2, Check, AlertCircle, Server, FolderCog, Cpu, Rocket } from "lucide-react"
+import { Loader2, Check, AlertCircle, Server, FolderCog, Cpu, Bot, Rocket } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Project } from "@/lib/api"
 
@@ -13,13 +13,14 @@ const STEPS: ProvisioningStep[] = [
   { key: "container", label: "Provisioning environment", icon: <Server className="h-4 w-4" /> },
   { key: "workspace", label: "Configuring workspace", icon: <FolderCog className="h-4 w-4" /> },
   { key: "engine", label: "Starting AI engine", icon: <Cpu className="h-4 w-4" /> },
-  { key: "ready", label: "Ready to go!", icon: <Rocket className="h-4 w-4" /> },
+  { key: "ready", label: "Connecting to agent", icon: <Bot className="h-4 w-4" /> },
+  { key: "setup", label: "Setting up project", icon: <Rocket className="h-4 w-4" /> },
 ]
 
 const STEP_INDEX: Record<string, number> = {}
 STEPS.forEach((s, i) => { STEP_INDEX[s.key] = i })
 
-const SKIP_TIMEOUT_MS = 60_000
+const SKIP_TIMEOUT_MS = 120_000
 
 export function ProvisioningOverlay({
   projectName,
@@ -43,10 +44,19 @@ export function ProvisioningOverlay({
     if (!bootStep) return
     const idx = STEP_INDEX[bootStep]
     if (idx !== undefined) {
-      // Mark this step as the active one (all previous become complete)
       setActiveStep((prev) => Math.max(prev, idx))
     }
   }, [bootStep])
+
+  // When status transitions to "initializing", advance to the setup step
+  useEffect(() => {
+    if (status === "initializing") {
+      const setupIdx = STEP_INDEX["setup"]
+      if (setupIdx !== undefined) {
+        setActiveStep((prev) => Math.max(prev, setupIdx))
+      }
+    }
+  }, [status])
 
   // Fallback: slowly advance step 0 after 8s if no boot_progress arrives
   useEffect(() => {
@@ -60,7 +70,7 @@ export function ProvisioningOverlay({
 
   useEffect(() => {
     if (status === "running") {
-      setActiveStep(STEPS.length - 1)
+      setActiveStep(STEPS.length)
       const timer = setTimeout(onReady, 1200)
       return () => clearTimeout(timer)
     }
@@ -70,6 +80,7 @@ export function ProvisioningOverlay({
   }, [status, onReady])
 
   const isError = status === "error"
+  const allComplete = status === "running"
 
   return (
     <div className="h-screen flex flex-col items-center justify-center bg-background">
@@ -79,19 +90,21 @@ export function ProvisioningOverlay({
           <p className="text-sm text-muted-foreground">
             {isError
               ? "Something went wrong during setup"
+              : status === "initializing"
+              ? "Almost there — agent is getting ready"
               : "This usually takes 30\u201360 seconds"}
           </p>
         </div>
 
         <div className="space-y-4">
           {STEPS.map((step, i) => {
-            const isActive = i === activeStep && !isError
-            const isComplete = i < activeStep || (i === STEPS.length - 1 && status === "running")
+            const isActive = i === activeStep && !isError && !allComplete
+            const isComplete = i < activeStep || allComplete
 
             return (
               <div
                 key={step.key}
-                className={`flex items-center gap-3 rounded-lg border px-4 py-3 transition-all duration-500 ${
+                className={`flex items-center gap-3 rounded-sm border px-4 py-3 transition-all duration-500 ${
                   isActive
                     ? "border-primary/50 bg-primary/5"
                     : isComplete
@@ -130,7 +143,7 @@ export function ProvisioningOverlay({
         </div>
 
         {isError && (
-          <div className="mt-6 rounded-lg border border-destructive/50 bg-destructive/5 p-4">
+          <div className="mt-6 rounded-sm border border-destructive/50 bg-destructive/5 p-4">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
               <div>
@@ -146,7 +159,7 @@ export function ProvisioningOverlay({
           </div>
         )}
 
-        {canSkip && !isError && status === "creating" && (
+        {canSkip && !isError && (status === "creating" || status === "initializing") && (
           <div className="mt-6 text-center">
             <p className="text-xs text-muted-foreground mb-2">
               Taking longer than expected?

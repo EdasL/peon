@@ -4,7 +4,9 @@
  * Worker containers POST boot progress steps here during startup so the
  * gateway can broadcast real-time boot status to frontend SSE clients.
  * When the worker reports "ready", the gateway transitions all of the
- * user's "creating" projects to "running".
+ * user's "creating" projects to "initializing". The final transition to
+ * "running" happens in the response renderer when the agent sends its
+ * first message.
  *
  * Authentication: Bearer worker-token (same as other /internal routes).
  */
@@ -93,12 +95,12 @@ export function createBootProgressRoutes(): Hono {
       for (const projectId of projectIds) {
         await db
           .update(projects)
-          .set({ status: "running", updatedAt: new Date() })
+          .set({ status: "initializing", updatedAt: new Date() })
           .where(and(eq(projects.id, projectId), eq(projects.status, "creating")))
 
-        broadcastToProject(projectId, "project_status", { status: "running" })
+        broadcastToProject(projectId, "project_status", { status: "initializing" })
       }
-      logger.info(`boot-progress: marked ${projectIds.length} project(s) as running`)
+      logger.info(`boot-progress: marked ${projectIds.length} project(s) as initializing`)
     }
 
     return c.json({ ok: true })

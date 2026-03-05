@@ -41,7 +41,7 @@ function MemberCard({
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex gap-2">
             <div className="flex-1 min-w-0">
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5 block">
+              <label className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5 block">
                 Role key
               </label>
               <Input
@@ -52,7 +52,7 @@ function MemberCard({
               />
             </div>
             <div className="flex-1 min-w-0">
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5 block">
+              <label className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5 block">
                 Display name
               </label>
               <Input
@@ -154,7 +154,7 @@ function AddMemberDropdown({
       </Button>
 
       {open && (
-        <div className="absolute z-10 mt-1 w-full rounded-sm border border-border bg-card py-1 shadow-lg">
+        <div className="absolute z-10 mt-1 w-full rounded-sm border border-border bg-card py-1 shadow-md">
           {availableRoles.map((role) => (
             <button
               key={role}

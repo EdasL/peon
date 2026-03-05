@@ -161,7 +161,7 @@ export function ContextMeterBar({ used, limit }: { used: number; limit: number }
       <AnimatedNumber
         value={used}
         format={fmtK}
-        className={`text-[9px] ${colors.text}`}
+        className={`text-[11px] ${colors.text}`}
         duration={700}
       />
 

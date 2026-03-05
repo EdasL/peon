@@ -16,14 +16,14 @@ export const KanbanColumn = memo(function KanbanColumn({ column, tasks }: Kanban
         <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
           {DISPLAY_COLUMN_LABELS[column]}
         </span>
-        <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm tabular-nums">
+        <span className="text-[11px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm tabular-nums">
           {tasks.length}
         </span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2 min-h-[120px]">
         {tasks.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center py-8 text-muted-foreground/40 select-none">
+          <div className="flex-1 flex flex-col items-center justify-center py-8 text-muted-foreground select-none">
             <Inbox size={20} className="mb-1.5" />
             <span className="text-[11px]">No tasks</span>
           </div>

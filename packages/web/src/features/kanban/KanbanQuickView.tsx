@@ -23,7 +23,7 @@ function TaskRow({ task, onClick }: { task: KanbanTask; onClick: () => void }) {
         {task.title}
       </span>
       {task.assignee && (
-        <span className="shrink-0 text-[10px] text-muted-foreground truncate max-w-[60px]">
+        <span className="shrink-0 text-[11px] text-muted-foreground truncate max-w-[60px]">
           {task.assignee.replace(/^agent:/, '')}
         </span>
       )}
@@ -46,16 +46,16 @@ function ColumnSection({
   return (
     <div className="mb-2 last:mb-0">
       <div className="flex items-center gap-1.5 px-1.5 mb-0.5">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           {DISPLAY_COLUMN_LABELS[column]}
         </span>
-        <span className="text-[10px] text-muted-foreground/60">{tasks.length}</span>
+        <span className="text-[11px] text-muted-foreground">{tasks.length}</span>
       </div>
       {visible.map(task => (
         <TaskRow key={task.id} task={task} onClick={() => onOpenTask(task)} />
       ))}
       {overflow > 0 && (
-        <span className="block px-1.5 text-[10px] text-muted-foreground/50">
+        <span className="block px-1.5 text-[11px] text-muted-foreground">
           +{overflow} more
         </span>
       )}
@@ -82,7 +82,7 @@ export function KanbanQuickView({ projectId, onOpenBoard, onOpenTask }: KanbanQu
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-medium text-foreground/90">Board</span>
           {totalActive > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium">
+            <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium">
               {totalActive}
             </span>
           )}
@@ -101,10 +101,10 @@ export function KanbanQuickView({ projectId, onOpenBoard, onOpenTask }: KanbanQu
           <p className="text-[11px] text-destructive px-1.5">{error}</p>
         )}
         {loading && !error && (
-          <p className="text-[11px] text-muted-foreground/50 px-1.5 animate-pulse">Loading...</p>
+          <p className="text-[11px] text-muted-foreground px-1.5 animate-pulse">Loading...</p>
         )}
         {!loading && allEmpty && !error && (
-          <p className="text-[11px] text-muted-foreground/40 px-1.5 py-4 text-center">
+          <p className="text-[11px] text-muted-foreground px-1.5 py-4 text-center">
             No active tasks
           </p>
         )}

@@ -589,7 +589,7 @@ export function LandingPage() {
       <footer className="px-6 py-10 border-t border-border">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <span className="text-sm text-muted-foreground">peon.work</span>
-          <span className="text-xs text-muted-foreground/60">
+          <span className="text-xs text-muted-foreground">
             Bring your own Anthropic key. Your data, your models.
           </span>
         </div>

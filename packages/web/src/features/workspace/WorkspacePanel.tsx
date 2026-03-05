@@ -166,7 +166,7 @@ export function WorkspacePanel({ compact = false }: WorkspacePanelProps) {
               aria-selected={isActive}
               tabIndex={isActive ? 0 : -1}
               onClick={() => handleTabChange(tab.key)}
-              className={`text-[10px] uppercase tracking-wider cursor-pointer transition-colors bg-transparent border-0 flex items-center gap-1 px-2 py-0.5 rounded-sm focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0 ${
+              className={`text-[11px] uppercase tracking-wider cursor-pointer transition-colors bg-transparent border-0 flex items-center gap-1 px-2 py-0.5 rounded-sm focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0 ${
                 i > 0 ? "ml-1" : ""
               } ${
                 isActive
@@ -196,7 +196,7 @@ export function WorkspacePanel({ compact = false }: WorkspacePanelProps) {
       {/* Feedback toast */}
       {feedback && (
         <div
-          className={`px-3 py-1.5 text-[10px] flex items-center gap-1.5 border-b ${
+          className={`px-3 py-1.5 text-[11px] flex items-center gap-1.5 border-b ${
             feedback.type === "success"
               ? "bg-green-500/10 text-green-500 border-green-500/20"
               : "bg-red-500/10 text-red-500 border-red-500/20"
@@ -212,7 +212,7 @@ export function WorkspacePanel({ compact = false }: WorkspacePanelProps) {
       )}
 
       {error && (
-        <div className="px-3 py-2 text-[10px] text-red-500 bg-red-500/10">{error}</div>
+        <div className="px-3 py-2 text-[11px] text-red-500 bg-red-500/10">{error}</div>
       )}
 
       {/* File content */}
@@ -263,13 +263,13 @@ export function WorkspacePanel({ compact = false }: WorkspacePanelProps) {
               <button
                 onClick={handleSave}
                 disabled={isLoading}
-                className="bg-transparent border border-primary/60 text-primary text-[10px] px-2 py-1 cursor-pointer flex items-center gap-1 hover:bg-primary/10 transition-colors disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0 rounded-sm"
+                className="bg-transparent border border-primary/60 text-primary text-[11px] px-2 py-1 cursor-pointer flex items-center gap-1 hover:bg-primary/10 transition-colors disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0 rounded-sm"
               >
                 <Save size={10} /> Save
               </button>
               <button
                 onClick={handleCancel}
-                className="bg-transparent border border-border/60 text-muted-foreground text-[10px] px-2 py-1 cursor-pointer flex items-center gap-1 hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0 rounded-sm"
+                className="bg-transparent border border-border/60 text-muted-foreground text-[11px] px-2 py-1 cursor-pointer flex items-center gap-1 hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0 rounded-sm"
               >
                 <X size={10} /> Cancel
               </button>

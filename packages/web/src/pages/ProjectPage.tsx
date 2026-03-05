@@ -14,8 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { ProvisioningOverlay } from "@/components/project/ProvisioningOverlay"
-import { StatusBar } from "@/components/project/StatusBar"
-import { OpenClawProvider } from "@/contexts/OpenClawContext"
+import { OpenClawProvider, useOpenClaw } from "@/contexts/OpenClawContext"
 import { TeamPanel } from "@/features/sessions"
 import { KanbanPanel } from "@/features/kanban"
 import type { Project, TeamMember } from "@/lib/api"
@@ -66,8 +65,10 @@ type CenterView = "chat" | "board"
 
 function ProjectBody({
   projectId,
+  chatDisabled,
 }: {
   projectId: string
+  chatDisabled?: boolean
 }) {
   const [leftOpen, setLeftOpen] = useState(true)
 
@@ -84,7 +85,7 @@ function ProjectBody({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left panel: Sessions */}
         {leftOpen && (
-          <div className="w-[240px] flex-shrink-0 border-r border-border flex flex-col min-h-0 bg-background/50">
+          <div className="w-[240px] flex-shrink-0 border-r border-border flex flex-col min-h-0 bg-background">
             <div className="flex-1 min-h-0 overflow-auto">
               <TeamPanel />
             </div>
@@ -129,7 +130,7 @@ function ProjectBody({
 
           <div className="flex-1 min-h-0 relative">
             <div className={`absolute inset-0 ${centerView === "chat" ? "" : "hidden"}`}>
-              <ChatPanel projectId={projectId} />
+              <ChatPanel projectId={projectId} disabled={chatDisabled} />
             </div>
             <div className={`absolute inset-0 ${centerView === "board" ? "" : "hidden"}`}>
               <KanbanPanel projectId={projectId} />
@@ -138,9 +139,25 @@ function ProjectBody({
         </div>
 
       </div>
-
-      <StatusBar />
     </div>
+  )
+}
+
+const connectionMeta: Record<string, { dot: string; text: string; bg: string; fg: string; pulse?: boolean }> = {
+  connected:    { dot: "bg-status-success", text: "Connected",    bg: "bg-status-success/10", fg: "text-status-success-text" },
+  connecting:   { dot: "bg-status-warning-text",  text: "Connecting",   bg: "bg-status-warning-bg",  fg: "text-status-warning-text", pulse: true },
+  reconnecting: { dot: "bg-status-warning-text",  text: "Reconnecting", bg: "bg-status-warning-bg",  fg: "text-status-warning-text", pulse: true },
+}
+const offlineMeta = { dot: "bg-destructive", text: "Offline", bg: "bg-destructive/10", fg: "text-destructive" }
+
+function ConnectionBadge() {
+  const { connectionState } = useOpenClaw()
+  const m = connectionMeta[connectionState] ?? offlineMeta
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full ${m.bg} ${m.fg}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${m.dot} ${m.pulse ? "animate-pulse" : ""}`} />
+      {m.text}
+    </span>
   )
 }
 
@@ -173,7 +190,7 @@ export function ProjectPage() {
         const ageMs = Date.now() - new Date(project.createdAt).getTime()
         const effectiveStatus =
           project.status === "creating" && ageMs > 3 * 60 * 1000
-            ? "running"
+            ? "initializing"
             : project.status
         setStatus(effectiveStatus)
       })
@@ -182,7 +199,7 @@ export function ProjectPage() {
 
   useEffect(() => {
     if (!id || !status || status === "error") return
-    const intervalMs = status === "creating" ? 3_000 : 30_000
+    const intervalMs = (status === "creating" || status === "initializing") ? 3_000 : 30_000
     const interval = setInterval(() => {
       api
         .getProjectStatus(id)
@@ -242,7 +259,7 @@ export function ProjectPage() {
   if (!id) return null
   if (loading || status === null) return <ProjectSkeleton />
 
-  if (status === "creating") {
+  if (status === "creating" || status === "initializing") {
     return (
       <ProvisioningOverlay
         projectName={project?.name ?? "your project"}
@@ -258,7 +275,7 @@ export function ProjectPage() {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-background p-6">
         <div className="w-full max-w-md">
-          <div className="bg-red-50 border border-red-200 rounded-sm p-6">
+          <div className="bg-status-error-bg border border-status-error-border rounded-sm p-6">
             <div className="flex items-start gap-3 mb-4">
               <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
               <div>
@@ -299,14 +316,14 @@ export function ProjectPage() {
     <OpenClawProvider projectId={isRunning ? id : null}>
       <div className="h-screen flex flex-col bg-background overflow-hidden">
         {status === "stopped" && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-700 text-xs flex-shrink-0">
+          <div className="flex items-center gap-2 px-4 py-2 bg-status-warning-bg border-b border-status-warning-border text-status-warning-text text-xs flex-shrink-0">
             <Power className="h-3.5 w-3.5" />
             <span className="flex-1">
               {statusMessage ?? "Container is stopped. Activity data is from the last session."}
             </span>
             <button
               onClick={handleRestart}
-              className="px-2 py-0.5 rounded-sm bg-amber-100 hover:bg-amber-200 text-amber-800 font-medium transition-colors cursor-pointer"
+              className="px-2 py-0.5 rounded-sm bg-status-warning-border/40 hover:bg-status-warning-border/60 text-status-warning-text font-medium transition-colors cursor-pointer"
             >
               Restart
             </button>
@@ -328,18 +345,14 @@ export function ProjectPage() {
             {project?.name ?? "Project"}
           </h1>
 
-          {isRunning && (
-            <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Running
-            </span>
-          )}
-          {status === "stopped" && (
+          {isRunning ? (
+            <ConnectionBadge />
+          ) : status === "stopped" ? (
             <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-sm bg-muted text-muted-foreground">
               <span className="h-1.5 w-1.5 rounded-full bg-[#C8C5BC]" />
               Stopped
             </span>
-          )}
+          ) : null}
 
           {headerTeamMembers.length > 0 ? (
             <div className="flex items-center gap-1.5 ml-1">
@@ -350,7 +363,7 @@ export function ProjectPage() {
                   title={m.displayName}
                 />
               ))}
-              <span className="text-[11px] text-muted-foreground/60">{headerTeamMembers.length} members</span>
+              <span className="text-[11px] text-muted-foreground">{headerTeamMembers.length} members</span>
             </div>
           ) : tmpl ? (
             <div className="flex items-center gap-1.5 ml-1">
@@ -361,7 +374,7 @@ export function ProjectPage() {
                   title={a.role}
                 />
               ))}
-              <span className="text-[11px] text-muted-foreground/60">{tmpl.name}</span>
+              <span className="text-[11px] text-muted-foreground">{tmpl.name}</span>
             </div>
           ) : null}
 
@@ -398,7 +411,7 @@ export function ProjectPage() {
         </header>
 
         {/* Body: left panel + center + right panel + bottom status bar */}
-        <ProjectBody projectId={id} />
+        <ProjectBody projectId={id} chatDisabled={status === "stopped"} />
       </div>
     </OpenClawProvider>
   )

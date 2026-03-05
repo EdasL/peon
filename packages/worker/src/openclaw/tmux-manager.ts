@@ -4,10 +4,15 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 
 export async function createSession(sessionName: string, cwd: string): Promise<void> {
-  // Kill existing session if any (cleanup from previous run)
   await execAsync(`tmux kill-session -t ${sessionName} 2>/dev/null || true`);
-  // Create new detached session in the workspace directory
-  await execAsync(`tmux new-session -d -s ${sessionName} -c ${cwd}`);
+  try {
+    await execAsync(`tmux new-session -d -s ${sessionName} -c ${cwd}`);
+  } catch {
+    // Stale socket from a dead server — nuke it and retry
+    await execAsync(`tmux kill-server 2>/dev/null || true`);
+    await execAsync(`rm -f /tmp/tmux-*/default 2>/dev/null || true`);
+    await execAsync(`tmux new-session -d -s ${sessionName} -c ${cwd}`);
+  }
 }
 
 export async function sendKeys(sessionName: string, keys: string): Promise<void> {

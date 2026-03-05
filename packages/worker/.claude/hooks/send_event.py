@@ -94,6 +94,16 @@ def main():
         # Don't block Claude Code if gateway is unreachable
         pass
 
+    # Write a sentinel file so the worker can detect completion without
+    # parsing terminal output. The worker polls for this file.
+    if args.event_type in ("Stop", "SessionEnd") and args.project_id:
+        sentinel = f"/tmp/peon-team-done-{args.project_id}"
+        try:
+            with open(sentinel, "w") as f:
+                f.write(str(int(__import__("time").time() * 1000)))
+        except OSError:
+            pass
+
 
 if __name__ == "__main__":
     main()

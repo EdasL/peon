@@ -37,7 +37,7 @@ function formatTime(iso: string): string {
   }
 }
 
-export function ChatPanel({ projectId }: { projectId: string }) {
+export function ChatPanel({ projectId, disabled }: { projectId: string; disabled?: boolean }) {
   const { messages, send, sending, streamingContent, loading, error, connected } =
     useChat(projectId)
   const [input, setInput] = useState("")
@@ -50,7 +50,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   const msgListRef = useRef<HTMLDivElement>(null)
 
   const handleSend = () => {
-    if (!input.trim()) return
+    if (!input.trim() || disabled) return
     send(input.trim())
     setInput("")
   }
@@ -67,13 +67,13 @@ export function ChatPanel({ projectId }: { projectId: string }) {
         </div>
         <div className="flex items-center gap-1.5">
           {connected ? (
-            <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <span className="size-1.5 rounded-full bg-[#22C55E]" />
               live
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 text-[10px] text-amber-600">
-              <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <span className="flex items-center gap-1.5 text-[11px] text-status-warning-text">
+              <span className="size-1.5 rounded-full bg-status-warning-text animate-pulse" />
             </span>
           )}
         </div>
@@ -81,7 +81,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
       {/* Error banner */}
       {visibleError && (
-        <div className="flex items-start gap-2 bg-red-50 border-b border-red-200 px-4 py-2 text-xs text-destructive">
+        <div className="flex items-start gap-2 bg-status-error-bg border-b border-status-error-border px-4 py-2 text-xs text-destructive">
           <span className="flex-1">{visibleError}</span>
           <button
             onClick={() => setDismissedError(visibleError)}
@@ -95,7 +95,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
 
       {/* Reconnection banner */}
       {hasConnectedOnce && !connected && (
-        <div className="flex items-center gap-2 bg-amber-50 border-b border-amber-200 px-3 py-1.5 text-xs text-amber-700">
+        <div className="flex items-center gap-2 bg-status-warning-bg border-b border-status-warning-border px-3 py-1.5 text-xs text-status-warning-text">
           <RefreshCw className="h-3 w-3 animate-spin" />
           <span>Reconnecting to server...</span>
         </div>
@@ -105,15 +105,15 @@ export function ChatPanel({ projectId }: { projectId: string }) {
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/40" />
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : messages.length === 0 && !streamingContent ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <MessageSquare className="h-8 w-8 text-muted-foreground/30 mb-3" />
+            <MessageSquare className="h-8 w-8 text-muted-foreground mb-3" />
             <p className="text-sm text-muted-foreground">
               Describe a feature or bug to get started
             </p>
-            <p className="text-xs text-muted-foreground/60 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Your team will pick up the work automatically
             </p>
           </div>
@@ -144,7 +144,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
                   )}
                 </Message.CustomContent>
                 <Message.Footer>
-                  <span className="text-[10px] text-muted-foreground/50">
+                  <span className="text-[11px] text-muted-foreground">
                     {msg.role === "user" ? "You" : "Team Lead"}
                     {msg.createdAt && ` \u00b7 ${formatTime(msg.createdAt)}`}
                   </span>
@@ -162,7 +162,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
                   <MarkdownMessage content={streamingContent + "\u258D"} />
                 </Message.CustomContent>
                 <Message.Footer>
-                  <span className="text-[10px] text-muted-foreground/50">Team Lead</span>
+                  <span className="text-[11px] text-muted-foreground">Team Lead</span>
                 </Message.Footer>
               </Message>
             )}
@@ -187,11 +187,11 @@ export function ChatPanel({ projectId }: { projectId: string }) {
                   handleSend()
                 }
               }}
-              placeholder="Message team lead..."
-              disabled={sending}
+              placeholder={disabled ? "Chat unavailable" : "Message team lead..."}
+              disabled={sending || disabled}
               rows={1}
               className={cn(
-                "w-full resize-none rounded-sm border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/60",
+                "w-full resize-none rounded-sm border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground",
                 "focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-[#C8C5BC]",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
                 "min-h-[36px] max-h-[120px] leading-relaxed"
@@ -201,7 +201,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
           <Button
             size="icon"
             onClick={handleSend}
-            disabled={sending || !input.trim()}
+            disabled={sending || disabled || !input.trim()}
             className="h-[36px] min-h-[36px] w-[36px] flex-shrink-0"
           >
             {sending ? (
@@ -211,8 +211,8 @@ export function ChatPanel({ projectId }: { projectId: string }) {
             )}
           </Button>
         </div>
-        <p className="mt-1 text-[10px] text-muted-foreground/50">
-          Enter to send, Shift+Enter for new line
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {disabled ? "Container is stopped. Restart to continue." : "Enter to send, Shift+Enter for new line"}
         </p>
       </div>
     </div>

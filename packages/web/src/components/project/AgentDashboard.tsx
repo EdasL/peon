@@ -52,7 +52,7 @@ export function AgentDashboard({ projectId, templateId, onSwitchToBoard }: Agent
           >
             Activity
             {feed.length > 0 && (
-              <span className="ml-1.5 rounded-full bg-zinc-700 px-1.5 py-px text-[10px]">
+              <span className="ml-1.5 rounded-full bg-zinc-700 px-1.5 py-px text-[11px]">
                 {feed.length}
               </span>
             )}
@@ -61,22 +61,22 @@ export function AgentDashboard({ projectId, templateId, onSwitchToBoard }: Agent
 
         <div className="ml-auto flex items-center gap-2">
           {!connected && (
-            <span className="flex items-center gap-1 text-[10px] text-amber-500">
+            <span className="flex items-center gap-1 text-[11px] text-amber-500">
               <span className="inline-block size-1.5 rounded-full bg-amber-500 animate-pulse" />
               Reconnecting...
             </span>
           )}
           {connected && !loading && workingCount === 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-zinc-600">
+            <span className="flex items-center gap-1 text-[11px] text-zinc-600">
               <span className="inline-block size-1.5 rounded-full bg-zinc-600" />
               Connected
             </span>
           )}
           {loading && (
-            <span className="text-[10px] text-zinc-600">syncing...</span>
+            <span className="text-[11px] text-zinc-600">syncing...</span>
           )}
           {!loading && workingCount > 0 && (
-            <span className="text-[10px] font-medium text-emerald-500">
+            <span className="text-[11px] font-medium text-emerald-500">
               {workingCount} agent{workingCount !== 1 ? "s" : ""} working
             </span>
           )}
@@ -128,7 +128,7 @@ export function AgentDashboard({ projectId, templateId, onSwitchToBoard }: Agent
                     </h3>
                     <button
                       onClick={() => setView("feed")}
-                      className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                      className="text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
                     >
                       View all
                     </button>
@@ -194,7 +194,7 @@ function MiniEventRow({ event }: { event: import("@/hooks/use-agent-activity").A
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/20 last:border-0">
-      <span className="font-mono text-[10px] text-zinc-600 tabular-nums flex-shrink-0">
+      <span className="font-mono text-[11px] text-zinc-600 tabular-nums flex-shrink-0">
         {time}
       </span>
       <span

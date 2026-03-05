@@ -167,7 +167,7 @@ export function SpawnAgentDialog({
 
         <div className="flex flex-col gap-3">
           <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+            <label className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1 block">
               Task / Prompt
             </label>
             <textarea
@@ -175,11 +175,11 @@ export function SpawnAgentDialog({
               onChange={(e) => setTask(e.target.value)}
               placeholder="What should this agent do?"
               rows={3}
-              className="w-full bg-background border border-border/60 text-foreground text-xs font-mono px-2 py-1.5 resize-y focus:outline-none focus:border-primary placeholder:text-muted-foreground/50"
+              className="w-full bg-background border border-border/60 text-foreground text-xs font-mono px-2 py-1.5 resize-y focus:outline-none focus:border-primary placeholder:text-muted-foreground"
             />
           </div>
           <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+            <label className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1 block">
               Label (optional)
             </label>
             <input
@@ -187,12 +187,12 @@ export function SpawnAgentDialog({
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="e.g. refactor-auth"
-              className="w-full bg-background border border-border/60 text-foreground text-xs font-mono px-2 py-1.5 focus:outline-none focus:border-primary placeholder:text-muted-foreground/50"
+              className="w-full bg-background border border-border/60 text-foreground text-xs font-mono px-2 py-1.5 focus:outline-none focus:border-primary placeholder:text-muted-foreground"
             />
           </div>
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+              <label className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1 block">
                 Model
               </label>
               <Select value={model} onValueChange={setModel} disabled={spawning}>
@@ -209,7 +209,7 @@ export function SpawnAgentDialog({
               </Select>
             </div>
             <div className="flex-1">
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+              <label className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1 block">
                 Thinking
               </label>
               <Select
@@ -231,10 +231,10 @@ export function SpawnAgentDialog({
             </div>
           </div>
           {spawnError && (
-            <p className="text-[10px] text-red-400 font-mono">{spawnError}</p>
+            <p className="text-[11px] text-destructive font-mono">{spawnError}</p>
           )}
           {spawning && (
-            <p className="text-[10px] text-muted-foreground animate-pulse">
+            <p className="text-[11px] text-muted-foreground animate-pulse">
               Waiting for agent to spawn subagent...
             </p>
           )}

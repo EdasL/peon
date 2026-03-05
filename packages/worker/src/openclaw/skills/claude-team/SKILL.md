@@ -43,6 +43,32 @@ Todo column and move to In Progress / Done as the team works on them.
 
 **Returns:** Confirmation with created task IDs.
 
+### ListProjectTasks
+List all tasks on the current project's board. Use this to find task IDs when you
+need to update or delete tasks (e.g. after a new session where IDs are lost).
+
+**Parameters:** None.
+
+**Returns:** Formatted list with task IDs, subjects, statuses, board columns, and owners.
+
+### UpdateTaskStatus
+Move a task between board columns. Updates the board in real time.
+
+**Parameters:**
+- `taskId` (required): The task ID (returned by CreateProjectTasks or ListProjectTasks)
+- `status` (required): New status — `in_progress`, `done`, `blocked`, or `todo`
+- `owner` (optional): Agent role that owns this task
+
+**Returns:** Confirmation of the status change.
+
+### DeleteTask
+Remove a task from the project board permanently.
+
+**Parameters:**
+- `taskId` (required): The task ID to delete
+
+**Returns:** Confirmation of deletion.
+
 ## Recommended Workflow
 
 ```
@@ -73,3 +99,4 @@ Todo column and move to In Progress / Done as the team works on them.
 Always pass the configured team from your "Your Team" section as `teamMembers`.
 Do not invent new roles — only use the roles the user configured.
 Always create tasks on the board before delegating so the user can track progress.
+Use ListProjectTasks to recover task IDs if you need to update or delete tasks and don't have the IDs in context.

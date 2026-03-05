@@ -54,7 +54,7 @@ export async function ensureUserContainer(
     botId: "peon-agent",
     platform: "peon",
     messageText: "[system] User container initialized. Ready for project workspaces.",
-    platformMetadata: { userId },
+    platformMetadata: { userId, isSystemMessage: true },
     agentOptions: { provider: "claude" },
   })
 
@@ -190,6 +190,7 @@ ${teamSpawnInstruction ? `\n${teamSpawnInstruction}` : ""}`,
       userId,
       templateId,
       teamMembers: members,
+      isSystemMessage: true,
     },
     agentOptions: { provider: "claude" },
   })
@@ -197,9 +198,14 @@ ${teamSpawnInstruction ? `\n${teamSpawnInstruction}` : ""}`,
 
 /**
  * Polls the container status until Docker reports "running" or "error".
- * When Docker is "running", broadcasts a boot_progress event but does NOT
- * mark the project as "running" — that transition is controlled by the
- * worker's "ready" boot-progress signal via POST /internal/boot-progress.
+ * When Docker is "running", broadcasts boot_progress events and connects
+ * the OpenClaw event stream. For subsequent projects where the worker is
+ * already running, fast-tracks the project to "initializing" so it doesn't
+ * get stuck in "creating" waiting for a boot-progress "ready" that already
+ * fired.
+ *
+ * The final transition to "running" happens in the response renderer when
+ * the agent sends its first message.
  *
  * Fires-and-forgets internally — the caller is not blocked.
  */
@@ -214,6 +220,7 @@ export async function waitForContainerReady(
   const deadline = Date.now() + timeoutMs
 
   const poll = async () => {
+    let isFirstPoll = true
     while (Date.now() < deadline) {
       const status = await getContainerStatus(deploymentName)
       if (status === "running") {
@@ -235,6 +242,19 @@ export async function waitForContainerReady(
         } catch (err) {
           console.error(`Failed to connect OpenClaw event stream for ${projectId}:`, err)
         }
+
+        // If the container was already running on first poll, the worker's
+        // boot-progress "ready" step already fired for earlier projects and
+        // won't fire again. Fast-track this project to "initializing".
+        if (isFirstPoll) {
+          for (const step of ["workspace", "engine", "ready"] as const) {
+            broadcastToProject(projectId, "boot_progress", { step, label: step })
+          }
+          await db.update(projects)
+            .set({ status: "initializing", updatedAt: new Date() })
+            .where(eq(projects.id, projectId))
+          broadcastToProject(projectId, "project_status", { status: "initializing" })
+        }
         return
       }
       if (status === "error") {
@@ -243,6 +263,7 @@ export async function waitForContainerReady(
         broadcastToProject(projectId, "project_status", { status: "error", message: "Container reported an error during startup" })
         return
       }
+      isFirstPoll = false
       await new Promise((r) => setTimeout(r, intervalMs))
     }
     // Timeout — mark as error

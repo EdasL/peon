@@ -212,7 +212,7 @@ export interface Project {
   name: string
   repoUrl: string | null
   templateId: string
-  status: "creating" | "running" | "stopped" | "error"
+  status: "creating" | "initializing" | "running" | "stopped" | "error"
   createdAt: string
   updatedAt: string
 }

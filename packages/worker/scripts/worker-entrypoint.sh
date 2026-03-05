@@ -14,6 +14,9 @@ cleanup() {
         kill "$OPENCLAW_PID" 2>/dev/null || true
     fi
 
+    # Kill all tmux sessions and the tmux server (not managed by shell jobs)
+    tmux kill-server 2>/dev/null || true
+
     # Kill any other background processes
     jobs -p | xargs -r kill || true
 
@@ -62,6 +65,11 @@ export TMP="${TMP:-$TMPDIR}"
 export TEMP="${TEMP:-$TMPDIR}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$WORKSPACE_DIR/.cache}"
 mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
+
+# Clean up stale tmux sockets from previous container runs.
+# A dead socket causes "no server running on ..." errors.
+tmux kill-server 2>/dev/null || true
+rm -f /tmp/tmux-*/default 2>/dev/null || true
 
 cd "$WORKSPACE_DIR"
 

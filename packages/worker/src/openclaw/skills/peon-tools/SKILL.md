@@ -17,6 +17,9 @@ to interact with the user through the platform (Slack, WhatsApp, Telegram, Web).
 - **GetChannelHistory** — Fetch previous messages from the conversation thread
 - **AskUserQuestion** — Post a question with clickable button options
 - **CreateProjectTasks** — Create tasks on a project's kanban board (Todo column) before delegating work. Use this to break a user request into well-defined tasks that the user can see and track.
+- **ListProjectTasks** — List all tasks on the current project's board with IDs, subjects, statuses, and owners. Use to find task IDs for updating or deleting.
+- **UpdateTaskStatus** — Move a task between board columns (in_progress, done, blocked, todo). Requires the task ID.
+- **DeleteTask** — Remove a task from the project board permanently. Requires the task ID.
 - **DelegateToProject** — Send a coding task to your team. Always include the full configured team as teamMembers.
 - **CheckTeamStatus** — Check if a Claude Code team is still working
 - **GetTeamResult** — Get the result from a completed team task

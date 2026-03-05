@@ -10,12 +10,11 @@
  * Static credentials come from inherited env vars.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync, unlinkSync } from "node:fs";
 import { readFile, stat, writeFile, mkdir, unlink, copyFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { buildToolActivityText } from "../../tool-activity.js";
 import {
   createSession,
   sendKeys,
@@ -442,7 +441,7 @@ async function createProjectTasks(
   const errors: string[] = [];
 
   for (const t of params.tasks) {
-    const id = `peon-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const id = crypto.randomUUID();
     const body = {
       id,
       subject: t.subject,
@@ -534,12 +533,65 @@ async function updateTaskStatus(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Task sync helpers — forward Claude Code's TaskCreate/TaskUpdate/TaskList
-// tool calls to the gateway's internal task API so they appear in the board.
-// ---------------------------------------------------------------------------
+async function listProjectTasks(
+  _id: string,
+  _params: Record<string, never>,
+): Promise<ToolResult> {
+  const g = gw();
+  if (!g.gatewayUrl || !g.workerToken) {
+    return text("Error: gateway not configured");
+  }
 
-const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskUpdate", "TaskList"]);
+  try {
+    const res = await fetch(`${g.gatewayUrl}/internal/tasks`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${g.workerToken}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      return text(`Error fetching tasks: ${res.statusText}`);
+    }
+    const { tasks } = (await res.json()) as { tasks: Array<{ id: string; subject: string; status: string; boardColumn: string; owner: string | null }> };
+    if (!tasks.length) {
+      return text("No tasks on the board.");
+    }
+    const lines = [`Board tasks (${tasks.length}):`];
+    for (const t of tasks) {
+      const owner = t.owner ? ` | owner: ${t.owner}` : "";
+      lines.push(`- [${t.id}] "${t.subject}" | status: ${t.status} | column: ${t.boardColumn}${owner}`);
+    }
+    return text(lines.join("\n"));
+  } catch (err) {
+    return text(`Error fetching tasks: ${String(err)}`);
+  }
+}
+
+async function deleteTask(
+  _id: string,
+  params: { taskId: string },
+): Promise<ToolResult> {
+  const g = gw();
+  if (!g.gatewayUrl || !g.workerToken) {
+    return text("Error: gateway not configured");
+  }
+  if (!params.taskId) {
+    return text("Error: taskId is required");
+  }
+
+  try {
+    const res = await fetch(`${g.gatewayUrl}/internal/tasks/${encodeURIComponent(params.taskId)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${g.workerToken}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      return text(`Error deleting task ${params.taskId}: ${res.statusText}`);
+    }
+    return text(`Task ${params.taskId} deleted.`);
+  } catch (err) {
+    return text(`Error deleting task ${params.taskId}: ${String(err)}`);
+  }
+}
 
 // Inline fallback for send_event.py in case the source file can't be copied
 const SEND_EVENT_SCRIPT = `#!/usr/bin/env python3
@@ -576,96 +628,14 @@ def main():
         headers={"Content-Type":"application/json","Authorization":f"Bearer {tk}"}, method="POST")
     try: urllib.request.urlopen(req, timeout=5)
     except: pass
+    if a.event_type in ("Stop", "SessionEnd") and a.project_id:
+        try:
+            with open(f"/tmp/peon-team-done-{a.project_id}", "w") as f:
+                f.write(str(int(__import__("time").time()*1000)))
+        except: pass
 
 if __name__ == "__main__": main()
 `;
-
-// Map Claude Code task status to our status enum
-function normalizeStatus(s?: string): "pending" | "in_progress" | "completed" {
-  if (s === "in_progress") return "in_progress";
-  if (s === "completed") return "completed";
-  return "pending";
-}
-
-// Map Claude Code activeForm / status fields to a boardColumn
-function deriveBoardColumn(status?: string): string {
-  if (status === "in_progress") return "in_progress";
-  if (status === "completed") return "done";
-  return "todo";
-}
-
-async function syncTaskToGateway(toolName: string, input: Record<string, unknown>): Promise<void> {
-  if (toolName === "TaskList") return; // read-only, nothing to sync
-
-  const g = gw();
-  if (!g.gatewayUrl || !g.workerToken) return;
-
-  // TaskCreate: { subject, description, activeForm, metadata }
-  // TaskUpdate: { taskId, status, subject, description, owner, metadata, addBlocks, addBlockedBy }
-  // Both need to be upserted. We derive a stable id from the taskId field or generate one.
-  const taskId = (input.taskId ?? input.id) as string | undefined;
-  if (!taskId && toolName !== "TaskCreate") return;
-
-  const subject = (input.subject ?? "") as string;
-  if (!subject && toolName === "TaskCreate") return;
-
-  const status = normalizeStatus((input.status as string) ?? undefined);
-  const boardColumn = deriveBoardColumn((input.status as string) ?? undefined);
-  const owner = (input.owner as string | null) ?? null;
-
-  // Use taskId for updates, generate a deterministic id for creates
-  // Claude Code assigns a numeric/string id — we store it as-is
-  const id = taskId ?? `cc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  const body = {
-    id,
-    subject: subject || `Task ${id}`,
-    description: (input.description as string) ?? "",
-    status,
-    owner,
-    boardColumn,
-    metadata: (input.metadata as Record<string, unknown>) ?? undefined,
-    updatedAt: Date.now(),
-    blocks: (input.addBlocks as string[]) ?? [],
-    blockedBy: (input.addBlockedBy as string[]) ?? [],
-  };
-
-  try {
-    await fetch(`${g.gatewayUrl}/internal/tasks`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${g.workerToken}`,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch {
-    // Fire-and-forget — never block the team
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Subagent activity posting — forwards tool_use/tool_result events from
-// the Claude Code subprocess to /internal/agent-activity so the activity
-// feed shows what delegated agents are doing in real time.
-// ---------------------------------------------------------------------------
-
-// Tools we never want to surface as activity (too noisy / internal)
-const SILENT_TOOLS = new Set(["TodoRead", "TodoWrite"]);
-
-// Sub-agent activity events are now streamed directly from the OpenClaw
-// gateway to the Peon gateway via WebSocket (connection-manager.ts).
-// The old fire-and-forget HTTP relay (postSubagentActivity) has been removed.
-async function postSubagentActivity(
-  _agentName: string,
-  _type: "tool_start" | "tool_end" | "turn_end",
-  _tool?: string,
-  _text?: string,
-  _extra?: { filePath?: string; command?: string },
-): Promise<void> {
-  // No-op — events now flow via OpenClaw WS -> connection-manager -> SSE
-}
 
 // ---------------------------------------------------------------------------
 // DelegateToProject (Claude Code Agent Teams management)
@@ -684,9 +654,24 @@ interface TeamProcess {
   output: string;
   completed: boolean;
   exitCode: number | null;
+  completionPromise: Promise<void>;
+  resolveCompletion: () => void;
 }
 
 const activeTeams = new Map<string, TeamProcess>();
+
+function sentinelPath(projectId: string): string {
+  return `/tmp/peon-team-done-${projectId}`;
+}
+
+export function signalTeamCompletion(projectId: string): void {
+  const team = activeTeams.get(projectId);
+  if (team && !team.completed) {
+    team.completed = true;
+    team.exitCode = 0;
+    team.resolveCompletion();
+  }
+}
 
 function getProjectWorkspace(projectId: string): string {
   return join(homedir(), "projects", projectId);
@@ -757,7 +742,16 @@ async function delegateToProject(
 
 You are the lead agent. Before writing any code, you MUST spawn teammates using agent teams. Do not implement anything yourself except coordination and task breakdown. Spawn at minimum: backend, frontend, and qa teammates. Only start working once the team is active.
 
-Use TaskCreate to break work into tasks, assign them to teammates, and track progress. Review results before marking tasks complete.
+## Task Board (mandatory)
+
+Every piece of work MUST be tracked on the board. Follow this protocol strictly:
+
+1. Before delegation: call TaskCreate for each task with a clear subject and owner
+2. When a teammate starts a task: call TaskUpdate with status "in_progress"
+3. When a teammate finishes a task: call TaskUpdate with status "completed"
+4. Use TodoWrite to track sub-steps within larger tasks
+
+Never skip task status updates — the user watches the board to track progress.
 
 `;
 
@@ -850,7 +844,6 @@ Use TaskCreate to break work into tasks, assign them to teammates, and track pro
   }
 
   const sessionName = `peon-${params.projectId}`;
-  const subagentName = params.role || "lead";
   const allowedTools = params.allowedTools || "Read,Edit,Write,Bash,Grep,Glob";
   const hasTeam = !!(params.teamMembers?.length && params.teamMembers.length > 0);
 
@@ -860,6 +853,9 @@ Use TaskCreate to break work into tasks, assign them to teammates, and track pro
     : "";
   const fullTask = teamLeadPrefix + teamSpawnPrompt + params.task;
 
+  let resolveCompletion!: () => void;
+  const completionPromise = new Promise<void>((r) => { resolveCompletion = r; });
+
   const team: TeamProcess = {
     sessionName,
     projectId: params.projectId,
@@ -867,206 +863,130 @@ Use TaskCreate to break work into tasks, assign them to teammates, and track pro
     output: "",
     completed: false,
     exitCode: null,
+    completionPromise,
+    resolveCompletion,
   };
   activeTeams.set(params.projectId, team);
 
-  (async () => {
+  // Clean up any stale sentinel file from a previous run
+  try { unlinkSync(sentinelPath(params.projectId)); } catch { /* ignore */ }
+
+  // Background health check: polls tmux session and sentinel file to
+  // resolve completionPromise when the team finishes or the session dies.
+  const healthCheckInterval = setInterval(async () => {
+    if (team.completed) { clearInterval(healthCheckInterval); return; }
     try {
-      await createSession(sessionName, projectDir);
-
-      if (hasTeam) {
-        // --- Interactive mode for Agent Teams ---
-        // Agent Teams require an interactive Claude session (no -p flag).
-        // --teammate-mode in-process keeps all teammates in the same
-        // terminal, avoiding nested tmux conflicts.
-        const claudeCmd = [
-          "claude",
-          "--dangerously-skip-permissions",
-          "--teammate-mode", "in-process",
-          "--allowedTools", allowedTools,
-        ].join(" ");
-
-        await sendKeys(sessionName, claudeCmd);
-
-        // Wait for Claude's interactive prompt to appear before sending the task.
-        const readyTimeout = 60_000;
-        const readyStart = Date.now();
-        let ready = false;
-        while (Date.now() - readyStart < readyTimeout) {
-          const pane = await capturePane(sessionName).catch(() => "");
-          // Claude shows a ">" prompt or "Type your message" when ready
-          if (pane.includes(">") || pane.includes("Type your") || pane.includes("Claude")) {
-            ready = true;
-            break;
-          }
-          if (!await hasSession(sessionName)) break;
-          await new Promise((r) => setTimeout(r, 500));
-        }
-
-        if (!ready) {
-          console.error(`[DelegateToProject] Claude did not become ready within ${readyTimeout}ms for ${params.projectId}`);
+      if (existsSync(sentinelPath(params.projectId))) {
+        try { unlinkSync(sentinelPath(params.projectId)); } catch { /* ignore */ }
+        if (!team.completed) {
           team.completed = true;
-          team.exitCode = 1;
-          team.output += "\nError: Claude Code did not start within timeout";
-          await killSession(sessionName).catch(() => {});
-          return;
+          team.exitCode = 0;
+          team.resolveCompletion();
         }
-
-        // Send the task text into the interactive prompt
-        await sendKeys(sessionName, fullTask);
-
-        // Poll pane output for interactive-mode activity signals
-        let lastPaneLength = 0;
-        const pollInterval = 500;
-        const maxWaitMs = 30 * 60 * 1000; // 30 min for team tasks
-        const start = Date.now();
-        let idleCount = 0;
-        let lastHeartbeatAt = Date.now();
-        const heartbeatIntervalMs = 10 * 60 * 1000; // 10 minutes
-
-        while (Date.now() - start < maxWaitMs) {
-          if (!await hasSession(sessionName)) {
-            team.completed = true;
-            team.exitCode = 0;
-            break;
-          }
-
-          const pane = await capturePane(sessionName).catch(() => "");
-          if (pane.length > lastPaneLength) {
-            const newText = pane.slice(lastPaneLength);
-            lastPaneLength = pane.length;
-            team.output += newText;
-            idleCount = 0;
-
-            // Interactive mode: don't parse stream-json from ANSI terminal output.
-            // Task sync happens via Claude Code hooks (send_event.py -> /internal/hook-events).
-            // Only check for session completion signals.
-            for (const line of newText.split("\n")) {
-              const trimmed = line.trim();
-              if (!trimmed) continue;
-              try {
-                const ev = JSON.parse(trimmed) as Record<string, unknown>;
-                if (ev.type === "result") {
-                  team.completed = true;
-                  team.exitCode = 0;
-                }
-              } catch { /* not JSON — terminal output, expected in interactive mode */ }
-            }
-          } else {
-            idleCount++;
-          }
-
-          // Heartbeat: every 10 minutes, nudge idle teammates
-          const now = Date.now();
-          if (now - lastHeartbeatAt >= heartbeatIntervalMs) {
-            lastHeartbeatAt = now;
-            const elapsedMin = Math.floor((now - start) / 60_000);
-            // If no new output for a while, send a nudge to the lead session
-            if (idleCount > 20) { // ~10s of no output at 500ms polling
-              const nudge = `[Heartbeat ${elapsedMin}m] Team appears idle. Check teammate statuses and assign next tasks from BACKLOG.md. Update task statuses on the board.`;
-              await sendKeys(sessionName, nudge).catch(() => {});
-              console.error(`[DelegateToProject] Heartbeat nudge sent to ${params.projectId} at ${elapsedMin}m`);
-            }
-          }
-
-          if (team.completed) break;
-          await new Promise((r) => setTimeout(r, pollInterval));
+        clearInterval(healthCheckInterval);
+        return;
+      }
+      if (!await hasSession(sessionName)) {
+        if (!team.completed) {
+          team.completed = true;
+          team.exitCode = 0;
+          team.resolveCompletion();
         }
-      } else {
-        // --- Print mode for solo tasks (no team) ---
-        // Uses -p with stream-json for structured output parsing.
-        const claudeCmd = [
-          "claude",
-          "--dangerously-skip-permissions",
-          "--output-format", "stream-json",
-          "--allowedTools", allowedTools,
-          "-p", fullTask,
-        ].join(" ");
+        clearInterval(healthCheckInterval);
+      }
+    } catch { /* ignore health-check errors */ }
+  }, 2000);
 
-        await sendKeys(sessionName, claudeCmd);
+  try {
+    await createSession(sessionName, projectDir);
 
-        let lastPaneLength = 0;
-        const pollInterval = 200;
-        const maxWaitMs = 10 * 60 * 1000;
-        const start = Date.now();
+    if (hasTeam) {
+      // --- Interactive mode for Agent Teams ---
+      const claudeCmd = [
+        "claude",
+        "--dangerously-skip-permissions",
+        "--teammate-mode", "in-process",
+        "--allowedTools", allowedTools,
+      ].join(" ");
 
-        while (Date.now() - start < maxWaitMs) {
-          if (!await hasSession(sessionName)) {
-            team.completed = true;
-            team.exitCode = 0;
-            break;
-          }
+      await sendKeys(sessionName, claudeCmd);
 
-          const pane = await capturePane(sessionName).catch(() => "");
-          if (pane.length > lastPaneLength) {
-            const newText = pane.slice(lastPaneLength);
-            lastPaneLength = pane.length;
-            team.output += newText;
-
-            for (const line of newText.split("\n")) {
-              const trimmed = line.trim();
-              if (!trimmed) continue;
-              try {
-                const ev = JSON.parse(trimmed) as Record<string, unknown>;
-
-                if (ev.type === "tool_use" && typeof ev.name === "string") {
-                  const toolName = ev.name;
-                  const toolInput = (ev.input && typeof ev.input === "object")
-                    ? ev.input as Record<string, unknown>
-                    : {};
-                  if (TASK_TOOL_NAMES.has(toolName)) {
-                    syncTaskToGateway(toolName, toolInput).catch(() => {});
-                  }
-                  if (!SILENT_TOOLS.has(toolName)) {
-                    const activityText = buildToolActivityText(toolName, toolInput);
-                    const filePath = (toolInput.file_path ?? toolInput.path) as string | undefined;
-                    const command = toolInput.command as string | undefined;
-                    postSubagentActivity(subagentName, "tool_start", toolName, activityText, {
-                      ...(filePath && { filePath }),
-                      ...(command && { command }),
-                    }).catch(() => {});
-                  }
-                } else if (ev.type === "tool_result") {
-                  const toolId = (ev.tool_use_id as string | undefined) ?? "";
-                  if (toolId) {
-                    postSubagentActivity(subagentName, "tool_end").catch(() => {});
-                  }
-                } else if (ev.type === "message" && (ev as Record<string, unknown>).stop_reason === "end_turn") {
-                  postSubagentActivity(subagentName, "turn_end").catch(() => {});
-                  team.completed = true;
-                  team.exitCode = 0;
-                } else if (ev.type === "result") {
-                  team.completed = true;
-                  team.exitCode = 0;
-                }
-              } catch { /* not JSON — terminal output, ignore */ }
-            }
-          }
-
-          if (team.completed) break;
-          await new Promise((r) => setTimeout(r, pollInterval));
+      // Wait for Claude's interactive prompt to appear before sending the task.
+      const readyTimeout = 60_000;
+      const readyStart = Date.now();
+      let ready = false;
+      while (Date.now() - readyStart < readyTimeout) {
+        const pane = await capturePane(sessionName).catch(() => "");
+        if (pane.includes(">") || pane.includes("Type your") || pane.includes("Claude")) {
+          ready = true;
+          break;
         }
+        if (!await hasSession(sessionName)) break;
+        await new Promise((r) => setTimeout(r, 500));
       }
 
-      if (!team.completed) {
+      if (!ready) {
+        console.error(`[DelegateToProject] Claude did not become ready within ${readyTimeout}ms for ${params.projectId}`);
         team.completed = true;
         team.exitCode = 1;
-        team.output += `\nError: Timed out after ${hasTeam ? "30" : "10"} minutes`;
-        console.error(`[DelegateToProject] Timed out for ${params.projectId} (mode=${hasTeam ? "team" : "solo"})`);
+        team.output += "\nError: Claude Code did not start within timeout";
+        team.resolveCompletion();
+        await killSession(sessionName).catch(() => {});
+        clearInterval(healthCheckInterval);
+        const elapsed = Math.floor((Date.now() - team.startedAt) / 1000);
+        activeTeams.delete(params.projectId);
+        return text(`Team for "${params.projectId}" failed after ${elapsed}s: Claude Code did not start within timeout.`);
       }
-    } catch (err) {
+
+      await sendKeys(sessionName, fullTask);
+    } else {
+      // --- Print mode for solo tasks (no team) ---
+      const claudeCmd = [
+        "claude",
+        "--dangerously-skip-permissions",
+        "--output-format", "stream-json",
+        "--allowedTools", allowedTools,
+        "-p", fullTask,
+      ].join(" ");
+
+      await sendKeys(sessionName, claudeCmd);
+    }
+
+    // Wait for completion via sentinel file or session death (health check loop),
+    // with a hard timeout as safety net.
+    const maxWaitMs = hasTeam ? 30 * 60 * 1000 : 10 * 60 * 1000;
+    const timeoutPromise = new Promise<void>((r) => setTimeout(r, maxWaitMs));
+    await Promise.race([team.completionPromise, timeoutPromise]);
+
+    if (!team.completed) {
       team.completed = true;
       team.exitCode = 1;
-      const errMsg = err instanceof Error ? err.message : String(err);
-      team.output += `\nError: ${errMsg}`;
-      console.error(`[DelegateToProject] Error for ${params.projectId}:`, errMsg);
-    } finally {
-      await killSession(sessionName).catch(() => {});
+      team.output += `\nError: Timed out after ${hasTeam ? "30" : "10"} minutes`;
+      console.error(`[DelegateToProject] Timed out for ${params.projectId} (mode=${hasTeam ? "team" : "solo"})`);
     }
-  })();
 
-  const mode = hasTeam ? "Agent Team (interactive)" : "solo (stream-json)";
-  return text(`Delegated task to project "${params.projectId}" (tmux session: ${sessionName}, mode: ${mode}). Use CheckTeamStatus to poll and GetTeamResult when done.`);
+    // Capture final terminal output for the result
+    const finalPane = await capturePane(sessionName).catch(() => "");
+    if (finalPane && !team.output.includes(finalPane.slice(-200))) {
+      team.output += finalPane;
+    }
+  } catch (err) {
+    team.completed = true;
+    team.exitCode = 1;
+    const errMsg = err instanceof Error ? err.message : String(err);
+    team.output += `\nError: ${errMsg}`;
+    console.error(`[DelegateToProject] Error for ${params.projectId}:`, errMsg);
+    team.resolveCompletion();
+  } finally {
+    clearInterval(healthCheckInterval);
+    await killSession(sessionName).catch(() => {});
+    try { unlinkSync(sentinelPath(params.projectId)); } catch { /* ignore */ }
+  }
+
+  const elapsed = Math.floor((Date.now() - team.startedAt) / 1000);
+  const resultText = extractTeamResult(team);
+  activeTeams.delete(params.projectId);
+  return text(`Team completed in ${elapsed}s (exit ${team.exitCode}).\n\n${resultText}`);
 }
 
 async function checkTeamStatus(
@@ -1080,15 +1000,7 @@ async function checkTeamStatus(
   return text(`Team for "${params.projectId}" is still running (${elapsed}s elapsed).`);
 }
 
-async function getTeamResult(
-  _id: string,
-  params: { projectId: string }
-): Promise<ToolResult> {
-  const team = activeTeams.get(params.projectId);
-  if (!team) return text(`No team found for "${params.projectId}".`);
-  if (!team.completed) return text(`Team still running. Use CheckTeamStatus.`);
-
-  // Try to extract a structured result from stream-json output
+function extractTeamResult(team: TeamProcess): string {
   let resultText = "";
   for (const line of team.output.split("\n")) {
     const trimmed = line.trim();
@@ -1099,18 +1011,28 @@ async function getTeamResult(
     } catch { /* not JSON — expected for interactive mode output */ }
   }
 
-  // For interactive/team mode, return the raw terminal output if no
-  // structured result was found (stream-json isn't used in team mode).
   if (!resultText && team.output.length > 0) {
     const maxLen = 4000;
-    const trimmed = team.output.length > maxLen
+    const t = team.output.length > maxLen
       ? "...(truncated)\n" + team.output.slice(-maxLen)
       : team.output;
-    resultText = `[Terminal output]\n${trimmed}`;
+    resultText = `[Terminal output]\n${t}`;
   }
 
+  return resultText || `Team completed with exit code ${team.exitCode}. No output captured.`;
+}
+
+async function getTeamResult(
+  _id: string,
+  params: { projectId: string }
+): Promise<ToolResult> {
+  const team = activeTeams.get(params.projectId);
+  if (!team) return text(`No team found for "${params.projectId}".`);
+  if (!team.completed) return text(`Team still running. Use CheckTeamStatus.`);
+
+  const resultText = extractTeamResult(team);
   activeTeams.delete(params.projectId);
-  return text(resultText || `Team completed with exit code ${team.exitCode}. No output captured.`);
+  return text(resultText);
 }
 
 // ---------------------------------------------------------------------------
@@ -1207,6 +1129,20 @@ export default function register(api: any): void {
     description: "Move a task between board columns. Updates the board in real time.",
     parameters: { type: "object", properties: { taskId: { type: "string", description: "Task ID to update" }, status: { type: "string", description: "New status: 'in_progress', 'done', 'blocked', or 'todo'" }, owner: { type: "string", description: "Optional agent role that owns this task" } }, required: ["taskId", "status"] },
     execute: updateTaskStatus,
+  });
+
+  api.registerTool({
+    name: "ListProjectTasks",
+    description: "List all tasks on the current project's board with their IDs, subjects, statuses, and owners. Use this to find task IDs for updating or deleting.",
+    parameters: { type: "object", properties: {}, required: [] },
+    execute: listProjectTasks,
+  });
+
+  api.registerTool({
+    name: "DeleteTask",
+    description: "Remove a task from the project board permanently.",
+    parameters: { type: "object", properties: { taskId: { type: "string", description: "Task ID to delete" } }, required: ["taskId"] },
+    execute: deleteTask,
   });
 
   api.registerTool({

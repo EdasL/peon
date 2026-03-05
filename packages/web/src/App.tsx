@@ -35,7 +35,7 @@ export default function App() {
           </Routes>
         </ErrorBoundary>
       </BrowserRouter>
-      <Toaster theme="dark" position="bottom-right" richColors />
+      <Toaster theme="light" position="bottom-right" richColors />
     </AuthCtx.Provider>
   )
 }

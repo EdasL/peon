@@ -124,40 +124,11 @@ I'm here to coordinate our AI team and ensure we ship features fast. What would 
       // Broadcast to any SSE listeners so the UI shows it instantly
       broadcastToProject(projectId, "message", welcomeMsg)
 
-      // Also enqueue to the agent so it can proactively assess the project
-      const services = getPeonPlatform().getServices()
-      const queueProducer = services.getQueueProducer()
-
-      queueProducer.enqueueMessage({
-        userId: session.userId,
-        conversationId: peonAgentId,
-        messageId: randomUUID(),
-        channelId: peonAgentId,
-        teamId: "peon",
-        agentId: peonAgentId,
-        botId: "peon-agent",
-        platform: "peon",
-        messageText: `[Project Context]
-Project: ${project.name} (${project.id})
-Template: ${project.templateId}
-Repo: ${project.repoUrl ?? "none"}
-Workspace: /workspace/projects/${project.id}
-
-Current tasks:
-${currentTasks.length === 0 ? "  (none)" : currentTasks.map(t => `  - [${t.status}] ${t.subject}`).join('\n')}
-[End Context]
-
-${welcomeContent}`,
-        platformMetadata: {
-          projectId,
-          userId: session.userId,
-          openclawAgentId: `project-${projectId}`,
-          projectName: project.name,
-          projectRepoUrl: project.repoUrl,
-          isWelcomeMessage: true,
-        },
-        agentOptions: { provider: "claude" },
-      }).catch(err => console.error("Failed to enqueue welcome message:", err))
+      // The welcome message is UI-only. The agent receives its bootstrap
+      // directive via initProjectWorkspace() in project-launcher.ts, which
+      // sends the DelegateToProject instruction. No need to echo the
+      // welcome content to the agent (it would confuse it into thinking
+      // the user sent it).
     }
   }
 
@@ -175,6 +146,10 @@ chatRouter.post("/:id/chat", async (c) => {
     where: and(eq(projects.id, projectId), eq(projects.userId, session.userId)),
   })
   if (!project) return c.json({ error: "Not found" }, 404)
+
+  if (project.status === "stopped" || project.status === "creating" || project.status === "initializing") {
+    return c.json({ error: "Project is not ready — please wait for initialization to complete" }, 409)
+  }
 
   // Agent lives on the user, not the project
   const user = await db.query.users.findFirst({

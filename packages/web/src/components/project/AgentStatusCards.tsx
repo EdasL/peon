@@ -50,7 +50,7 @@ function AgentCard({ agent, currentToolAction }: { agent: AgentState; currentToo
           <span className="text-sm font-medium leading-none">{agent.name}</span>
           <span
             className={cn(
-              "ml-auto text-[10px] font-medium uppercase tracking-wide",
+              "ml-auto text-[11px] font-medium uppercase tracking-wide",
               agent.status === "working" && "text-emerald-400",
               agent.status === "idle" && "text-zinc-500",
               agent.status === "error" && "text-red-400"

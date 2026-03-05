@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom"
 import { Plus, RefreshCw } from "lucide-react"
 import type { TeamMember } from "@/lib/api"
 import * as api from "@/lib/api"
-import { SpawnAgentDialog } from "./SpawnAgentDialog"
+import { AddMemberForm } from "@/components/project/AddMemberForm"
 import { useOpenClaw } from "@/contexts/OpenClawContext"
 import type { GatewayEvent } from "@/lib/openclaw-types"
 
@@ -30,7 +30,6 @@ function StatusDot({ status }: { status: AgentStatus }) {
       />
     )
   }
-  // idle — hollow grey
   return (
     <span
       className="inline-block size-[6px] rounded-full border border-[#C8C5BC] shrink-0"
@@ -46,9 +45,10 @@ interface TeamPanelProps {
 export function TeamPanel({ compact = false }: TeamPanelProps) {
   const { id: projectId } = useParams<{ id: string }>()
   const [members, setMembers] = useState<TeamMember[]>([])
+  const [teamId, setTeamId] = useState<string | null>(null)
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({})
   const [loading, setLoading] = useState(true)
-  const [spawnOpen, setSpawnOpen] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
 
   const ocContext = useOpenClaw()
 
@@ -57,9 +57,8 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
     try {
       const { teams } = await api.getProjectTeams(projectId)
       const first = teams[0]
-      if (first?.members.length) {
-        setMembers(first.members)
-      }
+      setMembers(first?.members ?? [])
+      setTeamId(first?.id ?? null)
     } catch (err) {
       console.error("Failed to fetch team members:", err)
     } finally {
@@ -113,15 +112,10 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
     return unsub
   }, [ocContext.subscribe, ocContext.connectionState])
 
-  const handleSpawn = useCallback(
-    async (opts: { task: string; label?: string; model: string; thinking: string }) => {
-      if (ocContext.rpc) {
-        await ocContext.rpc("sessions.spawn", opts)
-        await fetchMembers()
-      }
-    },
-    [ocContext.rpc, fetchMembers],
-  )
+  const handleAddDone = useCallback(() => {
+    setShowAddForm(false)
+    fetchMembers()
+  }, [fetchMembers])
 
   const getStatus = (member: TeamMember): AgentStatus => {
     const byRole = agentStates[member.roleName.toLowerCase()]
@@ -138,12 +132,22 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
       }
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground">
+        <span className="text-[11px] font-bold tracking-wider uppercase text-muted-foreground">
           Team
         </span>
       </div>
 
       <div className={compact ? "overflow-y-auto" : "flex-1 overflow-y-auto"}>
+        {showAddForm && teamId && (
+          <div className="p-2">
+            <AddMemberForm
+              teamId={teamId}
+              existingColors={members.map((m) => m.color)}
+              onDone={handleAddDone}
+            />
+          </div>
+        )}
+
         {loading && !members.length ? (
           <div className="space-y-1 p-2">
             {Array.from({ length: 3 }, (_, i) => (
@@ -178,10 +182,11 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
       <div className="flex items-center justify-end gap-1 px-3 py-2 border-t border-border mt-auto">
         <button
           type="button"
-          onClick={() => setSpawnOpen(true)}
-          aria-label="Add agent"
-          title="Add agent"
-          className="bg-transparent border border-border text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-[#C8C5BC] rounded-sm"
+          onClick={() => setShowAddForm(true)}
+          disabled={!teamId}
+          aria-label="Add team member"
+          title="Add team member"
+          className="bg-transparent border border-border text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-[#C8C5BC] rounded-sm disabled:opacity-40 disabled:cursor-default"
         >
           <Plus size={14} />
         </button>
@@ -195,12 +200,6 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
           <RefreshCw size={12} />
         </button>
       </div>
-
-      <SpawnAgentDialog
-        open={spawnOpen}
-        onOpenChange={setSpawnOpen}
-        onSpawn={handleSpawn}
-      />
     </div>
   )
 }

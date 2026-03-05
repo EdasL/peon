@@ -42,7 +42,7 @@ function RichLabel({ text, className }: { text: string; className?: string }) {
   return (
     <span className={className}>
       {before}
-      <code className="font-mono text-[10px] text-foreground bg-muted px-0.5 rounded-sm">
+      <code className="font-mono text-[11px] text-foreground bg-muted px-0.5 rounded-sm">
         {inner}
       </code>
       {after}
@@ -63,7 +63,7 @@ function MilestoneRow({
       "flex items-start gap-2 px-3 py-1.5 border-l-2",
       isCompleted ? "border-l-emerald-600/60 bg-emerald-50" : "border-l-primary/40 bg-primary/5"
     )}>
-      <span className="mt-px flex-shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums w-[54px]">
+      <span className="mt-px flex-shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums w-[54px]">
         {formatTime(event.timestamp)}
       </span>
       <span className={cn("text-[11px] font-mono leading-none mt-px flex-shrink-0", isCompleted ? "text-emerald-600" : "text-foreground")}>
@@ -71,7 +71,7 @@ function MilestoneRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5 flex-wrap">
-          <span className={cn("text-[10px] font-semibold flex-shrink-0", agentTextColor)}>
+          <span className={cn("text-[11px] font-semibold flex-shrink-0", agentTextColor)}>
             {event.agentName}
           </span>
           <span className={cn("text-[11px] leading-snug font-medium", isCompleted ? "text-emerald-700" : "text-foreground/80")}>
@@ -107,7 +107,7 @@ function FeedRow({
 
   return (
     <div className="group flex items-start gap-2 px-3 py-1 hover:bg-muted/30 transition-colors">
-      <span className="mt-px flex-shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums w-[54px]">
+      <span className="mt-px flex-shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums w-[54px]">
         {formatTime(event.timestamp)}
       </span>
       <div className="flex flex-col items-center flex-shrink-0">
@@ -117,7 +117,7 @@ function FeedRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5 flex-wrap">
-          <span className={cn("text-[10px] font-semibold flex-shrink-0", agentTextColor)}>
+          <span className={cn("text-[11px] font-semibold flex-shrink-0", agentTextColor)}>
             {event.agentName}
           </span>
           <span className="text-[11px] text-muted-foreground leading-snug break-all min-w-0">
@@ -193,7 +193,7 @@ export function ActivityFeed({ events, teamMembers, templateId, maxEvents = 100,
           Activity
         </span>
         {events.length > 0 && (
-          <span className="text-[10px] text-muted-foreground tabular-nums">
+          <span className="text-[11px] text-muted-foreground tabular-nums">
             {filteredEvents.length !== events.length
               ? `${filteredEvents.length}/${events.length}`
               : events.length}
@@ -212,7 +212,7 @@ export function ActivityFeed({ events, teamMembers, templateId, maxEvents = 100,
                 key={name}
                 onClick={() => toggleFilter(name)}
                 className={cn(
-                  "flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-medium transition-all",
+                  "flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium transition-all",
                   isActive
                     ? "bg-muted text-foreground"
                     : "bg-muted/50 text-muted-foreground"
@@ -245,7 +245,7 @@ export function ActivityFeed({ events, teamMembers, templateId, maxEvents = 100,
             })}
             {filteredEvents.length >= maxEvents && (
               <div className="px-3 py-2 text-center border-t border-border/60">
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-[11px] text-muted-foreground">
                   Showing latest {maxEvents} events
                 </span>
               </div>

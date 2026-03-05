@@ -34,10 +34,10 @@ function barColor(pct: number): string {
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 py-[2px]">
-      <span className="text-muted-foreground text-[10px] shrink-0">
+      <span className="text-muted-foreground text-[11px] shrink-0">
         {label}
       </span>
-      <span className="text-foreground text-[10px] font-medium text-right truncate">
+      <span className="text-foreground text-[11px] font-medium text-right truncate">
         {value}
       </span>
     </div>
@@ -164,10 +164,10 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
 
             <div className="py-[2px]">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground text-[10px] shrink-0">
+                <span className="text-muted-foreground text-[11px] shrink-0">
                   Tokens
                 </span>
-                <span className="text-foreground text-[10px] font-medium text-right">
+                <span className="text-foreground text-[11px] font-medium text-right">
                   {totalTok != null ? fmtK(totalTok) : "—"} / {fmtK(ctxTok)} (
                   {pct}%)
                 </span>
@@ -195,11 +195,11 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
             )}
 
             <div className="flex items-center justify-between gap-3 py-[2px]">
-              <span className="text-muted-foreground text-[10px] shrink-0">
+              <span className="text-muted-foreground text-[11px] shrink-0">
                 Status
               </span>
               <span
-                className={`text-[9px] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm ${
+                className={`text-[11px] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm ${
                   running
                     ? "bg-green-500/20 text-green-400"
                     : "bg-muted-foreground/20 text-muted-foreground"

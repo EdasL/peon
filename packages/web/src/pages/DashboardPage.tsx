@@ -38,7 +38,9 @@ function statusDot(status: api.Project["status"]) {
     case "running":
       return <span className="inline-block size-[6px] rounded-full bg-[#22C55E]" title="Running" />
     case "creating":
-      return <span className="inline-block size-[6px] rounded-full bg-amber-400 animate-pulse" title="Creating" />
+      return <span className="inline-block size-[6px] rounded-full bg-status-warning-text animate-pulse" title="Creating" />
+    case "initializing":
+      return <span className="inline-block size-[6px] rounded-full bg-status-warning-text animate-pulse" title="Initializing" />
     case "stopped":
       return <span className="inline-block size-[6px] rounded-full border border-[#C8C5BC]" title="Stopped" />
     case "error":
@@ -54,6 +56,8 @@ function statusLabel(status: api.Project["status"]) {
       return "Running"
     case "creating":
       return "Creating"
+    case "initializing":
+      return "Initializing"
     case "stopped":
       return "Stopped"
     case "error":
@@ -159,7 +163,7 @@ export function DashboardPage() {
                   <FolderOpen className="h-6 w-6 text-muted-foreground" />
                 </div>
                 <p className="text-sm text-muted-foreground mb-1">No projects yet.</p>
-                <p className="text-xs text-muted-foreground/60 mb-5">
+                <p className="text-xs text-muted-foreground mb-5">
                   Create your first project.
                 </p>
                 <Button
@@ -195,13 +199,13 @@ export function DashboardPage() {
                             {statusLabel(p.status)}
                           </span>
                           {agentCount > 0 && (
-                            <span className="text-[11px] text-muted-foreground/60">
+                            <span className="text-[11px] text-muted-foreground">
                               {agentCount} agent{agentCount !== 1 ? "s" : ""}
                             </span>
                           )}
                         </div>
                       </div>
-                      <span className="text-[11px] text-muted-foreground/60 shrink-0">
+                      <span className="text-[11px] text-muted-foreground shrink-0">
                         {timeAgo(p.updatedAt)}
                       </span>
                       <button

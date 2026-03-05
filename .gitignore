@@ -7,4 +7,5 @@ dist
 server/db.json
 bun.lock
 workspaces/
+docs/
 *.tsbuildinfo

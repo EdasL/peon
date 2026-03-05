@@ -301,7 +301,7 @@ export function SessionList({
       }
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
-        <span className="text-[10px] font-bold tracking-wider uppercase text-muted-foreground">
+        <span className="text-[11px] font-bold tracking-wider uppercase text-muted-foreground">
           Agents
         </span>
         <div className="flex items-center gap-1 ml-auto">
@@ -425,7 +425,7 @@ export function SessionList({
               <p className="text-[12px] text-foreground font-mono">
                 {deleteTarget?.label}
               </p>
-              <p className="text-[10px] text-muted-foreground font-mono mt-1 break-all">
+              <p className="text-[11px] text-muted-foreground font-mono mt-1 break-all">
                 {deleteTarget?.key}
               </p>
             </div>

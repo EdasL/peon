@@ -1,8 +1,63 @@
 import { Hono } from "hono"
+import { randomUUID } from "node:crypto"
 import { requireAuth, getSession } from "../../auth/middleware.js"
 import { db } from "../../db/connection.js"
-import { projects, teams, teamMembers } from "../../db/schema.js"
+import { projects, teams, teamMembers, users } from "../../db/schema.js"
 import { eq, and } from "drizzle-orm"
+import { getPeonPlatform } from "../../peon/platform.js"
+
+/**
+ * Enqueue a system message so the running agent learns about the team change
+ * immediately (updates SOUL.md and prompts the lead to spawn/dismiss).
+ */
+async function syncTeamToAgent(
+  userId: string,
+  teamId: string,
+  projectId: string,
+  message: string,
+): Promise<void> {
+  try {
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { peonAgentId: true },
+    })
+    const peonAgentId = user?.peonAgentId
+    if (!peonAgentId) return
+
+    const updatedTeam = await db.query.teams.findFirst({
+      where: eq(teams.id, teamId),
+      with: { members: true },
+    })
+    const teamMembersList = updatedTeam?.members?.map((m) => ({
+      roleName: m.roleName,
+      displayName: m.displayName,
+      systemPrompt: m.systemPrompt,
+    })) ?? []
+
+    const services = getPeonPlatform().getServices()
+    const queueProducer = services.getQueueProducer()
+    await queueProducer.enqueueMessage({
+      userId,
+      conversationId: peonAgentId,
+      messageId: randomUUID(),
+      channelId: peonAgentId,
+      teamId: "peon",
+      agentId: peonAgentId,
+      botId: "peon-agent",
+      platform: "peon",
+      messageText: message,
+      platformMetadata: {
+        projectId,
+        userId,
+        openclawAgentId: `project-${projectId}`,
+        teamMembers: teamMembersList,
+      },
+      agentOptions: { provider: "claude" },
+    })
+  } catch (err) {
+    console.error("Team sync to agent failed (non-blocking):", err)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // projectTeamsRouter — mounted at /api/projects
@@ -120,6 +175,13 @@ teamMembersRouter.post("/:id/members", async (c) => {
   }).returning()
   if (!member) return c.json({ error: "Failed to add member" }, 500)
 
+  syncTeamToAgent(
+    session.userId,
+    teamId,
+    team.projectId,
+    `[system] Team updated. A new member was added: ${member.displayName} (${member.roleName}). Spawn them as a teammate.`,
+  )
+
   return c.json({ member }, 201)
 })
 
@@ -142,6 +204,13 @@ teamMembersRouter.delete("/:id/members/:memberId", async (c) => {
     .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)))
     .returning()
   if (!deleted) return c.json({ error: "Not found" }, 404)
+
+  syncTeamToAgent(
+    session.userId,
+    teamId,
+    team.projectId,
+    `[system] Team member removed: ${deleted.displayName} (${deleted.roleName}). Dismiss them from the team.`,
+  )
 
   return c.json({ ok: true })
 })

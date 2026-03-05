@@ -21,7 +21,7 @@ export function NeedsAttention({
         <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-700">
           Needs your attention
         </span>
-        <span className="inline-flex items-center justify-center rounded-full bg-amber-500/20 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 tabular-nums leading-none">
+        <span className="inline-flex items-center justify-center rounded-full bg-amber-500/20 text-amber-700 text-[11px] font-bold px-1.5 py-0.5 tabular-nums leading-none">
           {blockers.length}
         </span>
       </div>

@@ -73,8 +73,8 @@ projectsRouter.get("/", async (c) => {
         : dockerStatus
       const statusUpdates = userProjects.map((p) => ({
         ...p,
-        // "creating" is authoritative — only boot-progress or error/timeout can transition it
-        status: (p.status === "creating" ? "creating" : mapped) as typeof p.status,
+        // "creating" and "initializing" are authoritative — only boot-progress/response-renderer can transition them
+        status: (p.status === "creating" || p.status === "initializing" ? p.status : mapped) as typeof p.status,
       }))
       return c.json({ projects: statusUpdates })
     }
@@ -201,8 +201,8 @@ projectsRouter.get("/:id", async (c) => {
       const mapped = dockerStatus === "starting" ? "creating"
         : dockerStatus === "not_found" ? "stopped"
         : dockerStatus
-      // "creating" is authoritative — only boot-progress or error/timeout can transition it
-      const effectiveStatus = project.status === "creating" ? "creating" : mapped
+      // "creating" and "initializing" are authoritative — only boot-progress/response-renderer can transition them
+      const effectiveStatus = (project.status === "creating" || project.status === "initializing") ? project.status : mapped
       return c.json({ project: { ...project, status: effectiveStatus } })
     }
   }
@@ -218,11 +218,13 @@ projectsRouter.get("/:id/status", async (c) => {
   })
   if (!project) return c.json({ error: "Not found" }, 404)
 
-  let containerStatus: "starting" | "running" | "stopped" | "error"
+  let containerStatus: "starting" | "initializing" | "running" | "stopped" | "error"
 
-  // "creating" is authoritative — only boot-progress or error/timeout can transition it
+  // "creating" and "initializing" are authoritative — only boot-progress/response-renderer can transition them
   if (project.status === "creating") {
     containerStatus = "starting"
+  } else if (project.status === "initializing") {
+    containerStatus = "initializing"
   } else if (project.deploymentName) {
     const dockerStatus = await getContainerStatus(project.deploymentName)
     if (dockerStatus !== null) {
@@ -265,9 +267,10 @@ projectsRouter.get("/:id/openclaw", async (c) => {
   return c.json({ wsUrl, token: token ?? null })
 })
 
-function mapDbStatus(dbStatus: string): "starting" | "running" | "stopped" | "error" {
+function mapDbStatus(dbStatus: string): "starting" | "initializing" | "running" | "stopped" | "error" {
   switch (dbStatus) {
     case "creating": return "starting"
+    case "initializing": return "initializing"
     case "running": return "running"
     case "error": return "error"
     default: return "stopped"

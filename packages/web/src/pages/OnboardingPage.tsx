@@ -280,7 +280,7 @@ export function OnboardingPage() {
               </div>
 
               {githubStatus === "error" && (
-                <div className="text-sm text-destructive bg-destructive/10 rounded-lg p-3">
+                <div className="text-sm text-destructive bg-destructive/10 rounded-sm p-3">
                   {githubError || "GitHub connection failed. Try again."}
                 </div>
               )}
@@ -318,13 +318,13 @@ export function OnboardingPage() {
                 </div>
               ) : repos.length > 0 ? (
                 <>
-                  <div className="max-h-64 overflow-y-auto space-y-1.5 rounded-lg border border-border p-1">
+                  <div className="max-h-64 overflow-y-auto space-y-1.5 rounded-sm border border-border p-1">
                     {repos.map((repo) => (
                       <button
                         key={repo.fullName}
                         onClick={() => selectRepo(repo)}
                         className={[
-                          "w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between transition-colors",
+                          "w-full text-left px-3 py-2 rounded-sm text-sm flex items-center justify-between transition-colors",
                           selectedRepo?.fullName === repo.fullName
                             ? "bg-primary text-primary-foreground"
                             : "hover:bg-muted",
@@ -400,7 +400,7 @@ export function OnboardingPage() {
 
               <div className="space-y-2">
                 {launchError && (
-                  <div className="text-sm text-destructive bg-destructive/10 rounded-lg p-3">
+                  <div className="text-sm text-destructive bg-destructive/10 rounded-sm p-3">
                     {launchError}
                   </div>
                 )}

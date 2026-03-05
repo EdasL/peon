@@ -179,7 +179,7 @@ export function SettingsPage() {
             <button
               key={item.id}
               onClick={() => handleSectionChange(item.id)}
-              className={`w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+              className={`w-full flex items-center gap-2 rounded-sm px-3 py-2 text-sm transition-colors ${
                 section === item.id
                   ? "bg-accent text-accent-foreground"
                   : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
@@ -226,14 +226,14 @@ export function SettingsPage() {
                 {keysLoading ? (
                   <Skeleton className="h-14 w-full" />
                 ) : (
-                  <div className="rounded-lg border p-4">
+                  <div className="rounded-sm border p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <span className="font-medium text-sm">Anthropic</span>
                         {oauthForProvider("anthropic") ? (
                           <Badge
                             variant="secondary"
-                            className="flex items-center gap-1 text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400"
+                            className="flex items-center gap-1 text-status-success-text bg-status-success-bg"
                           >
                             <CheckCircle2 className="h-3 w-3" />
                             Claude subscription

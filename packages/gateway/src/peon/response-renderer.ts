@@ -10,7 +10,7 @@ import type { ThreadResponsePayload } from "../infrastructure/queue/types.js"
 import type { ResponseRenderer } from "../platform/response-renderer.js"
 import { broadcastToProject } from "../web/chat-routes.js"
 import { broadcastToUser } from "../web/redis-broadcast.js"
-import { and, eq } from "drizzle-orm"
+import { and, eq, or } from "drizzle-orm"
 import { db } from "../db/connection.js"
 import { chatMessages, projects } from "../db/schema.js"
 
@@ -35,6 +35,10 @@ function getUserId(payload: ThreadResponsePayload): string | null {
   return (payload.platformMetadata?.userId as string) ?? null
 }
 
+function isSystemMessage(payload: ThreadResponsePayload): boolean {
+  return payload.platformMetadata?.isSystemMessage === true
+}
+
 function broadcast(payload: ThreadResponsePayload, event: string, data: unknown): void {
   const projectId = getProjectId(payload)
   if (projectId) {
@@ -57,6 +61,18 @@ export class PeonResponseRenderer implements ResponseRenderer {
     if (!projectId && !userId) {
       logger.warn("No projectId or userId in platformMetadata for delta broadcast")
       return null
+    }
+
+    // System bootstrap messages (container init, project setup) are internal
+    // directives — accumulate content but don't stream to the user's chat.
+    if (isSystemMessage(payload)) {
+      const { messageId, delta } = payload
+      if (!delta) return null
+      const buf = streamBuffers.get(messageId)
+      const accumulated = (buf?.content ?? "") + delta
+      streamBuffers.set(messageId, { content: accumulated, createdAt: buf?.createdAt ?? Date.now() })
+      logger.debug(`System message delta (suppressed): ${delta.length} chars`)
+      return messageId
     }
 
     const { messageId, delta } = payload
@@ -88,6 +104,28 @@ export class PeonResponseRenderer implements ResponseRenderer {
 
     const { messageId } = payload
 
+    // System bootstrap messages: still transition project status but don't
+    // persist as a chat message or broadcast to the user.
+    if (isSystemMessage(payload)) {
+      if (projectId) {
+        const [updatedProject] = await db
+          .update(projects)
+          .set({ status: "running", updatedAt: new Date() })
+          .where(and(
+            eq(projects.id, projectId),
+            or(eq(projects.status, "creating"), eq(projects.status, "initializing"))
+          ))
+          .returning()
+
+        if (updatedProject) {
+          broadcastToProject(projectId, "project_status", { status: "running" })
+        }
+      }
+      streamBuffers.delete(messageId)
+      logger.info(`System message completion (suppressed from chat): ${projectId ? `project ${projectId}` : `user ${userId}`}`)
+      return
+    }
+
     const bufferContent = streamBuffers.get(messageId)?.content ?? ""
     const payloadContent = payload.content ?? ""
 
@@ -117,7 +155,10 @@ export class PeonResponseRenderer implements ResponseRenderer {
       const [updatedProject] = await db
         .update(projects)
         .set({ status: "running", updatedAt: new Date() })
-        .where(and(eq(projects.id, projectId), eq(projects.status, "creating")))
+        .where(and(
+          eq(projects.id, projectId),
+          or(eq(projects.status, "creating"), eq(projects.status, "initializing"))
+        ))
         .returning()
 
       if (updatedProject) {
@@ -146,6 +187,27 @@ export class PeonResponseRenderer implements ResponseRenderer {
 
     const errorContent = payload.error ?? "An unknown error occurred."
 
+    // System bootstrap errors: update project status but don't show in chat
+    if (isSystemMessage(payload)) {
+      if (projectId) {
+        const [updatedProject] = await db
+          .update(projects)
+          .set({ status: "error", updatedAt: new Date() })
+          .where(and(
+            eq(projects.id, projectId),
+            or(eq(projects.status, "creating"), eq(projects.status, "initializing"))
+          ))
+          .returning()
+
+        if (updatedProject) {
+          broadcastToProject(projectId, "project_status", { status: "error", message: "Setup failed — please try again" })
+        }
+      }
+      streamBuffers.delete(payload.messageId)
+      logger.error(`System message error (suppressed from chat): ${errorContent}`)
+      return
+    }
+
     const [assistantMsg] = await db
       .insert(chatMessages)
       .values({
@@ -160,7 +222,10 @@ export class PeonResponseRenderer implements ResponseRenderer {
       const [updatedProject] = await db
         .update(projects)
         .set({ status: "error", updatedAt: new Date() })
-        .where(and(eq(projects.id, projectId), eq(projects.status, "creating")))
+        .where(and(
+          eq(projects.id, projectId),
+          or(eq(projects.status, "creating"), eq(projects.status, "initializing"))
+        ))
         .returning()
 
       if (updatedProject) {
@@ -177,6 +242,8 @@ export class PeonResponseRenderer implements ResponseRenderer {
   }
 
   async handleStatusUpdate(payload: ThreadResponsePayload): Promise<void> {
+    if (isSystemMessage(payload)) return
+
     const projectId = getProjectId(payload)
     const userId = getUserId(payload)
     if (!projectId && !userId) return
