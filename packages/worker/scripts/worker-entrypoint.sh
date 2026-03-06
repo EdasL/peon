@@ -214,10 +214,10 @@ CREDEOF
     chmod 600 "$CLAUDE_CONFIG_DIR/.credentials.json"
     echo "  Claude CLI credentials written to $CLAUDE_CONFIG_DIR/.credentials.json"
 
-    # OpenClaw agent auth store — the embedded agent reads credentials from here
-    OPENCLAW_AGENT_DIR="${HOME:-/workspace}/.openclaw/agents/master/agent"
-    mkdir -p "$OPENCLAW_AGENT_DIR"
-    cat > "$OPENCLAW_AGENT_DIR/auth-profiles.json" << AUTHEOF
+    # OpenClaw shared auth store — agent-registry.ts copies this to each project agent
+    OPENCLAW_AUTH_DIR="${HOME:-/workspace}/.openclaw"
+    mkdir -p "$OPENCLAW_AUTH_DIR"
+    cat > "$OPENCLAW_AUTH_DIR/auth-profiles.json" << AUTHEOF
 {
   "version": 1,
   "profiles": {
@@ -232,15 +232,15 @@ CREDEOF
   }
 }
 AUTHEOF
-    chmod 600 "$OPENCLAW_AGENT_DIR/auth-profiles.json"
-    echo "  OpenClaw auth-profiles.json written to $OPENCLAW_AGENT_DIR/auth-profiles.json"
+    chmod 600 "$OPENCLAW_AUTH_DIR/auth-profiles.json"
+    echo "  OpenClaw auth-profiles.json written to $OPENCLAW_AUTH_DIR/auth-profiles.json"
 
 elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
     echo "🔐 Writing API key credentials..."
 
-    OPENCLAW_AGENT_DIR="${HOME:-/workspace}/.openclaw/agents/master/agent"
-    mkdir -p "$OPENCLAW_AGENT_DIR"
-    cat > "$OPENCLAW_AGENT_DIR/auth-profiles.json" << AUTHEOF
+    OPENCLAW_AUTH_DIR="${HOME:-/workspace}/.openclaw"
+    mkdir -p "$OPENCLAW_AUTH_DIR"
+    cat > "$OPENCLAW_AUTH_DIR/auth-profiles.json" << AUTHEOF
 {
   "version": 1,
   "profiles": {
@@ -255,7 +255,7 @@ elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   }
 }
 AUTHEOF
-    chmod 600 "$OPENCLAW_AGENT_DIR/auth-profiles.json"
+    chmod 600 "$OPENCLAW_AUTH_DIR/auth-profiles.json"
     echo "  OpenClaw auth-profiles.json written"
 fi
 
@@ -316,14 +316,7 @@ else
     "defaults": {
       "model": "anthropic/claude-sonnet-4-20250514"
     },
-    "list": [
-      {
-        "id": "master",
-        "default": true,
-        "workspace": "/workspace",
-        "name": "Orchestrator"
-      }
-    ]
+    "list": []
   },
   "skills": {
     "load": { "extraDirs": ["/app/packages/worker/src/openclaw/skills"] }

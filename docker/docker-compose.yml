@@ -80,6 +80,8 @@ services:
       # Mount worker source so spawned worker containers get latest code
       - ../packages/worker/src:/app/packages/worker/src
       - ../packages/worker/scripts:/app/packages/worker/scripts
+      # Persist gateway's OpenClaw device identity across restarts
+      - gateway-identity:/root/.openclaw/identity
     ports:
       - "8080:8080"
       - "8118:8118" # HTTP proxy for workers
@@ -114,6 +116,7 @@ services:
 volumes:
   redis-data:
   postgres_data:
+  gateway-identity:
 
 networks:
   # Public network with internet access (gateway only)

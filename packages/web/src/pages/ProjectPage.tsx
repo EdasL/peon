@@ -1,5 +1,5 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"
-import { useEffect, useState, useCallback, useMemo } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -14,8 +14,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { ProvisioningOverlay } from "@/components/project/ProvisioningOverlay"
-import { ActivityFeed } from "@/components/project/ActivityFeed"
-import { useAgentActivity } from "@/hooks/use-agent-activity"
 import { OpenClawProvider, useOpenClaw } from "@/contexts/OpenClawContext"
 import { TeamPanel } from "@/features/sessions"
 import { KanbanPanel } from "@/features/kanban"
@@ -27,15 +25,12 @@ import {
   AlertCircle,
   MessageSquare,
   LayoutGrid,
-  Activity,
   Power,
   Settings,
   LogOut,
   RefreshCw,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
 } from "lucide-react"
 
 function ProjectSkeleton() {
@@ -71,16 +66,11 @@ type CenterView = "chat" | "board"
 function ProjectBody({
   projectId,
   chatDisabled,
-  templateId,
-  teamMembers,
 }: {
   projectId: string
   chatDisabled?: boolean
-  templateId?: string
-  teamMembers?: TeamMember[]
 }) {
   const [leftOpen, setLeftOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(true)
 
   const [searchParams, setSearchParams] = useSearchParams()
   const centerView = (searchParams.get("view") as CenterView) || "chat"
@@ -89,14 +79,6 @@ function ProjectBody({
     (v: CenterView) => setSearchParams({ view: v }, { replace: true }),
     [setSearchParams],
   )
-
-  const templateAgentNames = useMemo(() => {
-    if (!templateId) return undefined
-    const tmpl = getTemplate(templateId)
-    return tmpl?.agents.map((a) => a.role.toLowerCase())
-  }, [templateId])
-
-  const { feed, connected: activityConnected } = useAgentActivity(projectId, templateAgentNames)
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -144,25 +126,7 @@ function ProjectBody({
               Board
             </button>
 
-            <div className="ml-auto flex items-center gap-1">
-              {feed.length > 0 && !rightOpen && (
-                <span className="text-[11px] tabular-nums text-muted-foreground">
-                  {feed.length}
-                </span>
-              )}
-              <button
-                onClick={() => setRightOpen(!rightOpen)}
-                className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-medium transition-colors ${
-                  rightOpen
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title={rightOpen ? "Close activity panel" : "Open activity panel"}
-              >
-                <Activity className="size-3.5" />
-                {rightOpen ? <PanelRightClose className="size-3.5" /> : <PanelRightOpen className="size-3.5" />}
-              </button>
-            </div>
+            <div className="ml-auto" />
           </div>
 
           <div className="flex-1 min-h-0 flex overflow-hidden">
@@ -174,18 +138,6 @@ function ProjectBody({
                 <KanbanPanel projectId={projectId} />
               </div>
             </div>
-
-            {/* Right panel: Activity Feed */}
-            {rightOpen && (
-              <div className="w-[280px] flex-shrink-0 border-l border-border min-h-0">
-                <ActivityFeed
-                  events={feed}
-                  teamMembers={teamMembers}
-                  templateId={templateId}
-                  embedded
-                />
-              </div>
-            )}
           </div>
         </div>
 
@@ -478,8 +430,6 @@ export function ProjectPage() {
         <ProjectBody
           projectId={id}
           chatDisabled={status === "stopped"}
-          templateId={project?.templateId}
-          teamMembers={headerTeamMembers}
         />
       </div>
     </OpenClawProvider>

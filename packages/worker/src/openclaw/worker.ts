@@ -28,6 +28,17 @@ import { OpenClawWsClient, type OpenClawEvent } from "./openclaw-ws-client";
 import { getOpenClawProcess } from "./openclaw-process";
 import { getOpenClawSessionContext } from "./session-context";
 import { ensureProjectAgent } from "./agent-registry";
+import { buildToolActivityText } from "./tool-activity";
+
+interface AgentActivityPayload {
+  type: "tool_start" | "tool_end" | "turn_end" | "error";
+  tool?: string;
+  text?: string;
+  agentName?: string;
+  filePath?: string;
+  command?: string;
+  timestamp: number;
+}
 
 const logger = createLogger("worker");
 
@@ -401,7 +412,7 @@ Use it when the user references past discussions or you need context.`);
       customInstructions: finalInstructions,
       providerConfig: pc,
       cliBackends: pc.cliBackends,
-      openclawAgentId: (pmeta?.openclawAgentId as string) ?? "master",
+      openclawAgentId: pmeta?.openclawAgentId as string | undefined,
       teamMembers,
     });
 
@@ -531,13 +542,14 @@ Use it when the user references past discussions or you need context.`);
 
       // Ensure per-project agent exists if this message targets a project
       const meta = this.config.platformMetadata as Record<string, unknown> | undefined;
-      const openclawAgentId = (meta?.openclawAgentId as string) ?? "master";
-      if (openclawAgentId !== "master" && meta?.projectId && meta?.projectName) {
-        await ensureProjectAgent(
-          meta.projectId as string,
-          meta.projectName as string,
-        );
+      const openclawAgentId = meta?.openclawAgentId as string | undefined;
+      if (!openclawAgentId || !meta?.projectId) {
+        throw new Error("openclawAgentId and projectId are required in platformMetadata");
       }
+      await ensureProjectAgent(
+        meta.projectId as string,
+        (meta.projectName as string) ?? "Untitled",
+      );
 
       // Send message to OpenClaw and process streaming events
       const sessionKey = `agent:${openclawAgentId}:peon:${this.config.conversationId}`;
@@ -647,12 +659,29 @@ Use it when the user references past discussions or you need context.`);
         break;
 
       case "tool_start": {
+        const input = event.input ?? {};
         logger.info(`[openclaw:tool] Starting: ${event.name}`);
+        const text = buildToolActivityText(event.name, input);
+        const filePath = (input.file_path ?? input.path) as string | undefined;
+        const command = input.command as string | undefined;
+        this.relayToolEvent({
+          type: "tool_start",
+          tool: event.name,
+          ...(text && { text }),
+          ...(filePath && { filePath }),
+          ...(command && { command }),
+          timestamp: Date.now(),
+        });
         break;
       }
 
       case "tool_end":
         logger.info(`[openclaw:tool] Completed: ${event.name}`);
+        this.relayToolEvent({
+          type: "tool_end",
+          tool: event.name,
+          timestamp: Date.now(),
+        });
         break;
 
       case "turn_end":
@@ -669,9 +698,24 @@ Use it when the user references past discussions or you need context.`);
     }
   }
 
-  // Agent activity events are now streamed directly from the OpenClaw gateway
-  // to the Peon gateway via WebSocket (connection-manager.ts). The old
-  // fire-and-forget HTTP relay (postAgentActivity) has been removed.
+  /**
+   * Relay tool events to the Peon gateway via HTTP so they reach SSE clients.
+   * The OpenClaw WebSocket delivers assistant/lifecycle/chat events to passive
+   * observers, but tool events are session-scoped and only visible to the
+   * session initiator (the worker). This relay bridges that gap.
+   */
+  private relayToolEvent(event: AgentActivityPayload): void {
+    const meta = this.config.platformMetadata as Record<string, unknown> | undefined;
+    const projectId = meta?.projectId as string | undefined;
+    const gatewayUrl = process.env.DISPATCHER_URL;
+    if (!projectId || !gatewayUrl) return;
+
+    fetch(`${gatewayUrl}/internal/agent-activity`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, events: [event] }),
+    }).catch(() => {});
+  }
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -818,13 +862,14 @@ Create and show files for any output that helps answer the user's request by usi
         }
 
         try {
+          const noProxyEnv = { ...process.env, HTTP_PROXY: "", HTTPS_PROXY: "", http_proxy: "", https_proxy: "" };
           // Detect the default branch rather than hardcoding "main"
           const { stdout: headRef } = await execAsync(
             "git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null",
-            { cwd: repoDir },
+            { cwd: repoDir, env: noProxyEnv },
           );
           const defaultBranch = headRef.trim().replace("refs/remotes/origin/", "");
-          await execAsync(`git pull origin ${defaultBranch}`, { cwd: repoDir });
+          await execAsync(`git pull origin ${defaultBranch}`, { cwd: repoDir, env: noProxyEnv });
           logger.info(`Pulled latest changes from origin/${defaultBranch}`);
           await fs.writeFile(markerFile, String(Date.now()), "utf-8");
         } catch (pullError) {
@@ -844,6 +889,10 @@ Create and show files for any output that helps answer the user's request by usi
         env: {
           ...process.env,
           GIT_TERMINAL_PROMPT: "0",
+          HTTP_PROXY: "",
+          HTTPS_PROXY: "",
+          http_proxy: "",
+          https_proxy: "",
         },
       });
 

@@ -11,11 +11,6 @@ describe("DashboardPage", () => {
     expect(typeof mod.DashboardPage).toBe("function")
   })
 
-  test("does not export MasterChatPanel", async () => {
-    const mod = await import("./DashboardPage") as Record<string, unknown>
-    expect(mod.MasterChatPanel).toBeUndefined()
-  })
-
   test("does not export ProjectsSidebar", async () => {
     const mod = await import("./DashboardPage") as Record<string, unknown>
     expect(mod.ProjectsSidebar).toBeUndefined()

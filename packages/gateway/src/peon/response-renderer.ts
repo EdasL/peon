@@ -1,15 +1,13 @@
 /**
  * Peon Response Renderer
  * Receives worker responses from the thread_response queue and delivers
- * them to the frontend via SSE. Routes to either project channels or
- * the user's master chat channel based on platformMetadata.
+ * them to the frontend via SSE, routed to the project's broadcast channel.
  */
 
 import { createLogger } from "@lobu/core"
 import type { ThreadResponsePayload } from "../infrastructure/queue/types.js"
 import type { ResponseRenderer } from "../platform/response-renderer.js"
 import { broadcastToProject } from "../web/chat-routes.js"
-import { broadcastToUser } from "../web/redis-broadcast.js"
 import { and, eq, or } from "drizzle-orm"
 import { db } from "../db/connection.js"
 import { chatMessages, projects } from "../db/schema.js"
@@ -31,24 +29,8 @@ function getProjectId(payload: ThreadResponsePayload): string | null {
   return (payload.platformMetadata?.projectId as string) ?? null
 }
 
-function getUserId(payload: ThreadResponsePayload): string | null {
-  return (payload.platformMetadata?.userId as string) ?? null
-}
-
 function isSystemMessage(payload: ThreadResponsePayload): boolean {
   return payload.platformMetadata?.isSystemMessage === true
-}
-
-function broadcast(payload: ThreadResponsePayload, event: string, data: unknown): void {
-  const projectId = getProjectId(payload)
-  if (projectId) {
-    broadcastToProject(projectId, event, data)
-    return
-  }
-  const userId = getUserId(payload)
-  if (userId) {
-    broadcastToUser(userId, event, data)
-  }
 }
 
 export class PeonResponseRenderer implements ResponseRenderer {
@@ -57,14 +39,11 @@ export class PeonResponseRenderer implements ResponseRenderer {
     _sessionKey: string
   ): Promise<string | null> {
     const projectId = getProjectId(payload)
-    const userId = getUserId(payload)
-    if (!projectId && !userId) {
-      logger.warn("No projectId or userId in platformMetadata for delta broadcast")
+    if (!projectId) {
+      logger.warn("No projectId in platformMetadata for delta broadcast")
       return null
     }
 
-    // System bootstrap messages (container init, project setup) are internal
-    // directives — accumulate content but don't stream to the user's chat.
     if (isSystemMessage(payload)) {
       const { messageId, delta } = payload
       if (!delta) return null
@@ -82,10 +61,10 @@ export class PeonResponseRenderer implements ResponseRenderer {
     const accumulated = (buf?.content ?? "") + delta
     streamBuffers.set(messageId, { content: accumulated, createdAt: buf?.createdAt ?? Date.now() })
 
-    broadcast(payload, "chat_delta", { delta, messageId, accumulated })
+    broadcastToProject(projectId, "chat_delta", { delta, messageId, accumulated })
 
     logger.debug(
-      `Broadcast delta to ${projectId ? `project ${projectId}` : `user ${userId}`}: ${delta.length} chars (accumulated ${accumulated.length})`
+      `Broadcast delta to project ${projectId}: ${delta.length} chars (accumulated ${accumulated.length})`
     )
 
     return messageId
@@ -96,63 +75,14 @@ export class PeonResponseRenderer implements ResponseRenderer {
     _sessionKey: string
   ): Promise<void> {
     const projectId = getProjectId(payload)
-    const userId = getUserId(payload)
-    if (!projectId && !userId) {
-      logger.warn("No projectId or userId in platformMetadata for completion broadcast")
+    if (!projectId) {
+      logger.warn("No projectId in platformMetadata for completion broadcast")
       return
     }
 
     const { messageId } = payload
 
-    // System bootstrap messages: still transition project status but don't
-    // persist as a chat message or broadcast to the user.
     if (isSystemMessage(payload)) {
-      if (projectId) {
-        const [updatedProject] = await db
-          .update(projects)
-          .set({ status: "running", updatedAt: new Date() })
-          .where(and(
-            eq(projects.id, projectId),
-            or(eq(projects.status, "creating"), eq(projects.status, "initializing"))
-          ))
-          .returning()
-
-        if (updatedProject) {
-          broadcastToProject(projectId, "project_status", { status: "running" })
-        }
-      }
-      streamBuffers.delete(messageId)
-      logger.info(`System message completion (suppressed from chat): ${projectId ? `project ${projectId}` : `user ${userId}`}`)
-      return
-    }
-
-    const bufferContent = streamBuffers.get(messageId)?.content ?? ""
-    const payloadContent = payload.content ?? ""
-
-    if (bufferContent && payloadContent && bufferContent !== payloadContent) {
-      logger.warn(
-        `Content mismatch for message ${messageId}: buffer=${bufferContent.length} chars, payload=${payloadContent.length} chars`
-      )
-    }
-
-    // Prefer the longer source to guard against partial accumulation on either side
-    const content =
-      bufferContent.length >= payloadContent.length
-        ? bufferContent
-        : payloadContent
-
-    const [assistantMsg] = await db
-      .insert(chatMessages)
-      .values({
-        projectId: projectId ?? undefined,
-        userId: userId ?? undefined,
-        role: "assistant" as const,
-        content,
-        contentBlocks: payload.contentBlocks ?? undefined,
-      })
-      .returning()
-
-    if (projectId) {
       const [updatedProject] = await db
         .update(projects)
         .set({ status: "running", updatedAt: new Date() })
@@ -165,14 +95,52 @@ export class PeonResponseRenderer implements ResponseRenderer {
       if (updatedProject) {
         broadcastToProject(projectId, "project_status", { status: "running" })
       }
+      streamBuffers.delete(messageId)
+      logger.info(`System message completion (suppressed from chat): project ${projectId}`)
+      return
     }
 
-    broadcast(payload, "message", assistantMsg)
+    const bufferContent = streamBuffers.get(messageId)?.content ?? ""
+    const payloadContent = payload.content ?? ""
+
+    if (bufferContent && payloadContent && bufferContent !== payloadContent) {
+      logger.warn(
+        `Content mismatch for message ${messageId}: buffer=${bufferContent.length} chars, payload=${payloadContent.length} chars`
+      )
+    }
+
+    const content =
+      bufferContent.length >= payloadContent.length
+        ? bufferContent
+        : payloadContent
+
+    const [assistantMsg] = await db
+      .insert(chatMessages)
+      .values({
+        projectId,
+        role: "assistant" as const,
+        content,
+        contentBlocks: payload.contentBlocks ?? undefined,
+      })
+      .returning()
+
+    const [updatedProject] = await db
+      .update(projects)
+      .set({ status: "running", updatedAt: new Date() })
+      .where(and(
+        eq(projects.id, projectId),
+        or(eq(projects.status, "creating"), eq(projects.status, "initializing"))
+      ))
+      .returning()
+
+    if (updatedProject) {
+      broadcastToProject(projectId, "project_status", { status: "running" })
+    }
+
+    broadcastToProject(projectId, "message", assistantMsg)
     streamBuffers.delete(messageId)
 
-    logger.info(
-      `Completion for ${projectId ? `project ${projectId}` : `master chat (user ${userId})`}: persisted ${content.length} chars`
-    )
+    logger.info(`Completion for project ${projectId}: persisted ${content.length} chars`)
   }
 
   async handleError(
@@ -180,46 +148,14 @@ export class PeonResponseRenderer implements ResponseRenderer {
     _sessionKey: string
   ): Promise<void> {
     const projectId = getProjectId(payload)
-    const userId = getUserId(payload)
-    if (!projectId && !userId) {
-      logger.warn("No projectId or userId in platformMetadata for error broadcast")
+    if (!projectId) {
+      logger.warn("No projectId in platformMetadata for error broadcast")
       return
     }
 
     const errorContent = payload.error ?? "An unknown error occurred."
 
-    // System bootstrap errors: update project status but don't show in chat
     if (isSystemMessage(payload)) {
-      if (projectId) {
-        const [updatedProject] = await db
-          .update(projects)
-          .set({ status: "error", updatedAt: new Date() })
-          .where(and(
-            eq(projects.id, projectId),
-            or(eq(projects.status, "creating"), eq(projects.status, "initializing"))
-          ))
-          .returning()
-
-        if (updatedProject) {
-          broadcastToProject(projectId, "project_status", { status: "error", message: "Setup failed — please try again" })
-        }
-      }
-      streamBuffers.delete(payload.messageId)
-      logger.error(`System message error (suppressed from chat): ${errorContent}`)
-      return
-    }
-
-    const [assistantMsg] = await db
-      .insert(chatMessages)
-      .values({
-        projectId: projectId ?? undefined,
-        userId: userId ?? undefined,
-        role: "assistant" as const,
-        content: errorContent,
-      })
-      .returning()
-
-    if (projectId) {
       const [updatedProject] = await db
         .update(projects)
         .set({ status: "error", updatedAt: new Date() })
@@ -230,29 +166,51 @@ export class PeonResponseRenderer implements ResponseRenderer {
         .returning()
 
       if (updatedProject) {
-        broadcastToProject(projectId, "project_status", { status: "error", message: errorContent })
+        broadcastToProject(projectId, "project_status", { status: "error", message: "Setup failed — please try again" })
       }
+      streamBuffers.delete(payload.messageId)
+      logger.error(`System message error (suppressed from chat): ${errorContent}`)
+      return
     }
 
-    broadcast(payload, "message", assistantMsg)
+    const [assistantMsg] = await db
+      .insert(chatMessages)
+      .values({
+        projectId,
+        role: "assistant" as const,
+        content: errorContent,
+      })
+      .returning()
+
+    const [updatedProject] = await db
+      .update(projects)
+      .set({ status: "error", updatedAt: new Date() })
+      .where(and(
+        eq(projects.id, projectId),
+        or(eq(projects.status, "creating"), eq(projects.status, "initializing"))
+      ))
+      .returning()
+
+    if (updatedProject) {
+      broadcastToProject(projectId, "project_status", { status: "error", message: errorContent })
+    }
+
+    broadcastToProject(projectId, "message", assistantMsg)
     streamBuffers.delete(payload.messageId)
 
-    logger.error(
-      `Error for ${projectId ? `project ${projectId}` : `master chat (user ${userId})`}: ${errorContent}`
-    )
+    logger.error(`Error for project ${projectId}: ${errorContent}`)
   }
 
   async handleStatusUpdate(payload: ThreadResponsePayload): Promise<void> {
     if (isSystemMessage(payload)) return
 
     const projectId = getProjectId(payload)
-    const userId = getUserId(payload)
-    if (!projectId && !userId) return
+    if (!projectId) return
 
     const { statusUpdate } = payload
     if (!statusUpdate) return
 
-    broadcast(payload, "chat_status", {
+    broadcastToProject(projectId, "chat_status", {
       state: statusUpdate.state,
       elapsedSeconds: statusUpdate.elapsedSeconds,
     })

@@ -1,15 +1,15 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { useChat } from "@/hooks/use-chat"
 import { Button } from "@/components/ui/button"
 import { Loader2, MessageSquare, Send, X, RefreshCw } from "lucide-react"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { RichMessage } from "./RichMessage"
 import { cn } from "@/lib/utils"
+import type { ContentBlock } from "@/lib/api"
 import "@chatscope/chat-ui-kit-styles/dist/default/styles.min.css"
 import {
   MessageList,
   Message,
-  MessageGroup,
   TypingIndicator,
 } from "@chatscope/chat-ui-kit-react"
 
@@ -39,10 +39,22 @@ function formatTime(iso: string): string {
 }
 
 export function ChatPanel({ projectId, disabled }: { projectId: string; disabled?: boolean }) {
-  const { messages, send, sending, streamingContent, loading, error, connected } =
+  const { messages, send, sending, streamingContent, streamingBlocks, loading, error, connected } =
     useChat(projectId)
   const [input, setInput] = useState("")
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false)
+
+  const displayBlocks = useMemo(() => {
+    if (streamingBlocks.length === 0) return streamingBlocks
+    const copy = streamingBlocks.map((b) => ({ ...b }))
+    for (let i = copy.length - 1; i >= 0; i--) {
+      if (copy[i].type === "text" && copy[i].text) {
+        copy[i] = { ...copy[i], text: copy[i].text + "\u258D" }
+        break
+      }
+    }
+    return copy
+  }, [streamingBlocks])
 
   useEffect(() => {
     if (connected) setHasConnectedOnce(true)
@@ -131,7 +143,7 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
           >
             {messages.map((msg) => (
               <Message
-                key={msg.id}
+                key={msg._stableKey || msg.id}
                 model={{
                   direction: msg.role === "user" ? "outgoing" : "incoming",
                   position: "single",
@@ -164,7 +176,11 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
                 }}
               >
                 <Message.CustomContent>
-                  <MarkdownMessage content={streamingContent + "\u258D"} />
+                  {displayBlocks.length > 0 ? (
+                    <RichMessage blocks={displayBlocks} />
+                  ) : (
+                    <MarkdownMessage content={streamingContent + "\u258D"} />
+                  )}
                 </Message.CustomContent>
                 <Message.Footer>
                   <span className="text-[11px] text-muted-foreground">Team Lead</span>
@@ -207,12 +223,12 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
             size="icon"
             onClick={handleSend}
             disabled={sending || disabled || !input.trim()}
-            className="h-[36px] min-h-[36px] w-[36px] flex-shrink-0"
+            className="size-[38px] min-h-[38px] flex-shrink-0"
           >
             {sending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Send className="h-3.5 w-3.5" />
+              <Send className="h-4 w-4" />
             )}
           </Button>
         </div>

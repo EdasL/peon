@@ -244,7 +244,7 @@ function handleTaskToolCall(
 // ---------------------------------------------------------------------------
 
 function deriveAgentName(sessionKey: string | undefined): string {
-  if (!sessionKey || sessionKey === "main" || sessionKey === "master") return "lead"
+  if (!sessionKey || sessionKey === "main") return "lead"
   const dashIdx = sessionKey.indexOf("-")
   if (dashIdx > 0) return sessionKey.substring(0, dashIdx)
   return sessionKey

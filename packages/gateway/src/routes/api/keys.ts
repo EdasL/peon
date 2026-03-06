@@ -1,3 +1,4 @@
+import { createLogger } from "@lobu/core"
 import { Hono } from "hono"
 import { requireAuth, getSession } from "../../auth/middleware.js"
 import { db } from "../../db/connection.js"
@@ -7,6 +8,9 @@ import { encrypt } from "../../services/encryption.js"
 import { ensurePeonAgent, bridgeCredentials } from "../../peon/agent-helper.js"
 import { getPeonPlatform } from "../../peon/platform.js"
 import { AuthProfilesManager } from "../../auth/settings/auth-profiles-manager.js"
+import { recycleUserContainer } from "../../web/credential-refresh.js"
+
+const logger = createLogger("api-keys")
 
 const ALLOWED_PROVIDERS = ["anthropic", "openai"] as const
 type AllowedProvider = typeof ALLOWED_PROVIDERS[number]
@@ -125,13 +129,14 @@ keysRouter.post("/", async (c) => {
     key = inserted
   }
 
-  // Re-bridge credentials to Peon agent after adding/updating a key
+  // Re-bridge credentials and recycle the container so the new key takes effect
   try {
     const peonAgentId = await ensurePeonAgent(session.userId)
     const services = getPeonPlatform().getServices()
     await bridgeCredentials(session.userId, peonAgentId, services)
-  } catch {
-    // Non-fatal: key is saved, credential sync can be retried
+    await recycleUserContainer(session.userId, peonAgentId)
+  } catch (err) {
+    logger.warn("Non-fatal: credential bridge/recycle failed", { error: err })
   }
 
   const statusCode = existing ? 200 : 201

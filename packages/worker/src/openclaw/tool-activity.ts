@@ -24,22 +24,24 @@ export function buildToolActivityText(
     ? filePath.split("/").slice(-2).join("/")
     : undefined;
 
-  switch (toolName) {
-    case "Read":
+  switch (toolName.toLowerCase()) {
+    case "read":
       return shortPath ? `Reading ${shortPath}` : "Reading file";
-    case "Edit":
+    case "edit":
+    case "multiedit":
+    case "streplace":
       return shortPath ? `Editing ${shortPath}` : "Editing file";
-    case "Write":
+    case "write":
       return shortPath ? `Writing ${shortPath}` : "Writing file";
 
-    case "Bash":
+    case "bash":
     case "exec":
-    case "Exec": {
+    case "shell": {
       const cmd = (input.command as string | undefined) ?? "";
       return cmd ? `Running ${cmd.slice(0, 100)}` : "Running command";
     }
 
-    case "Grep": {
+    case "grep": {
       const pattern = (input.pattern as string | undefined) ?? "";
       const inPath = (input.path as string | undefined) ?? "";
       if (pattern && inPath)
@@ -48,23 +50,23 @@ export function buildToolActivityText(
       return "Searching";
     }
 
-    case "Glob": {
-      const pattern = (input.pattern as string | undefined) ?? "";
+    case "glob": {
+      const pattern = (input.pattern ?? input.glob_pattern) as string | undefined;
       return pattern ? `Globbing ${pattern.slice(0, 60)}` : "Listing files";
     }
 
-    case "WebFetch":
-    case "WebSearch": {
-      const target = (input.url ?? input.query) as string | undefined;
+    case "webfetch":
+    case "websearch": {
+      const target = (input.url ?? input.query ?? input.search_term) as string | undefined;
       return target ? `Fetching ${String(target).slice(0, 60)}` : "Fetching web";
     }
 
-    case "TaskCreate": {
+    case "taskcreate": {
       const subject = (input.subject as string | undefined) ?? "";
       return subject ? `Creating task: ${subject.slice(0, 60)}` : "Creating task";
     }
 
-    case "TaskUpdate": {
+    case "taskupdate": {
       const status = (input.status as string | undefined) ?? "";
       const taskId = (input.taskId as string | undefined) ?? "";
       if (status && taskId) return `Updating task ${taskId} → ${status}`;
@@ -72,8 +74,14 @@ export function buildToolActivityText(
       return "Updating task";
     }
 
-    case "TaskList":
+    case "tasklist":
       return "Listing tasks";
+
+    case "todowrite":
+      return "Updating tasks";
+
+    case "task":
+      return "Launching task";
 
     default: {
       // Generic fallback: use most useful available field

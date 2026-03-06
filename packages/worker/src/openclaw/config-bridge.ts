@@ -4,17 +4,15 @@
  * Maps the gateway's session-context response to the file structure
  * OpenClaw expects under ~/.openclaw/ (HOME=/workspace in Docker):
  *
- *   /workspace/
- *     SOUL.md                    <- master agent identity (matches agents.list workspace)
  *   ~/.openclaw/
  *     openclaw.json              <- updated dynamically (agents.model, agents.apiKey)
- *     workspace-master/
- *       SOUL.md                  <- safety copy (fallback if agents.list missing)
  *     agents/<id>/agent/
- *       SOUL.md                  <- project agent identity
+ *       SOUL.md                  <- project agent identity (dynamic, per-message)
+ *       AGENTS.md                <- agent behavior defaults (static, written once)
+ *       BOOTSTRAP.md             <- first-run behavior (static, written once)
  *     skills/
- *       gateway-skills/SKILL.md  <- skillsInstructions
- *       peon-tools/SKILL.md      <- custom tools manifest
+ *       gateway-skills/SKILL.md  <- skillsInstructions (dynamic, per-message)
+ *       peon-tools/SKILL.md      <- custom tools manifest (static, written once)
  */
 
 import * as fs from "node:fs/promises";
@@ -45,7 +43,7 @@ export interface ConfigBridgeInput {
   customInstructions: string;
   /** Provider config from session context */
   providerConfig: ProviderConfig;
-  /** OpenClaw agent id — "master" for orchestrator, "project-<id>" for project agents */
+  /** OpenClaw agent id — "project-<id>" for project agents */
   openclawAgentId?: string;
   /** Configured team members for the active project */
   teamMembers?: TeamMemberInfo[];
@@ -64,61 +62,42 @@ export interface ConfigBridgeInput {
  *
  * Writes to ~/.openclaw/ which OpenClaw reads at runtime.
  * The bootstrap config (openclaw.json) is written once by bootstrap-config.ts;
- * here we only update the dynamic parts (agents section, SOUL.md, skills).
+ * here we only update the dynamic parts (agents section, SOUL.md, gateway-skills).
+ *
+ * Static files (AGENTS.md, BOOTSTRAP.md, peon-tools/SKILL.md) are written once
+ * by ensureProjectAgent() in agent-registry.ts at agent creation time.
  */
 export async function writeOpenClawConfig(
   input: ConfigBridgeInput
 ): Promise<void> {
   const openclawDir = getOpenClawHome();
-  const agentId = input.openclawAgentId ?? "master";
+  const agentId = input.openclawAgentId;
 
-  // Master agent workspace is /workspace (matches agents.list in bootstrap config).
-  // Project agents use ~/.openclaw/agents/<id>/agent/.
-  const soulDir = agentId === "master"
-    ? "/workspace"
-    : path.join(openclawDir, "agents", agentId, "agent");
+  if (!agentId) {
+    throw new Error("openclawAgentId is required in ConfigBridgeInput");
+  }
+
+  const soulDir = path.join(openclawDir, "agents", agentId, "agent");
 
   const skillsDir = path.join(openclawDir, "skills");
   const gatewaySkillsDir = path.join(skillsDir, "gateway-skills");
-  const peonToolsDir = path.join(skillsDir, "peon-tools");
 
   await fs.mkdir(soulDir, { recursive: true });
   await fs.mkdir(gatewaySkillsDir, { recursive: true });
-  await fs.mkdir(peonToolsDir, { recursive: true });
 
-  const writes: Promise<void>[] = [
+  await Promise.all([
     writeSoulMd(soulDir, input),
-    writeAgentsMd(soulDir),
-    writeBootstrapMd(soulDir),
     updateOpenClawAgentsConfig(openclawDir, input.providerConfig),
     writeGatewaySkill(gatewaySkillsDir, input.gatewayInstructions),
-    writePeonToolsSkill(peonToolsDir),
     writeSessionContext(openclawDir),
-  ];
-
-  // Safety net: also write identity files to workspace-master/ so the agent
-  // gets the Peon persona even if the agents.list is missing and OpenClaw
-  // falls back to its default workspace-master directory.
-  if (agentId === "master") {
-    const fallbackDir = path.join(openclawDir, "workspace-master");
-    writes.push(
-      fs.mkdir(fallbackDir, { recursive: true }).then(async () => {
-        await writeSoulMd(fallbackDir, input);
-        await writeAgentsMd(fallbackDir);
-        await writeBootstrapMd(fallbackDir);
-      }),
-    );
-  }
-
-  await Promise.all(writes);
+  ]);
 
   logger.info(`OpenClaw config written to ${openclawDir} (agent=${agentId})`);
 }
 
 /**
  * SOUL.md — the main system prompt / orchestrator personality.
- * For master: written to /workspace/SOUL.md (the agent's configured workspace).
- * For project agents: written to ~/.openclaw/agents/<id>/agent/SOUL.md.
+ * Written to ~/.openclaw/agents/<id>/agent/SOUL.md per message (dynamic content).
  */
 async function writeSoulMd(
   workspaceDir: string,
@@ -273,9 +252,9 @@ You run inside a Docker container. Key facts:
 
 /**
  * AGENTS.md — Peon-specific agent behavior defaults.
- * Written alongside SOUL.md to every workspace directory.
+ * Written once by ensureProjectAgent() at agent creation time.
  */
-async function writeAgentsMd(workspaceDir: string): Promise<void> {
+export async function writeAgentsMd(workspaceDir: string): Promise<void> {
   const agentsMd = `# AGENTS.md
 
 ## Peon-specific: You are a team orchestrator (not a coder)
@@ -300,9 +279,9 @@ When the user connects a project for the first time (no BACKLOG.md exists):
 
 /**
  * BOOTSTRAP.md — first-run behavior for the lead agent.
- * Written alongside SOUL.md to every workspace directory.
+ * Written once by ensureProjectAgent() at agent creation time.
  */
-async function writeBootstrapMd(workspaceDir: string): Promise<void> {
+export async function writeBootstrapMd(workspaceDir: string): Promise<void> {
   const bootstrapMd = `# BOOTSTRAP.md
 
 You are the Peon lead agent. A user has just created or opened this project.
@@ -410,8 +389,9 @@ ${gatewayInstructions}
 /**
  * Peon tools skill — describes the custom gateway integration tools
  * available to the orchestrator.
+ * Written once by ensureProjectAgent() at agent creation time.
  */
-async function writePeonToolsSkill(skillDir: string): Promise<void> {
+export async function writePeonToolsSkill(skillDir: string): Promise<void> {
   const skillMd = `# Peon Gateway Tools
 
 These tools integrate with the Peon gateway to provide user-facing capabilities.

@@ -2,16 +2,18 @@ import { useState } from "react"
 import type { ContentBlock } from "@/lib/api"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { cn } from "@/lib/utils"
-import { ChevronRight, Wrench, Brain } from "lucide-react"
+import { ChevronRight, Wrench, Brain, Loader2 } from "lucide-react"
 
 function toolVerb(tool: string): string {
   switch (tool.toLowerCase()) {
     case "read": return "Read"
     case "write": return "Created"
     case "edit":
-    case "multiedit": return "Edited"
+    case "multiedit":
+    case "streplace": return "Edited"
     case "bash":
-    case "exec": return "Ran"
+    case "exec":
+    case "shell": return "Ran"
     case "grep": return "Searched"
     case "glob": return "Scanned files"
     case "webbrowser":
@@ -35,6 +37,7 @@ function describeToolUse(name: string, input: Record<string, unknown>): string {
     return `${verb} \`${cmd}\``
   }
   if (typeof query === "string") return `${verb} \`${query}\``
+  if (typeof input._description === "string") return input._description
   return verb
 }
 
@@ -42,24 +45,37 @@ function ToolCallCard({ block }: { block: ContentBlock }) {
   const [open, setOpen] = useState(false)
   const name = block.name ?? "tool"
   const input = block.input ?? {}
+  const isLoading = block._loading === true
   const description = describeToolUse(name, input)
 
   return (
-    <div className="my-1.5 rounded-md border border-border/50 bg-muted/30 overflow-hidden">
+    <div className={cn(
+      "my-1.5 rounded-md border overflow-hidden transition-colors",
+      isLoading
+        ? "border-primary/30 bg-primary/5 animate-pulse"
+        : "border-border/50 bg-muted/30"
+    )}>
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/50 transition-colors cursor-pointer"
       >
-        <ChevronRight className={cn(
-          "h-3 w-3 text-muted-foreground shrink-0 transition-transform duration-150",
-          open && "rotate-90"
-        )} />
-        <Wrench className="h-3 w-3 text-muted-foreground shrink-0" />
-        <span className="text-[11px] font-mono text-muted-foreground truncate">
+        {isLoading ? (
+          <Loader2 className="h-3 w-3 text-primary shrink-0 animate-spin" />
+        ) : (
+          <ChevronRight className={cn(
+            "h-3 w-3 text-muted-foreground shrink-0 transition-transform duration-150",
+            open && "rotate-90"
+          )} />
+        )}
+        <Wrench className={cn("h-3 w-3 shrink-0", isLoading ? "text-primary" : "text-muted-foreground")} />
+        <span className={cn(
+          "text-[11px] font-mono truncate",
+          isLoading ? "text-foreground/70" : "text-muted-foreground"
+        )}>
           {description}
         </span>
       </button>
-      {open && (
+      {open && !isLoading && (
         <div className="px-3 py-2 border-t border-border/30 bg-background/50">
           <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all overflow-x-auto max-h-[200px] overflow-y-auto">
             {JSON.stringify(input, null, 2)}
@@ -72,18 +88,28 @@ function ToolCallCard({ block }: { block: ContentBlock }) {
 
 function ToolGroupCard({ blocks }: { blocks: ContentBlock[] }) {
   const [open, setOpen] = useState(false)
+  const anyLoading = blocks.some((b) => b._loading)
 
   return (
-    <div className="my-1.5 rounded-md border border-border/50 bg-muted/30 overflow-hidden">
+    <div className={cn(
+      "my-1.5 rounded-md border overflow-hidden transition-colors",
+      anyLoading
+        ? "border-primary/30 bg-primary/5"
+        : "border-border/50 bg-muted/30"
+    )}>
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/50 transition-colors cursor-pointer"
       >
-        <ChevronRight className={cn(
-          "h-3 w-3 text-muted-foreground shrink-0 transition-transform duration-150",
-          open && "rotate-90"
-        )} />
-        <Wrench className="h-3 w-3 text-muted-foreground shrink-0" />
+        {anyLoading ? (
+          <Loader2 className="h-3 w-3 text-primary shrink-0 animate-spin" />
+        ) : (
+          <ChevronRight className={cn(
+            "h-3 w-3 text-muted-foreground shrink-0 transition-transform duration-150",
+            open && "rotate-90"
+          )} />
+        )}
+        <Wrench className={cn("h-3 w-3 shrink-0", anyLoading ? "text-primary" : "text-muted-foreground")} />
         <span className="text-[11px] font-mono text-muted-foreground">
           Used {blocks.length} tools
         </span>
@@ -91,7 +117,10 @@ function ToolGroupCard({ blocks }: { blocks: ContentBlock[] }) {
       {open && (
         <div className="border-t border-border/30">
           {blocks.map((block, i) => (
-            <div key={block.id ?? i} className="px-3 py-1 border-b border-border/20 last:border-b-0">
+            <div key={block.id ?? i} className="flex items-center gap-1.5 px-3 py-1 border-b border-border/20 last:border-b-0">
+              {block._loading && (
+                <Loader2 className="h-2.5 w-2.5 text-primary shrink-0 animate-spin" />
+              )}
               <span className="text-[11px] font-mono text-muted-foreground">
                 {describeToolUse(block.name ?? "tool", block.input ?? {})}
               </span>

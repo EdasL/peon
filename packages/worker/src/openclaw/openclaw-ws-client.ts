@@ -559,7 +559,7 @@ export class OpenClawWsClient {
         return [{
           type: "tool_start",
           name: (evtData.name as string) ?? "unknown",
-          input: (evtData.input as Record<string, unknown>) ?? {},
+          input: (evtData.input ?? evtData.args) as Record<string, unknown> ?? {},
         }];
       }
       if (phase === "end" || phase === "result") {
