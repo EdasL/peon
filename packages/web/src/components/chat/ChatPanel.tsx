@@ -136,7 +136,7 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
             autoScrollToBottom
             autoScrollToBottomOnMount
             typingIndicator={
-              streamingContent === THINKING_SENTINEL ? (
+              streamingContent === THINKING_SENTINEL && displayBlocks.length === 0 ? (
                 <TypingIndicator content="Team Lead is thinking" />
               ) : null
             }
@@ -168,7 +168,7 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
                 </Message.Footer>
               </Message>
             ))}
-            {streamingContent && streamingContent !== THINKING_SENTINEL && (
+            {((streamingContent && streamingContent !== THINKING_SENTINEL) || displayBlocks.length > 0) && (
               <Message
                 model={{
                   direction: "incoming",

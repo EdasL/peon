@@ -119,11 +119,18 @@ export function useChat(projectId: string) {
         markEvent();
         const msg = JSON.parse(e.data) as ChatMessage;
         if (msg.role === "assistant") {
-          const toolBlocks = blocksRef.current.filter((b) => b.type === "tool_use");
-          if (toolBlocks.length > 0 && msg.contentBlocks) {
-            msg.contentBlocks = [...toolBlocks.map((b) => ({ ...b, _loading: false })), ...msg.contentBlocks];
-          } else if (toolBlocks.length > 0) {
-            msg.contentBlocks = [...toolBlocks.map((b) => ({ ...b, _loading: false })), { type: "text" as const, text: msg.content }];
+          const toolBlocks = blocksRef.current
+            .filter((b) => b.type === "tool_use")
+            .map((b) => ({ ...b, _loading: false }));
+          if (toolBlocks.length > 0) {
+            const existing = msg.contentBlocks ?? [];
+            const alreadyHasTools = existing.some((b) => b.type === "tool_use");
+            if (!alreadyHasTools) {
+              const textBlocks = existing.length > 0
+                ? existing
+                : msg.content ? [{ type: "text" as const, text: msg.content }] : [];
+              msg.contentBlocks = [...toolBlocks, ...textBlocks];
+            }
           }
           resetStreaming();
         }
@@ -136,7 +143,10 @@ export function useChat(projectId: string) {
             );
             if (idx >= 0) {
               const updated = [...prev];
-              updated[idx] = { ...msg, _stableKey: prev[idx]._stableKey ?? prev[idx].id };
+              updated[idx] = {
+                ...msg,
+                _stableKey: prev[idx]._stableKey ?? prev[idx].id,
+              };
               return updated;
             }
           }
