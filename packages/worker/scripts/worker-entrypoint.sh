@@ -266,6 +266,8 @@ mkdir -p "$CLAUDE_CONFIG_DIR"
 cat > "$CLAUDE_CONFIG_DIR/settings.json" << 'SETTINGSEOF'
 {
   "model": "opus",
+  "theme": "dark",
+  "hasCompletedOnboarding": true,
   "teammateMode": "in-process",
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,

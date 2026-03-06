@@ -911,13 +911,26 @@ Never skip task status updates — the user watches the board to track progress.
 
       await sendKeys(sessionName, claudeCmd);
 
-      // Wait for Claude's interactive prompt to appear before sending the task.
+      // Wait for Claude's interactive input prompt (not a theme/onboarding prompt).
       const readyTimeout = 60_000;
       const readyStart = Date.now();
       let ready = false;
       while (Date.now() - readyStart < readyTimeout) {
         const pane = await capturePane(sessionName).catch(() => "");
-        if (pane.includes(">") || pane.includes("Type your") || pane.includes("Claude")) {
+        // #region agent log
+        fetch('http://127.0.0.1:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1162a6'},body:JSON.stringify({sessionId:'1162a6',location:'peon-gateway/index.ts:ready-check',message:'Pane capture during ready check',data:{pane:pane.slice(-500),elapsed:Date.now()-readyStart},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        const isThemePrompt = pane.includes("theme") || pane.includes("Theme") || pane.includes("onboarding");
+        if (isThemePrompt) {
+          console.error(`[DelegateToProject] Detected theme/onboarding prompt for ${params.projectId}, sending Enter to dismiss`);
+          // #region agent log
+          fetch('http://127.0.0.1:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1162a6'},body:JSON.stringify({sessionId:'1162a6',location:'peon-gateway/index.ts:theme-detected',message:'Theme/onboarding prompt detected, sending Enter',data:{pane:pane.slice(-500)},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+          await sendKeys(sessionName, "");
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        if (pane.includes("Type your") || pane.includes("> ")) {
           ready = true;
           break;
         }
@@ -926,7 +939,11 @@ Never skip task status updates — the user watches the board to track progress.
       }
 
       if (!ready) {
+        const finalPane = await capturePane(sessionName).catch(() => "");
         console.error(`[DelegateToProject] Claude did not become ready within ${readyTimeout}ms for ${params.projectId}`);
+        // #region agent log
+        fetch('http://127.0.0.1:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1162a6'},body:JSON.stringify({sessionId:'1162a6',location:'peon-gateway/index.ts:ready-timeout',message:'Claude not ready - timeout',data:{pane:finalPane.slice(-800),projectId:params.projectId},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         team.completed = true;
         team.exitCode = 1;
         team.output += "\nError: Claude Code did not start within timeout";
@@ -938,6 +955,9 @@ Never skip task status updates — the user watches the board to track progress.
         return text(`Team for "${params.projectId}" failed after ${elapsed}s: Claude Code did not start within timeout.`);
       }
 
+      // #region agent log
+      fetch('http://127.0.0.1:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1162a6'},body:JSON.stringify({sessionId:'1162a6',location:'peon-gateway/index.ts:task-send',message:'Sending task to Claude',data:{taskLength:fullTask.length,projectId:params.projectId,readyElapsed:Date.now()-readyStart},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       await sendKeys(sessionName, fullTask);
     } else {
       // --- Print mode for solo tasks (no team) ---
