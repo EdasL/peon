@@ -50,6 +50,13 @@
       "when": 1772800000000,
       "tag": "0006_rename_lobu_to_peon",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1772900000000,
+      "tag": "0007_content_blocks",
+      "breakpoints": true
     }
   ]
 }

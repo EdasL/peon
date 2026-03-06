@@ -21,7 +21,6 @@ import { keysRouter } from "../routes/api/keys.js";
 import { userRouter } from "../routes/api/user.js";
 import { projectTeamsRouter, teamMembersRouter } from "../routes/api/teams.js";
 import { chatRouter } from "../web/chat-routes.js";
-import { masterChatRouter } from "../web/master-chat-routes.js";
 import { initBroadcast } from "../web/redis-broadcast.js";
 import { claudeOAuthRouter } from "../routes/api/claude-oauth.js";
 import { setupOpenClawWsProxy } from "../openclaw/ws-proxy.js";
@@ -120,9 +119,6 @@ function setupServer(
 
   // Femrun web chat (SSE streaming, chat history, message sending)
   app.route("/api/projects", chatRouter);
-
-  // Master chat (global orchestrator, no project scope)
-  app.route("/api/chat", masterChatRouter);
 
   // Prometheus metrics endpoint
   app.get("/metrics", async (c) => {

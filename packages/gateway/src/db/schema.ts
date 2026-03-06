@@ -42,6 +42,7 @@ export const chatMessages = pgTable("chat_messages", {
   userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
   role: text("role", { enum: ["user", "assistant"] }).notNull(),
   content: text("content").notNull(),
+  contentBlocks: jsonb("content_blocks").$type<unknown[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 

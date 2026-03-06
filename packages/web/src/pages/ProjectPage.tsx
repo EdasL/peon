@@ -126,14 +126,17 @@ function ProjectBody({
               Board
             </button>
 
+            <div className="ml-auto" />
           </div>
 
-          <div className="flex-1 min-h-0 relative">
-            <div className={`absolute inset-0 ${centerView === "chat" ? "" : "hidden"}`}>
-              <ChatPanel projectId={projectId} disabled={chatDisabled} />
-            </div>
-            <div className={`absolute inset-0 ${centerView === "board" ? "" : "hidden"}`}>
-              <KanbanPanel projectId={projectId} />
+          <div className="flex-1 min-h-0 flex overflow-hidden">
+            <div className="flex-1 min-w-0 relative">
+              <div className={`absolute inset-0 ${centerView === "chat" ? "" : "hidden"}`}>
+                <ChatPanel projectId={projectId} disabled={chatDisabled} />
+              </div>
+              <div className={`absolute inset-0 ${centerView === "board" ? "" : "hidden"}`}>
+                <KanbanPanel projectId={projectId} />
+              </div>
             </div>
           </div>
         </div>
@@ -179,6 +182,7 @@ export function ProjectPage() {
   const [status, setStatus] = useState<Project["status"] | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [bootStep, setBootStep] = useState<string | null>(null)
+  const [setupActivity, setSetupActivity] = useState<string | null>(null)
   const [headerTeamMembers, setHeaderTeamMembers] = useState<TeamMember[]>([])
 
   useEffect(() => {
@@ -230,6 +234,17 @@ export function ProjectPage() {
         setBootStep(data.step)
       } catch {}
     })
+    es.addEventListener("agent_activity", (e) => {
+      try {
+        const data = JSON.parse(e.data) as { type: string; tool?: string; text?: string; filePath?: string; command?: string }
+        if (data.type === "tool_start" && data.tool) {
+          const label = data.text ?? data.filePath ?? data.command ?? data.tool
+          setSetupActivity(label)
+        } else if (data.type === "turn_end") {
+          setSetupActivity(null)
+        }
+      } catch {}
+    })
     return () => es.close()
   }, [id])
 
@@ -265,6 +280,7 @@ export function ProjectPage() {
         projectName={project?.name ?? "your project"}
         status={status}
         bootStep={bootStep}
+        activityText={setupActivity}
         onReady={handleProvisioningReady}
         onBack={() => navigate("/dashboard")}
       />
@@ -411,7 +427,10 @@ export function ProjectPage() {
         </header>
 
         {/* Body: left panel + center + right panel + bottom status bar */}
-        <ProjectBody projectId={id} chatDisabled={status === "stopped"} />
+        <ProjectBody
+          projectId={id}
+          chatDisabled={status === "stopped"}
+        />
       </div>
     </OpenClawProvider>
   )

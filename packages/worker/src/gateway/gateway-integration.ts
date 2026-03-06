@@ -32,6 +32,7 @@ export class HttpWorkerTransport implements WorkerTransport {
   private platformMetadata?: Record<string, unknown>;
   private accumulatedStreamContent: string[] = [];
   private lastStreamDelta: string = "";
+  private contentBlocks?: unknown[];
 
   constructor(config: WorkerTransportConfig) {
     this.gatewayUrl = config.gatewayUrl;
@@ -53,6 +54,10 @@ export class HttpWorkerTransport implements WorkerTransport {
 
   setModuleData(moduleData: Record<string, unknown>): void {
     this.moduleData = moduleData;
+  }
+
+  setContentBlocks(blocks: unknown[]): void {
+    this.contentBlocks = blocks;
   }
 
   async signalDone(finalDelta?: string): Promise<void> {
@@ -151,7 +156,7 @@ export class HttpWorkerTransport implements WorkerTransport {
   async signalCompletion(): Promise<void> {
     const accumulated = this.accumulatedStreamContent.join("");
     logger.info(
-      `[WORKER-HTTP] signalCompletion: content length=${accumulated.length} chars, delta count=${this.accumulatedStreamContent.length}`
+      `[WORKER-HTTP] signalCompletion: content length=${accumulated.length} chars, delta count=${this.accumulatedStreamContent.length}, contentBlocks=${this.contentBlocks?.length ?? 0}`
     );
     await this.sendResponse({
       messageId: this.originalMessageTs,
@@ -165,6 +170,7 @@ export class HttpWorkerTransport implements WorkerTransport {
       botResponseId: this.botResponseTs,
       moduleData: this.moduleData,
       content: accumulated || undefined,
+      contentBlocks: this.contentBlocks,
     });
   }
 

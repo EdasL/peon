@@ -123,6 +123,39 @@ export const ROLE_COLORS: Record<string, string> = {
   engineer: "bg-stone-500",
 }
 
+export const ROLE_TAGLINES: Record<string, string> = {
+  lead: "Plans, coordinates, and reviews all work",
+  frontend: "Builds UI, components, and client logic",
+  backend: "API routes, database, and server logic",
+  qa: "Tests, validates, and catches regressions",
+  designer: "Owns layout, visuals, and UX decisions",
+  infra: "Deployment, CI/CD, and DevOps",
+  mobile: "Native and cross-platform mobile",
+  engineer: "Full-stack generalist",
+}
+
+export const ROLE_BORDER_COLORS: Record<string, string> = {
+  lead: "border-l-slate-700",
+  frontend: "border-l-emerald-500",
+  backend: "border-l-violet-500",
+  qa: "border-l-amber-500",
+  designer: "border-l-pink-500",
+  infra: "border-l-orange-500",
+  mobile: "border-l-cyan-500",
+  engineer: "border-l-stone-500",
+}
+
+export const ROLE_TEXT_COLORS: Record<string, string> = {
+  lead: "text-slate-700",
+  frontend: "text-emerald-500",
+  backend: "text-violet-500",
+  qa: "text-amber-500",
+  designer: "text-pink-500",
+  infra: "text-orange-500",
+  mobile: "text-cyan-500",
+  engineer: "text-stone-500",
+}
+
 export const ALL_ROLES = [
   "lead",
   "frontend",

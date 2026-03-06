@@ -1,12 +1,19 @@
 /**
  * Internal agent-activity route.
  *
- * DEPRECATED: Agent activity events now flow via the OpenClaw WebSocket
- * connection managed by connection-manager.ts. This route is kept as a
- * no-op stub for backward compatibility with older worker images.
+ * Receives tool_start / tool_end / turn_end / error events from worker
+ * containers and broadcasts them to SSE clients via Redis pub/sub.
+ *
+ * The OpenClaw WebSocket connection delivers assistant, lifecycle, and chat
+ * events. Tool events are session-scoped in the protocol and not visible to
+ * passive observers, so the worker relays them here instead.
  */
 
 import { Hono } from "hono"
+import { broadcastToProject } from "../../web/redis-broadcast.js"
+import { createLogger } from "@lobu/core"
+
+const logger = createLogger("agent-activity")
 
 export type AgentActivityEventType =
   | "tool_start"
@@ -29,9 +36,21 @@ export interface AgentActivityEvent {
 export function createAgentActivityRoutes(): Hono {
   const router = new Hono()
 
-  // No-op stub — events now arrive via OpenClaw WS -> connection-manager -> SSE
   router.post("/internal/agent-activity", async (c) => {
-    return c.json({ ok: true })
+    const body = await c.req.json<{
+      projectId: string
+      events: AgentActivityEvent[]
+    }>().catch(() => null)
+
+    if (!body?.projectId || !Array.isArray(body.events)) {
+      return c.json({ error: "projectId and events[] required" }, 400)
+    }
+
+    for (const event of body.events) {
+      broadcastToProject(body.projectId, "agent_activity", event)
+    }
+
+    return c.json({ ok: true, relayed: body.events.length })
   })
 
   return router

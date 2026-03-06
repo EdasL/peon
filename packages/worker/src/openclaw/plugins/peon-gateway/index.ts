@@ -725,7 +725,7 @@ async function delegateToProject(
         cwd: projectDir,
         stdio: "pipe",
         timeout: 120000,
-        env: { ...process.env } as Record<string, string>,
+        env: { ...process.env, HTTP_PROXY: "", HTTPS_PROXY: "", http_proxy: "", https_proxy: "" } as Record<string, string>,
       });
       if (cloneResult.status !== 0) {
         const stderr = cloneResult.stderr?.toString() || "unknown error";
@@ -933,8 +933,8 @@ Never skip task status updates — the user watches the board to track progress.
         team.resolveCompletion();
         await killSession(sessionName).catch(() => {});
         clearInterval(healthCheckInterval);
-        const elapsed = Math.floor((Date.now() - team.startedAt) / 1000);
         activeTeams.delete(params.projectId);
+        const elapsed = Math.floor((Date.now() - team.startedAt) / 1000);
         return text(`Team for "${params.projectId}" failed after ${elapsed}s: Claude Code did not start within timeout.`);
       }
 
@@ -951,25 +951,6 @@ Never skip task status updates — the user watches the board to track progress.
 
       await sendKeys(sessionName, claudeCmd);
     }
-
-    // Wait for completion via sentinel file or session death (health check loop),
-    // with a hard timeout as safety net.
-    const maxWaitMs = hasTeam ? 30 * 60 * 1000 : 10 * 60 * 1000;
-    const timeoutPromise = new Promise<void>((r) => setTimeout(r, maxWaitMs));
-    await Promise.race([team.completionPromise, timeoutPromise]);
-
-    if (!team.completed) {
-      team.completed = true;
-      team.exitCode = 1;
-      team.output += `\nError: Timed out after ${hasTeam ? "30" : "10"} minutes`;
-      console.error(`[DelegateToProject] Timed out for ${params.projectId} (mode=${hasTeam ? "team" : "solo"})`);
-    }
-
-    // Capture final terminal output for the result
-    const finalPane = await capturePane(sessionName).catch(() => "");
-    if (finalPane && !team.output.includes(finalPane.slice(-200))) {
-      team.output += finalPane;
-    }
   } catch (err) {
     team.completed = true;
     team.exitCode = 1;
@@ -977,16 +958,49 @@ Never skip task status updates — the user watches the board to track progress.
     team.output += `\nError: ${errMsg}`;
     console.error(`[DelegateToProject] Error for ${params.projectId}:`, errMsg);
     team.resolveCompletion();
-  } finally {
     clearInterval(healthCheckInterval);
-    await killSession(sessionName).catch(() => {});
-    try { unlinkSync(sentinelPath(params.projectId)); } catch { /* ignore */ }
+    activeTeams.delete(params.projectId);
+    return text(`Error starting team for "${params.projectId}": ${errMsg}`);
   }
 
-  const elapsed = Math.floor((Date.now() - team.startedAt) / 1000);
-  const resultText = extractTeamResult(team);
-  activeTeams.delete(params.projectId);
-  return text(`Team completed in ${elapsed}s (exit ${team.exitCode}).\n\n${resultText}`);
+  // Background cleanup: wait for the team to finish, then clean up resources.
+  // This runs detached so DelegateToProject returns immediately.
+  const maxWaitMs = hasTeam ? 30 * 60 * 1000 : 10 * 60 * 1000;
+  void (async () => {
+    try {
+      const timeoutPromise = new Promise<void>((r) => setTimeout(r, maxWaitMs));
+      await Promise.race([team.completionPromise, timeoutPromise]);
+
+      if (!team.completed) {
+        team.completed = true;
+        team.exitCode = 1;
+        team.output += `\nError: Timed out after ${hasTeam ? "30" : "10"} minutes`;
+        console.error(`[DelegateToProject] Timed out for ${params.projectId} (mode=${hasTeam ? "team" : "solo"})`);
+      }
+
+      const finalPane = await capturePane(sessionName).catch(() => "");
+      if (finalPane && !team.output.includes(finalPane.slice(-200))) {
+        team.output += finalPane;
+      }
+    } catch (err) {
+      if (!team.completed) {
+        team.completed = true;
+        team.exitCode = 1;
+        team.output += `\nError: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    } finally {
+      clearInterval(healthCheckInterval);
+      await killSession(sessionName).catch(() => {});
+      try { unlinkSync(sentinelPath(params.projectId)); } catch { /* ignore */ }
+    }
+  })();
+
+  return text(
+    `Team launched for "${params.projectId}" (mode: ${hasTeam ? "agent-team" : "solo"}).` +
+    `\nSession: ${sessionName}` +
+    `\nWorkspace: ${projectDir}` +
+    `\n\nThe team is running in the background. Use CheckTeamStatus to monitor progress and GetTeamResult when complete.`
+  );
 }
 
 async function checkTeamStatus(

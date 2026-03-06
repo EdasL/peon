@@ -20,6 +20,53 @@ import { eq } from "drizzle-orm"
 
 const logger = createLogger("internal-hook-events")
 
+function buildHookToolText(toolName: string, input: Record<string, unknown>): string | undefined {
+  const filePath = (input.file_path ?? input.path ?? input.filePath) as string | undefined
+  const shortPath = filePath ? filePath.split("/").slice(-2).join("/") : undefined
+  switch (toolName.toLowerCase()) {
+    case "read":
+      return shortPath ? `Reading ${shortPath}` : "Reading file"
+    case "edit":
+    case "multiedit":
+    case "streplace":
+      return shortPath ? `Editing ${shortPath}` : "Editing file"
+    case "write":
+      return shortPath ? `Writing ${shortPath}` : "Writing file"
+    case "bash":
+    case "exec":
+    case "shell": {
+      const cmd = (input.command as string | undefined) ?? ""
+      return cmd ? `Running ${cmd.slice(0, 100)}` : "Running command"
+    }
+    case "grep": {
+      const pat = (input.pattern as string | undefined) ?? ""
+      const inPath = (input.path as string | undefined) ?? ""
+      if (pat && inPath) return `Searching '${pat.slice(0, 40)}' in ${inPath.split("/").slice(-2).join("/")}`
+      if (pat) return `Searching '${pat.slice(0, 40)}'`
+      return "Searching"
+    }
+    case "glob": {
+      const pat = (input.pattern ?? input.glob_pattern) as string | undefined
+      return pat ? `Globbing ${pat.slice(0, 60)}` : "Listing files"
+    }
+    case "webfetch":
+    case "websearch": {
+      const target = (input.url ?? input.query ?? input.search_term) as string | undefined
+      return target ? `Fetching ${String(target).slice(0, 60)}` : "Fetching web"
+    }
+    case "todowrite":
+      return "Updating tasks"
+    case "task":
+      return "Launching task"
+    default: {
+      if (shortPath) return shortPath
+      if (input.command) return String(input.command).slice(0, 80)
+      if (input.query) return String(input.query).slice(0, 60)
+      return undefined
+    }
+  }
+}
+
 export type AgentStatus = "working" | "idle" | "error"
 
 export interface HookEventPayload {
@@ -206,6 +253,30 @@ export function createHookEventRoutes(): Hono {
       }
       await handleWorkerTaskUpdate(projectId, task)
       logger.debug(`hook-events: TaskCompleted task=${body.taskId} for project=${projectId}`)
+    }
+
+    // Broadcast agent_activity from hook events (PreToolUse/PostToolUse have full toolInput)
+    if (body.eventType === "PreToolUse" && body.toolName) {
+      const ti = body.toolInput ?? {}
+      const filePath = (ti.file_path ?? ti.path ?? ti.filePath) as string | undefined
+      const command = (ti.command ?? ti.cmd) as string | undefined
+      const pattern = (ti.pattern ?? ti.query ?? ti.search_term ?? ti.glob_pattern) as string | undefined
+      const text = buildHookToolText(body.toolName, ti)
+      broadcastToProject(projectId, "agent_activity", {
+        type: "tool_start",
+        tool: body.toolName,
+        ...(text && { text }),
+        ...(filePath && { filePath }),
+        ...(command && { command }),
+        ...(pattern && { pattern }),
+        timestamp: body.timestamp || Date.now(),
+      })
+    } else if ((body.eventType === "PostToolUse" || body.eventType === "PostToolUseFailure") && body.toolName) {
+      broadcastToProject(projectId, "agent_activity", {
+        type: "tool_end",
+        tool: body.toolName,
+        timestamp: body.timestamp || Date.now(),
+      })
     }
 
     const status = mapHookEventToStatus(body.eventType, body.notificationType)

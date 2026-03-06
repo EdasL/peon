@@ -111,7 +111,6 @@ describe("DashboardPage", () => {
         "utf-8"
       )
       expect(source).not.toContain("ChatPanel")
-      expect(source).not.toContain("MasterChatPanel")
       expect(source).not.toContain("<textarea")
       expect(source).not.toContain("sendMessage")
       expect(source).not.toContain("sendChatMessage")

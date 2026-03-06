@@ -1,14 +1,13 @@
-import { useState, useRef, useEffect } from "react"
-import { X, ChevronDown, ChevronUp, Plus } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { useState } from "react"
+import { X, ChevronDown, ChevronUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { SuggestedMember } from "@/lib/team-suggestions"
 import {
   ALL_ROLES,
-  ROLE_PROMPTS,
   ROLE_NAMES,
   ROLE_COLORS,
+  ROLE_TAGLINES,
+  ROLE_TEXT_COLORS,
   makeMember,
 } from "@/lib/team-suggestions"
 
@@ -30,148 +29,127 @@ function MemberCard({
   onDelete: () => void
 }) {
   const [promptOpen, setPromptOpen] = useState(false)
+  const initial = (ROLE_NAMES[member.role] ?? member.role)[0]?.toUpperCase() ?? "?"
+
+  const textColor = ROLE_TEXT_COLORS[member.role] ?? "text-stone-500"
+  const bgColor = ROLE_COLORS[member.role] ?? "bg-stone-500"
+  const tagline = ROLE_TAGLINES[member.role] ?? ""
 
   return (
-    <div className="rounded-sm border border-border bg-card p-3">
-      <div className="flex items-start gap-3">
-        <span
-          className={cn("mt-2 inline-block size-3 flex-shrink-0 rounded-full", member.color)}
-        />
+    <div
+      className={cn(
+        "relative rounded-lg border border-border/60 bg-card pl-0 transition-all",
 
-        <div className="flex-1 min-w-0 space-y-2">
-          <div className="flex gap-2">
-            <div className="flex-1 min-w-0">
-              <label className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5 block">
-                Role key
-              </label>
-              <Input
-                value={member.role}
-                onChange={(e) => onChange({ ...member, role: e.target.value })}
-                placeholder="e.g. frontend"
-                className="h-7 text-xs"
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <label className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5 block">
-                Display name
-              </label>
-              <Input
-                value={member.name}
-                onChange={(e) => onChange({ ...member, name: e.target.value })}
-                placeholder="e.g. Frontend Developer"
-                className="h-7 text-xs"
-              />
-            </div>
+      )}
+    >
+      <div className="px-4 py-3">
+        <div className="flex items-start gap-3">
+          {/* Large initial */}
+          <div
+            className={cn(
+              "flex size-10 flex-shrink-0 items-center justify-center rounded-md text-lg font-semibold text-white",
+              bgColor,
+            )}
+          >
+            {initial}
           </div>
 
-          <div>
-            <button
-              type="button"
-              onClick={() => setPromptOpen((v) => !v)}
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {promptOpen ? (
-                <ChevronUp className="size-3" />
-              ) : (
-                <ChevronDown className="size-3" />
-              )}
-              {promptOpen ? "Hide prompt" : "Edit prompt"}
-            </button>
-
-            {promptOpen && (
-              <textarea
-                value={member.prompt}
-                onChange={(e) => onChange({ ...member, prompt: e.target.value })}
-                rows={5}
-                className="mt-1 w-full resize-none rounded-sm border border-border bg-background px-2.5 py-1.5 text-[11px] text-foreground leading-relaxed focus:outline-none focus:ring-1 focus:ring-ring"
-              />
+          {/* Role info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2">
+              <span className="text-base font-semibold text-foreground leading-tight">
+                {ROLE_NAMES[member.role] ?? member.name}
+              </span>
+              <span className={cn("text-xs font-medium", textColor)}>
+                {member.role}
+              </span>
+            </div>
+            {tagline && (
+              <p className="mt-0.5 text-xs text-muted-foreground leading-snug">
+                {tagline}
+              </p>
             )}
           </div>
+
+          {/* Remove button */}
+          <button
+            type="button"
+            aria-label={`Remove ${member.name}`}
+            disabled={total <= 1}
+            onClick={onDelete}
+            className="flex-shrink-0 rounded-sm p-1 text-muted-foreground/50 hover:text-foreground transition-colors disabled:opacity-0 disabled:cursor-not-allowed"
+          >
+            <X className="size-3.5" />
+          </button>
         </div>
 
-        <button
-          type="button"
-          aria-label={`Remove ${member.name}`}
-          disabled={total <= 1}
-          onClick={onDelete}
-          className="mt-1 flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
-        >
-          <X className="size-3.5" />
-        </button>
+        {/* Prompt toggle */}
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setPromptOpen((v) => !v)}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors"
+          >
+            {promptOpen ? (
+              <ChevronUp className="size-3" />
+            ) : (
+              <ChevronDown className="size-3" />
+            )}
+            {promptOpen ? "Hide prompt" : "Edit prompt"}
+          </button>
+
+          {promptOpen && (
+            <textarea
+              value={member.prompt}
+              onChange={(e) => onChange({ ...member, prompt: e.target.value })}
+              rows={5}
+              className="mt-2 w-full resize-none rounded-md border border-border/60 bg-background px-3 py-2 text-[11px] text-foreground leading-relaxed focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
-function AddMemberDropdown({
+function AddMemberChips({
   existingRoles,
   onAdd,
 }: {
   existingRoles: Set<string>
   onAdd: (role: string) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handleClick)
-    return () => document.removeEventListener("mousedown", handleClick)
-  }, [open])
-
   const availableRoles = ALL_ROLES.filter((r) => !existingRoles.has(r))
 
   if (availableRoles.length === 0) {
     return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled
-        className="w-full border-dashed text-xs"
-      >
+      <p className="text-xs text-muted-foreground/60 text-center py-2">
         All roles added
-      </Button>
+      </p>
     )
   }
 
   return (
-    <div className="relative" ref={ref}>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full border-dashed text-xs"
-      >
-        <Plus className="size-3.5 mr-1.5" />
-        Add member
-      </Button>
-
-      {open && (
-        <div className="absolute z-10 mt-1 w-full rounded-sm border border-border bg-card py-1 shadow-md">
-          {availableRoles.map((role) => (
+    <div className="space-y-2">
+      <p className="text-[11px] text-muted-foreground/60 uppercase tracking-wide font-medium">
+        Add a role
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {availableRoles.map((role) => {
+          const bgColor = ROLE_COLORS[role] ?? "bg-stone-500"
+          return (
             <button
               key={role}
               type="button"
-              onClick={() => {
-                onAdd(role)
-                setOpen(false)
-              }}
-              className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-muted transition-colors flex items-center gap-2"
+              onClick={() => onAdd(role)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-xs text-foreground hover:border-border hover:bg-muted transition-colors"
             >
-              <span className={cn("inline-block size-2 rounded-full", ROLE_COLORS[role])} />
-              <span className="font-medium">{ROLE_NAMES[role]}</span>
-              <span className="text-muted-foreground ml-auto">{role}</span>
+              <span className={cn("inline-block size-2 rounded-full", bgColor)} />
+              {ROLE_NAMES[role]}
             </button>
-          ))}
-        </div>
-      )}
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -194,7 +172,7 @@ export function TeamEditor({ members, onChange }: TeamEditorProps) {
   const existingRoles = new Set(members.map((m) => m.role))
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {members.map((member, index) => (
         <MemberCard
           key={`${member.role}-${index}`}
@@ -206,7 +184,7 @@ export function TeamEditor({ members, onChange }: TeamEditorProps) {
         />
       ))}
 
-      <AddMemberDropdown existingRoles={existingRoles} onAdd={addMember} />
+      <AddMemberChips existingRoles={existingRoles} onAdd={addMember} />
     </div>
   )
 }

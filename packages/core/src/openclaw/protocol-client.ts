@@ -476,7 +476,13 @@ export class OpenClawProtocolClient {
     this.pingTimer = setInterval(() => {
       if (this.ws && this.connected) {
         try {
-          this.sendRaw({ type: "req", id: this.nextId(), method: "ping", params: {} });
+          // Use WebSocket protocol-level ping when available (ws library / Node).
+          // Bun's browser-compat WebSocket doesn't expose .ping(), but handles
+          // keepalive internally; the close event will fire for dead connections.
+          const raw = this.ws as unknown as { ping?: () => void };
+          if (typeof raw.ping === "function") {
+            raw.ping();
+          }
         } catch {
           // Ping failure will trigger close -> reconnect
         }

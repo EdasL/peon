@@ -136,6 +136,10 @@ claudeOAuthRouter.post("/web-exchange", async (c) => {
 
     await bridgeCredentials(userId, agentId, services);
 
+    // Recycle the container so the new OAuth token takes effect
+    const { recycleUserContainer } = await import("../../web/credential-refresh.js");
+    await recycleUserContainer(userId, agentId);
+
     logger.info({ userId, agentId }, "Claude OAuth web flow complete");
     return c.json({ ok: true });
   } catch (error) {

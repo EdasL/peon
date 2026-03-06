@@ -26,12 +26,14 @@ export function ProvisioningOverlay({
   projectName,
   status,
   bootStep,
+  activityText,
   onReady,
   onBack,
 }: {
   projectName: string
   status: Project["status"]
   bootStep: string | null
+  activityText?: string | null
   onReady: () => void
   onBack: () => void
 }) {
@@ -125,18 +127,25 @@ export function ProvisioningOverlay({
                     </div>
                   )}
                 </div>
-                <span
-                  className={`text-sm font-medium ${
-                    isActive
-                      ? "text-foreground"
-                      : isComplete
-                      ? "text-muted-foreground"
-                      : "text-muted-foreground/60"
-                  }`}
-                >
-                  {step.label}
-                  {isActive && <span className="animate-pulse">...</span>}
-                </span>
+                <div className="flex flex-col min-w-0">
+                  <span
+                    className={`text-sm font-medium ${
+                      isActive
+                        ? "text-foreground"
+                        : isComplete
+                        ? "text-muted-foreground"
+                        : "text-muted-foreground/60"
+                    }`}
+                  >
+                    {step.label}
+                    {isActive && <span className="animate-pulse">...</span>}
+                  </span>
+                  {isActive && step.key === "setup" && activityText && (
+                    <span className="text-xs text-muted-foreground truncate mt-0.5 max-w-[320px]">
+                      {activityText}
+                    </span>
+                  )}
+                </div>
               </div>
             )
           })}
