@@ -142,4 +142,4 @@ ENV NODE_ENV=${NODE_ENV}
 ENV HOME=/workspace
 ENV USER=worker
 
-ENTRYPOINT ["/app/packages/worker/scripts/worker-entrypoint.sh"]
+ENTRYPOINT ["bash", "/app/packages/worker/scripts/worker-entrypoint.sh"]
