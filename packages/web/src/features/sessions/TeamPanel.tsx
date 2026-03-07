@@ -11,6 +11,7 @@ export type AgentStatus = "working" | "idle" | "error"
 
 interface AgentState {
   status: AgentStatus
+  currentAction?: string | null
 }
 
 function StatusDot({ status }: { status: AgentStatus }) {
@@ -85,8 +86,41 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
         }
         setAgentStates((prev) => ({
           ...prev,
-          [data.agentId]: { status: data.status },
+          [data.agentId]: { ...prev[data.agentId], status: data.status },
         }))
+      } catch {}
+    })
+
+    es.addEventListener("agent_activity", (e) => {
+      try {
+        const data = JSON.parse(e.data) as {
+          type: string
+          tool?: string
+          text?: string
+          agentName?: string
+        }
+        const agentId = data.agentName
+        if (!agentId) return
+
+        if (data.type === "tool_start" && data.tool) {
+          const label = data.text ?? data.tool
+          setAgentStates((prev) => ({
+            ...prev,
+            [agentId]: { status: "working", currentAction: label },
+          }))
+        } else if (data.type === "tool_end") {
+          setAgentStates((prev) => {
+            const existing = prev[agentId]
+            if (!existing) return prev
+            return { ...prev, [agentId]: { ...existing, currentAction: null } }
+          })
+        } else if (data.type === "turn_end") {
+          setAgentStates((prev) => {
+            const existing = prev[agentId]
+            if (!existing) return prev
+            return { ...prev, [agentId]: { status: "idle", currentAction: null } }
+          })
+        }
       } catch {}
     })
 
@@ -123,6 +157,14 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
     const byId = agentStates[member.id]
     if (byId) return byId.status
     return "idle"
+  }
+
+  const getAction = (member: TeamMember): string | null => {
+    const byRole = agentStates[member.roleName.toLowerCase()]
+    if (byRole?.currentAction) return byRole.currentAction
+    const byId = agentStates[member.id]
+    if (byId?.currentAction) return byId.currentAction
+    return null
   }
 
   return (
@@ -162,15 +204,23 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
           <div className="py-1">
             {members.map((member) => {
               const status = getStatus(member)
+              const action = getAction(member)
               return (
                 <div
                   key={member.id}
-                  className="flex items-center gap-2.5 px-3 h-8 text-xs"
+                  className="flex items-start gap-2.5 px-3 py-1.5 text-xs"
                 >
                   <StatusDot status={status} />
-                  <span className="truncate font-mono text-[11px]">
-                    {member.displayName || member.roleName}
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <span className="truncate font-mono text-[11px] block">
+                      {member.displayName || member.roleName}
+                    </span>
+                    {action && (
+                      <span className="text-[10px] text-muted-foreground truncate block mt-0.5">
+                        {action}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )
             })}

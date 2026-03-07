@@ -18,7 +18,6 @@ export const TEMPLATES: Template[] = [
     name: "Full Team",
     desc: "All core roles for large projects",
     agents: [
-      { role: "Lead", color: "bg-slate-700" },
       { role: "Frontend", color: "bg-emerald-500" },
       { role: "Backend", color: "bg-violet-500" },
       { role: "Designer", color: "bg-pink-500" },
@@ -31,7 +30,6 @@ export const TEMPLATES: Template[] = [
     name: "Full Stack",
     desc: "A complete team for web applications",
     agents: [
-      { role: "Lead", color: "bg-slate-700" },
       { role: "Frontend", color: "bg-emerald-500" },
       { role: "Backend", color: "bg-violet-500" },
       { role: "QA", color: "bg-amber-500" },
@@ -42,7 +40,6 @@ export const TEMPLATES: Template[] = [
     name: "Backend Only",
     desc: "Focused on server-side development",
     agents: [
-      { role: "Lead", color: "bg-slate-700" },
       { role: "Backend", color: "bg-violet-500" },
       { role: "Infra", color: "bg-orange-500" },
       { role: "QA", color: "bg-amber-500" },
@@ -53,7 +50,6 @@ export const TEMPLATES: Template[] = [
     name: "Mobile",
     desc: "Native and cross-platform mobile apps",
     agents: [
-      { role: "Lead", color: "bg-slate-700" },
       { role: "Designer", color: "bg-pink-500" },
       { role: "Mobile", color: "bg-cyan-500" },
       { role: "QA", color: "bg-amber-500" },

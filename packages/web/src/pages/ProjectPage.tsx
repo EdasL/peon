@@ -1,5 +1,5 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -15,11 +15,13 @@ import {
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { ProvisioningOverlay } from "@/components/project/ProvisioningOverlay"
 import { OpenClawProvider, useOpenClaw } from "@/contexts/OpenClawContext"
-import { TeamPanel } from "@/features/sessions"
+import { AgentSidebar } from "@/components/project/AgentSidebar"
+import { useAgentActivity } from "@/hooks/use-agent-activity"
 import { KanbanPanel } from "@/features/kanban"
 import type { Project, TeamMember } from "@/lib/api"
 import * as api from "@/lib/api"
 import { getTemplate } from "@/lib/templates"
+import { isApiKeyError } from "@/lib/utils"
 import {
   ArrowLeft,
   AlertCircle,
@@ -31,6 +33,7 @@ import {
   RefreshCw,
   PanelLeftClose,
   PanelLeftOpen,
+  KeyRound,
 } from "lucide-react"
 
 function ProjectSkeleton() {
@@ -41,7 +44,7 @@ function ProjectSkeleton() {
         <Skeleton className="h-4 w-36" />
       </header>
       <div className="flex-1 flex min-h-0">
-        <div className="w-[220px] border-r border-border p-2 space-y-2">
+        <div className="w-[240px] border-r border-border p-2 space-y-2">
           <Skeleton className="h-3 w-16 mx-1 mt-1" />
           <Skeleton className="h-14 w-full rounded-md" />
           <Skeleton className="h-14 w-full rounded-md" />
@@ -66,9 +69,11 @@ type CenterView = "chat" | "board"
 function ProjectBody({
   projectId,
   chatDisabled,
+  templateId,
 }: {
   projectId: string
   chatDisabled?: boolean
+  templateId?: string
 }) {
   const [leftOpen, setLeftOpen] = useState(true)
 
@@ -80,16 +85,48 @@ function ProjectBody({
     [setSearchParams],
   )
 
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [teamId, setTeamId] = useState<string | null>(null)
+
+  const fetchTeam = useCallback(async () => {
+    try {
+      const { teams } = await api.getProjectTeams(projectId)
+      const first = teams[0]
+      setTeamMembers(first?.members ?? [])
+      setTeamId(first?.id ?? null)
+    } catch { /* silent */ }
+  }, [projectId])
+
+  useEffect(() => { fetchTeam() }, [fetchTeam])
+
+  const templateAgentNames = useMemo(() => {
+    if (teamMembers.length > 0) return teamMembers.map((m) => m.roleName.toLowerCase())
+    if (templateId) {
+      const tmpl = getTemplate(templateId)
+      return tmpl?.agents.map((a) => a.role.toLowerCase())
+    }
+    return undefined
+  }, [teamMembers, templateId])
+
+  const { agents, feed, loading: agentsLoading, connected, currentToolAction } =
+    useAgentActivity(projectId, templateAgentNames)
+
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Left panel: Sessions */}
+        {/* Left panel: Team */}
         {leftOpen && (
-          <div className="w-[240px] flex-shrink-0 border-r border-border flex flex-col min-h-0 bg-background">
-            <div className="flex-1 min-h-0 overflow-auto">
-              <TeamPanel />
-            </div>
-          </div>
+          <AgentSidebar
+            agents={agents}
+            loading={agentsLoading}
+            connected={connected}
+            currentToolAction={currentToolAction}
+            templateId={templateId}
+            teamMembers={teamMembers}
+            teamId={teamId}
+            onTeamChange={fetchTeam}
+            feedCount={feed.length}
+          />
         )}
 
         {/* Center content area */}
@@ -288,6 +325,7 @@ export function ProjectPage() {
   }
 
   if (status === "error") {
+    const showKeyHint = !statusMessage || isApiKeyError(statusMessage)
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-background p-6">
         <div className="w-full max-w-md">
@@ -301,11 +339,21 @@ export function ProjectPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              {showKeyHint && (
+                <Button
+                  size="sm"
+                  onClick={() => navigate("/settings?section=api-keys")}
+                >
+                  <KeyRound className="h-3.5 w-3.5 mr-1.5" />
+                  Go to Settings
+                </Button>
+              )}
               <Button
                 size="sm"
+                variant={showKeyHint ? "outline" : "default"}
                 onClick={handleRestart}
-                className="bg-destructive hover:bg-destructive/90 text-white border-0"
+                className={showKeyHint ? "" : "bg-destructive hover:bg-destructive/90 text-white border-0"}
               >
                 <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                 Restart
@@ -430,6 +478,7 @@ export function ProjectPage() {
         <ProjectBody
           projectId={id}
           chatDisabled={status === "stopped"}
+          templateId={project?.templateId}
         />
       </div>
     </OpenClawProvider>

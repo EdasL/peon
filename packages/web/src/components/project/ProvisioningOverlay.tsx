@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react"
-import { Loader2, Check, AlertCircle, Server, FolderCog, Cpu, Bot, Rocket } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import { Loader2, Check, AlertCircle, Server, FolderCog, Cpu, Bot, Rocket, KeyRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Project } from "@/lib/api"
 
@@ -37,6 +38,7 @@ export function ProvisioningOverlay({
   onReady: () => void
   onBack: () => void
 }) {
+  const navigate = useNavigate()
   const [activeStep, setActiveStep] = useState(0)
   const [canSkip, setCanSkip] = useState(false)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
@@ -160,9 +162,15 @@ export function ProvisioningOverlay({
                 <p className="text-sm text-muted-foreground mt-1">
                   Check that your API key is valid and try again.
                 </p>
-                <Button variant="outline" size="sm" className="mt-3" onClick={onBack}>
-                  Back to dashboard
-                </Button>
+                <div className="flex items-center gap-2 mt-3">
+                  <Button size="sm" onClick={() => navigate("/settings?section=api-keys")}>
+                    <KeyRound className="h-3.5 w-3.5 mr-1.5" />
+                    Go to Settings
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={onBack}>
+                    Back to dashboard
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

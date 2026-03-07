@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { cn } from "@/lib/utils"
 import { getAgentColor, getAgentDisplayName } from "@/lib/agent-utils"
 import type { AgentState } from "@/hooks/use-agent-activity"
+import { useStickyValue } from "@/hooks/use-sticky-value"
 import type { TeamMember } from "@/lib/api"
 import * as api from "@/lib/api"
 import { useNavigate } from "react-router-dom"
@@ -24,10 +25,10 @@ function StatusPulse({ status }: { status: AgentState["status"] }) {
   return (
     <span
       className={cn(
-        "inline-block size-1.5 rounded-full flex-shrink-0",
-        status === "working" && "bg-[#22C55E] animate-pulse",
+        "inline-block size-1.5 rounded-full flex-shrink-0 transition-colors duration-500",
+        status === "working" && "bg-emerald-500 animate-pulse",
         status === "idle" && "border border-[#C8C5BC]",
-        status === "error" && "bg-[#EF4444]"
+        status === "error" && "bg-red-500"
       )}
     />
   )
@@ -51,6 +52,8 @@ function AgentCard({
   onRemove?: () => void
 }) {
   const [confirming, setConfirming] = useState(false)
+  const lastActionRef = useRef<string | null>(null)
+
   const displayName = getAgentDisplayName(agent.name, teamMembers)
   const initials = displayName
     .split(/[-_\s]/)
@@ -60,10 +63,16 @@ function AgentCard({
 
   const avatarColor = getAgentColor(agent.name, teamMembers, templateId)
 
-  const displayText =
+  const rawDisplayText =
     agent.activeForm ??
     (agent.status === "working" && currentToolAction ? currentToolAction : null) ??
     agent.currentTask
+
+  if (rawDisplayText) {
+    lastActionRef.current = rawDisplayText
+  }
+
+  const sticky = useStickyValue(rawDisplayText, 2500)
 
   const isToolAction =
     agent.status === "working" && currentToolAction != null && !agent.activeForm
@@ -81,9 +90,9 @@ function AgentCard({
   return (
     <div
       className={cn(
-        "group rounded-sm border px-2.5 py-2 transition-colors relative",
+        "group rounded-sm border px-2.5 py-2 transition-all duration-500 relative",
         agent.status === "working"
-          ? "border-emerald-300/60 bg-emerald-50"
+          ? "border-emerald-500/30 bg-emerald-50/80"
           : agent.status === "error"
             ? "border-red-300/60 bg-red-50"
             : "border-border bg-card"
@@ -107,7 +116,7 @@ function AgentCard({
       <div className="flex items-start gap-2">
         <div
           className={cn(
-            "flex size-6 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white mt-px",
+            "flex size-6 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white mt-px transition-opacity duration-500",
             avatarColor,
             agent.status !== "working" && "opacity-60"
           )}
@@ -121,30 +130,30 @@ function AgentCard({
             <span className="text-xs font-medium leading-none text-foreground truncate flex-1 min-w-0">
               {displayName}
             </span>
-            <span
-              className={cn(
-                "text-[11px] font-semibold uppercase tracking-wider flex-shrink-0",
-                agent.status === "working" && "text-emerald-600",
-                agent.status === "idle" && "text-muted-foreground",
-                agent.status === "error" && "text-red-500"
-              )}
-            >
-              {agent.status}
-            </span>
+            {agent.status === "error" && (
+              <span className="text-[10px] font-medium text-red-500 flex-shrink-0">
+                Error
+              </span>
+            )}
           </div>
 
-          {displayText ? (
+          {sticky.value ? (
             <p
               className={cn(
-                "mt-1 text-[11px] leading-tight line-clamp-2",
+                "mt-1 text-[11px] leading-tight line-clamp-2 transition-opacity duration-700",
+                sticky.fading ? "opacity-30" : "opacity-100",
                 isToolAction ? "text-foreground/70" : "text-muted-foreground"
               )}
             >
-              {displayText}
+              {sticky.value}
             </p>
-          ) : (
-            <p className="mt-1 text-[11px] text-muted-foreground">No active task</p>
-          )}
+          ) : lastActionRef.current && agent.status === "idle" ? (
+            <p className="mt-1 text-[11px] text-muted-foreground/40 leading-tight line-clamp-1">
+              {lastActionRef.current}
+            </p>
+          ) : agent.status !== "error" ? (
+            <p className="mt-1 text-[11px] text-muted-foreground/40">Waiting</p>
+          ) : null}
         </div>
       </div>
     </div>
@@ -185,7 +194,7 @@ export function AgentSidebar({
   )
 
   return (
-    <aside className="flex h-full w-[220px] flex-shrink-0 flex-col border-r border-border bg-card">
+    <aside className="flex h-full w-[240px] flex-shrink-0 flex-col border-r border-border bg-background">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">

@@ -105,8 +105,15 @@ export function createInternalTaskRoutes(): Hono {
     }
 
     if (!body.id || !body.subject) {
+      // #region agent log
+      fetch('http://host.docker.internal:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'02b42e'},body:JSON.stringify({sessionId:'02b42e',location:'tasks.ts:validation',message:'task POST rejected - missing id or subject',data:{bodyId:body.id,bodySubject:body.subject,rawKeys:Object.keys(body)},timestamp:Date.now(),hypothesisId:'H-E'})}).catch(()=>{});
+      // #endregion
       return c.json({ error: "id and subject are required" }, 400)
     }
+
+    // #region agent log
+    fetch('http://host.docker.internal:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'02b42e'},body:JSON.stringify({sessionId:'02b42e',location:'tasks.ts:upsert',message:'task POST received from peon-tasks.sh or plugin',data:{id:body.id,subject:body.subject,status:body.status,owner:body.owner,boardColumn:body.boardColumn},timestamp:Date.now(),hypothesisId:'H-E'})}).catch(()=>{});
+    // #endregion
 
     const projectId = await resolveProjectId(token.conversationId)
     if (!projectId) {
@@ -127,9 +134,21 @@ export function createInternalTaskRoutes(): Hono {
       blockedBy: body.blockedBy ?? [],
     }
 
-    await handleWorkerTaskUpdate(projectId, task)
-    logger.debug(`internal/tasks: upserted task ${task.id} for project ${projectId}`)
-    return c.json({ ok: true, projectId, taskId: task.id })
+    try {
+      await handleWorkerTaskUpdate(projectId, task)
+      // #region agent log
+      fetch('http://host.docker.internal:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'02b42e'},body:JSON.stringify({sessionId:'02b42e',location:'tasks.ts:db-success',message:'task upsert succeeded',data:{id:body.id,status:body.status,projectId},timestamp:Date.now(),hypothesisId:'H-F'})}).catch(()=>{});
+      // #endregion
+      logger.debug(`internal/tasks: upserted task ${task.id} for project ${projectId}`)
+      return c.json({ ok: true, projectId, taskId: task.id })
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      // #region agent log
+      fetch('http://host.docker.internal:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'02b42e'},body:JSON.stringify({sessionId:'02b42e',location:'tasks.ts:db-error',message:'task upsert FAILED',data:{id:body.id,status:body.status,projectId,error:errMsg},timestamp:Date.now(),hypothesisId:'H-F'})}).catch(()=>{});
+      // #endregion
+      logger.error(`internal/tasks: upsert failed for task ${task.id}: ${errMsg}`)
+      return c.json({ error: "Task upsert failed", detail: errMsg }, 500)
+    }
   })
 
   // DELETE /internal/tasks/:taskId — delete a task

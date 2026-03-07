@@ -588,7 +588,17 @@ async function deleteTask(
 
 // Inline fallback for send_event.py in case the source file can't be copied
 const SEND_EVENT_SCRIPT = `#!/usr/bin/env python3
-import argparse, json, os, sys, urllib.request, urllib.error
+import argparse, json, os, sys, urllib.request, urllib.error, datetime
+
+LOG_FILE = "/tmp/peon-hook-events.log"
+
+def log_error(msg):
+    line = f"[{datetime.datetime.now().isoformat()}] {msg}"
+    sys.stderr.write(line + "\\n")
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(line + "\\n")
+    except: pass
 
 def main():
     p = argparse.ArgumentParser()
@@ -602,8 +612,16 @@ def main():
     try:
         raw = sys.stdin.read()
         if raw.strip(): ctx = json.loads(raw)
-    except: pass
-    payload = {"eventType": a.event_type, "agentId": a.source_app, "timestamp": int(__import__("time").time()*1000)}
+    except Exception as e:
+        log_error(f"stdin parse error: {e}")
+
+    # Resolve agent identity from Claude Code's context:
+    # 1. teammate_name (TeammateIdle, TaskCompleted hooks)
+    # 2. agent_type (subagent tool hooks like PreToolUse inside a subagent)
+    # 3. --source-app fallback (AGENT_ID env var)
+    agent_id = ctx.get("teammate_name") or ctx.get("agent_type") or a.source_app
+
+    payload = {"eventType": a.event_type, "agentId": agent_id, "timestamp": int(__import__("time").time()*1000)}
     if "tool_name" in ctx: payload["toolName"] = ctx["tool_name"]
     if "tool_use_id" in ctx: payload["toolUseId"] = ctx["tool_use_id"]
     if "tool_input" in ctx and isinstance(ctx["tool_input"], dict): payload["toolInput"] = ctx["tool_input"]
@@ -619,8 +637,10 @@ def main():
     data = json.dumps(payload).encode()
     req = urllib.request.Request(f"{gw}/internal/hook-events", data=data,
         headers={"Content-Type":"application/json","Authorization":f"Bearer {tk}"}, method="POST")
-    try: urllib.request.urlopen(req, timeout=5)
-    except: pass
+    try:
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as e:
+        log_error(f"POST {gw}/internal/hook-events failed ({a.event_type}): {e}")
     if a.event_type in ("Stop", "SessionEnd") and a.project_id:
         try:
             with open(f"/tmp/peon-team-done-{a.project_id}", "w") as f:
@@ -629,6 +649,84 @@ def main():
 
 if __name__ == "__main__": main()
 `;
+
+// Shell helper script deployed into project workspaces so Claude Code
+// teammates can update the Peon task board directly via Bash tool calls.
+function buildPeonTasksScript(gatewayUrl: string, workerToken: string, projectId: string): string {
+  return `#!/bin/bash
+# peon-tasks.sh — Update the Peon task board from Claude Code
+# Usage:
+#   peon-tasks.sh create <id> <subject> <owner> [description]
+#   peon-tasks.sh start <id>            # shortcut for update <id> in_progress
+#   peon-tasks.sh done <id>             # shortcut for update <id> done
+#   peon-tasks.sh update <id> <status>  # status: todo | in_progress | done
+#   peon-tasks.sh list
+#   peon-tasks.sh delete <id>
+
+GW="${gatewayUrl}"
+TK="${workerToken}"
+PID="${projectId}"
+AUTH="Authorization: Bearer $TK"
+
+case "\$1" in
+  create)
+    ID="\$2"; SUBJECT="\$3"; OWNER="\$4"; DESC="\${5:-}"
+    if [ -z "\$ID" ] || [ -z "\$SUBJECT" ]; then
+      echo "Usage: peon-tasks.sh create <id> <subject> <owner> [description]" >&2; exit 1
+    fi
+    curl -sf -X POST "\$GW/internal/tasks" \\
+      -H "\$AUTH" -H "Content-Type: application/json" \\
+      -d "{\\"id\\":\\"\$ID\\",\\"subject\\":\\"\$SUBJECT\\",\\"owner\\":\\"\${OWNER:-}\\",\\"description\\":\\"\$DESC\\",\\"status\\":\\"pending\\",\\"boardColumn\\":\\"todo\\",\\"projectId\\":\\"\$PID\\",\\"updatedAt\\":$(date +%s)000}" \\
+      -o /dev/null && echo "Created task \$ID" || echo "Failed to create task \$ID" >&2
+    ;;
+  start)
+    ID="\$2"
+    if [ -z "\$ID" ]; then echo "Usage: peon-tasks.sh start <id>" >&2; exit 1; fi
+    curl -sf -X POST "\$GW/internal/tasks" \\
+      -H "\$AUTH" -H "Content-Type: application/json" \\
+      -d "{\\"id\\":\\"\$ID\\",\\"subject\\":\\"Task \$ID\\",\\"status\\":\\"in_progress\\",\\"boardColumn\\":\\"in_progress\\",\\"projectId\\":\\"\$PID\\",\\"updatedAt\\":$(date +%s)000}" \\
+      -o /dev/null && echo "Started task \$ID" || echo "Failed to start task \$ID" >&2
+    ;;
+  done)
+    ID="\$2"
+    if [ -z "\$ID" ]; then echo "Usage: peon-tasks.sh done <id>" >&2; exit 1; fi
+    curl -sf -X POST "\$GW/internal/tasks" \\
+      -H "\$AUTH" -H "Content-Type: application/json" \\
+      -d "{\\"id\\":\\"\$ID\\",\\"subject\\":\\"Task \$ID\\",\\"status\\":\\"completed\\",\\"boardColumn\\":\\"done\\",\\"projectId\\":\\"\$PID\\",\\"updatedAt\\":$(date +%s)000}" \\
+      -o /dev/null && echo "Completed task \$ID" || echo "Failed to complete task \$ID" >&2
+    ;;
+  update)
+    ID="\$2"; RAW_STATUS="\$3"
+    if [ -z "\$ID" ] || [ -z "\$RAW_STATUS" ]; then
+      echo "Usage: peon-tasks.sh update <id> <status>" >&2; exit 1
+    fi
+    case "\$RAW_STATUS" in
+      todo)        STATUS="pending";     COL="todo" ;;
+      in_progress) STATUS="in_progress"; COL="in_progress" ;;
+      done)        STATUS="completed";   COL="done" ;;
+      *) echo "Unknown status: \$RAW_STATUS (use todo|in_progress|done)" >&2; exit 1 ;;
+    esac
+    curl -sf -X POST "\$GW/internal/tasks" \\
+      -H "\$AUTH" -H "Content-Type: application/json" \\
+      -d "{\\"id\\":\\"\$ID\\",\\"subject\\":\\"Task \$ID\\",\\"status\\":\\"\$STATUS\\",\\"boardColumn\\":\\"\$COL\\",\\"projectId\\":\\"\$PID\\",\\"updatedAt\\":$(date +%s)000}" \\
+      -o /dev/null && echo "Updated task \$ID to \$RAW_STATUS" || echo "Failed to update task \$ID" >&2
+    ;;
+  list)
+    curl -sf "\$GW/internal/tasks?projectId=\$PID" -H "\$AUTH" | jq '.' 2>/dev/null || echo "Failed to list tasks" >&2
+    ;;
+  delete)
+    ID="\$2"
+    if [ -z "\$ID" ]; then echo "Usage: peon-tasks.sh delete <id>" >&2; exit 1; fi
+    curl -sf -X DELETE "\$GW/internal/tasks/\$ID" -H "\$AUTH" -o /dev/null && echo "Deleted task \$ID" || echo "Failed to delete task \$ID" >&2
+    ;;
+  *)
+    echo "peon-tasks.sh — Update the Peon task board"
+    echo "Commands: create, start, done, update, list, delete"
+    echo "Run 'peon-tasks.sh <command>' for usage details."
+    ;;
+esac
+`;
+}
 
 // ---------------------------------------------------------------------------
 // DelegateToProject (Claude Code Agent Teams management)
@@ -734,18 +832,27 @@ async function delegateToProject(
 
   const teamLeadPreamble = `# Team Lead Instructions
 
-You are the lead agent. Before writing any code, you MUST spawn teammates using agent teams. Do not implement anything yourself except coordination and task breakdown. Spawn at minimum: backend, frontend, and qa teammates. Only start working once the team is active.
+You are the lead agent. Before writing any code, you MUST spawn teammates using agent teams. Do not implement anything yourself except coordination and task breakdown. Only start working once the team is active.
 
 ## Task Board (mandatory)
 
-Every piece of work MUST be tracked on the board. Follow this protocol strictly:
+The user watches the task board to track your team's progress. You MUST keep it updated using the peon-tasks.sh script via Bash.
 
-1. Before delegation: call TaskCreate for each task with a clear subject and owner
-2. When a teammate starts a task: call TaskUpdate with status "in_progress"
-3. When a teammate finishes a task: call TaskUpdate with status "completed"
-4. Use TodoWrite to track sub-steps within larger tasks
+### Commands (run via Bash):
+- Create task: \`bash .claude/hooks/peon-tasks.sh create <id> "<subject>" <owner>\`
+- Start task:  \`bash .claude/hooks/peon-tasks.sh start <id>\`
+- Complete:    \`bash .claude/hooks/peon-tasks.sh done <id>\`
+- List tasks:  \`bash .claude/hooks/peon-tasks.sh list\`
 
-Never skip task status updates — the user watches the board to track progress.
+### Protocol:
+1. Before spawning teammates: create all tasks on the board with unique ids, clear subjects, and owner names matching teammate roles
+2. When a teammate begins work: mark it in_progress
+3. When a teammate finishes: mark it done
+4. Include these task board instructions when spawning each teammate so they can update their own task status
+
+### IMPORTANT for teammates:
+When spawning teammates, include in each teammate's prompt:
+"Update the task board by running: bash .claude/hooks/peon-tasks.sh start <task-id> when you begin, and bash .claude/hooks/peon-tasks.sh done <task-id> when finished."
 
 `;
 
@@ -807,9 +914,13 @@ Never skip task status updates — the user watches the board to track progress.
       await writeFile(destHook, script, { mode: 0o755 });
     }
 
-    // Build the hook command with inline args (env vars aren't available in project workspaces)
+    // Deploy peon-tasks.sh so Claude Code teammates can update the task board directly
     const gatewayUrl = process.env.DISPATCHER_URL || "http://localhost:8080";
     const workerToken = process.env.WORKER_TOKEN || "";
+    const tasksScript = buildPeonTasksScript(gatewayUrl, workerToken, params.projectId);
+    await writeFile(join(hooksDir, "peon-tasks.sh"), tasksScript, { mode: 0o755 });
+
+    // Build the hook command with inline args (env vars aren't available in project workspaces)
     const hookCmd = `python3 ${destHook} --gateway-url ${gatewayUrl} --worker-token ${workerToken} --project-id ${params.projectId}`;
 
     const hookEntry = (eventType: string) => ({
@@ -897,7 +1008,7 @@ Never skip task status updates — the user watches the board to track progress.
     const proc = spawn("claude", claudeArgs, {
       cwd: projectDir,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+      env: { ...process.env, AGENT_ID: "lead" },
     });
     team.childProcess = proc;
 

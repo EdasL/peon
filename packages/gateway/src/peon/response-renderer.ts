@@ -166,7 +166,7 @@ export class PeonResponseRenderer implements ResponseRenderer {
         .returning()
 
       if (updatedProject) {
-        broadcastToProject(projectId, "project_status", { status: "error", message: "Setup failed — please try again" })
+        broadcastToProject(projectId, "project_status", { status: "error", message: errorContent })
       }
       streamBuffers.delete(payload.messageId)
       logger.error(`System message error (suppressed from chat): ${errorContent}`)

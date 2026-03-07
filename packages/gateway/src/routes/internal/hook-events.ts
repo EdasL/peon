@@ -15,8 +15,8 @@ import { getActiveProject } from "../../web/chat-routes.js"
 import { handleWorkerTaskUpdate } from "../../web/task-sync.js"
 import type { WorkerTask } from "../../web/task-sync.js"
 import { db } from "../../db/connection.js"
-import { projects, users, activityLog } from "../../db/schema.js"
-import { eq } from "drizzle-orm"
+import { projects, users, activityLog, tasks } from "../../db/schema.js"
+import { eq, and, ne, ilike } from "drizzle-orm"
 
 const logger = createLogger("internal-hook-events")
 
@@ -257,6 +257,10 @@ export function createHookEventRoutes(): Hono {
       return c.json({ error: "eventType and agentId are required" }, 400)
     }
 
+    // #region agent log
+    fetch('http://host.docker.internal:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'02b42e'},body:JSON.stringify({sessionId:'02b42e',location:'hook-events.ts:entry',message:'hook event received',data:{eventType:body.eventType,agentId:body.agentId,toolName:body.toolName,teammateName:body.teammateName,taskId:body.taskId,taskSubject:body.taskSubject,hasToolInput:!!body.toolInput,projectIdFromBody:body.projectId},timestamp:Date.now(),hypothesisId:'H-B'})}).catch(()=>{});
+    // #endregion
+
     // Resolve projectId: prefer explicit from payload, fall back to token lookup
     const projectId = body.projectId || await resolveProjectId(tokenData.conversationId)
     if (!projectId) {
@@ -264,7 +268,8 @@ export function createHookEventRoutes(): Hono {
       return c.json({ ok: true })
     }
 
-    // Handle task events: extract task data from tool_input when tool is TaskCreate/TaskUpdate
+    // Handle task events: extract task data from tool_input
+    const resolvedOwner = body.agentId === "default" ? "lead" : body.agentId
     const isTaskTool = body.toolName === "TaskCreate" || body.toolName === "TaskUpdate"
     if (isTaskTool && body.toolInput) {
       const ti = body.toolInput
@@ -277,7 +282,7 @@ export function createHookEventRoutes(): Hono {
           subject,
           description: (ti.description as string) ?? "",
           status: taskStatus === "in_progress" ? "in_progress" : taskStatus === "completed" ? "completed" : "pending",
-          owner: (ti.owner as string) ?? null,
+          owner: (ti.owner as string) ?? resolvedOwner,
           boardColumn: taskStatus === "in_progress" ? "in_progress" : taskStatus === "completed" ? "done" : "todo",
           metadata: (ti.metadata as Record<string, unknown>) ?? undefined,
           updatedAt: body.timestamp || Date.now(),
@@ -289,21 +294,63 @@ export function createHookEventRoutes(): Hono {
       }
     }
 
-    // Handle TaskCompleted hook event — mark the task as completed
-    if (body.eventType === "TaskCompleted" && body.taskId) {
+    // Handle TodoWrite — Claude Code's built-in task tool
+    if (body.toolName === "TodoWrite" && body.toolInput) {
+      const todos = body.toolInput.todos as Array<Record<string, unknown>> | undefined
+      if (Array.isArray(todos)) {
+        for (const todo of todos) {
+          const todoStatus = (todo.status as string) ?? "pending"
+          const task: WorkerTask = {
+            id: (todo.id as string) ?? `todo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            subject: (todo.content as string) ?? "Untitled task",
+            description: "",
+            status: todoStatus === "in_progress" ? "in_progress" : todoStatus === "completed" || todoStatus === "cancelled" ? "completed" : "pending",
+            owner: resolvedOwner,
+            boardColumn: todoStatus === "in_progress" ? "in_progress" : todoStatus === "completed" || todoStatus === "cancelled" ? "done" : "todo",
+            updatedAt: body.timestamp || Date.now(),
+            blocks: [],
+            blockedBy: [],
+          }
+          await handleWorkerTaskUpdate(projectId, task)
+        }
+        logger.debug(`hook-events: TodoWrite ${todos.length} todos for project=${projectId} owner=${resolvedOwner}`)
+      }
+    }
+
+    // Handle TaskCompleted hook event — try to match an existing board task
+    // by subject before falling back to upserting with Claude Code's internal ID.
+    if (body.eventType === "TaskCompleted") {
+      let matchedTaskId: string | null = null
+
+      if (body.taskSubject) {
+        const existing = await db.query.tasks.findFirst({
+          where: and(
+            eq(tasks.projectId, projectId),
+            ilike(tasks.subject, body.taskSubject),
+            ne(tasks.status, "completed"),
+          ),
+          columns: { id: true, subject: true },
+        })
+        // #region agent log
+        fetch('http://host.docker.internal:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'02b42e'},body:JSON.stringify({sessionId:'02b42e',location:'hook-events.ts:TaskCompleted',message:'TaskCompleted subject match attempt',data:{taskSubject:body.taskSubject,taskIdFromCC:body.taskId,matchedTaskId:existing?.id??null,matchedSubject:existing?.subject??null,projectId},timestamp:Date.now(),hypothesisId:'H-C'})}).catch(()=>{});
+        // #endregion
+        if (existing) matchedTaskId = existing.id
+      }
+
+      const taskId = matchedTaskId ?? body.taskId ?? `cc-done-${Date.now()}`
       const task: WorkerTask = {
-        id: body.taskId,
-        subject: body.taskSubject ?? `Task ${body.taskId}`,
+        id: taskId,
+        subject: body.taskSubject ?? `Task ${taskId}`,
         description: body.taskDescription ?? "",
         status: "completed",
-        owner: body.teammateName ?? body.agentId,
+        owner: body.teammateName ?? resolvedOwner,
         boardColumn: "done",
         updatedAt: body.timestamp || Date.now(),
         blocks: [],
         blockedBy: [],
       }
       await handleWorkerTaskUpdate(projectId, task)
-      logger.debug(`hook-events: TaskCompleted task=${body.taskId} for project=${projectId}`)
+      logger.debug(`hook-events: TaskCompleted task=${taskId}${matchedTaskId ? " (matched by subject)" : ""} for project=${projectId}`)
     }
 
     // Broadcast agent_activity from hook events (PreToolUse/PostToolUse have full toolInput)
@@ -313,21 +360,27 @@ export function createHookEventRoutes(): Hono {
       const command = (ti.command ?? ti.cmd) as string | undefined
       const pattern = (ti.pattern ?? ti.query ?? ti.search_term ?? ti.glob_pattern) as string | undefined
       const text = buildHookToolText(body.toolName, ti)
-      broadcastToProject(projectId, "agent_activity", {
+      const agentName = body.agentId === "default" ? "lead" : body.agentId
+      const activityPayload = {
         type: "tool_start",
         tool: body.toolName,
+        agentName,
         ...(text && { text }),
         ...(filePath && { filePath }),
         ...(command && { command }),
         ...(pattern && { pattern }),
         timestamp: body.timestamp || Date.now(),
-      })
+      }
+      broadcastToProject(projectId, "agent_activity", activityPayload)
     } else if ((body.eventType === "PostToolUse" || body.eventType === "PostToolUseFailure") && body.toolName) {
-      broadcastToProject(projectId, "agent_activity", {
+      const agentName = body.agentId === "default" ? "lead" : body.agentId
+      const toolEndPayload = {
         type: "tool_end",
         tool: body.toolName,
+        agentName,
         timestamp: body.timestamp || Date.now(),
-      })
+      }
+      broadcastToProject(projectId, "agent_activity", toolEndPayload)
     }
 
     const status = mapHookEventToStatus(body.eventType, body.notificationType)
@@ -336,9 +389,10 @@ export function createHookEventRoutes(): Hono {
       return c.json({ ok: true, status: null })
     }
 
+    const resolvedAgentId = body.agentId === "default" ? "lead" : body.agentId
     const sseEvent: AgentStatusEvent = {
       type: "agent_status",
-      agentId: body.agentId,
+      agentId: resolvedAgentId,
       status,
       timestamp: body.timestamp || Date.now(),
     }

@@ -375,6 +375,7 @@ export function useAgentActivity(projectId: string, templateAgentNames?: string[
           return
         }
 
+
         const ts = data.timestamp ?? Date.now()
         const agentName = data.agentName ?? "agent"
 

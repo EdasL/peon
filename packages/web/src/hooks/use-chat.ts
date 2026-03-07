@@ -38,6 +38,7 @@ export function useChat(projectId: string) {
   const blocksRef = useRef<ContentBlock[]>([]);
   const textCursorRef = useRef(0);
   const accumulatedLenRef = useRef(0);
+  const toolIdCounterRef = useRef(0);
 
   const flushBlocks = useCallback(() => {
     setStreamingBlocks([...blocksRef.current]);
@@ -200,7 +201,7 @@ export function useChat(projectId: string) {
 
           blocksRef.current.push({
             type: "tool_use",
-            id: `streaming-tool-${Date.now()}`,
+            id: `streaming-tool-${++toolIdCounterRef.current}`,
             name: data.tool,
             input,
             _loading: true,
