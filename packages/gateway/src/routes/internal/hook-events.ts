@@ -15,7 +15,7 @@ import { getActiveProject } from "../../web/chat-routes.js"
 import { handleWorkerTaskUpdate } from "../../web/task-sync.js"
 import type { WorkerTask } from "../../web/task-sync.js"
 import { db } from "../../db/connection.js"
-import { projects, users } from "../../db/schema.js"
+import { projects, users, activityLog } from "../../db/schema.js"
 import { eq } from "drizzle-orm"
 
 const logger = createLogger("internal-hook-events")
@@ -297,6 +297,25 @@ export function createHookEventRoutes(): Hono {
 
     broadcastToProject(projectId, "agent_status", sseEvent)
     logger.debug(`hook-events: ${body.eventType} -> ${status} for agent=${body.agentId} project=${projectId}`)
+
+    // Persist to audit log (parallel write alongside SSE broadcast)
+    try {
+      await db.insert(activityLog).values({
+        projectId,
+        actorRole: body.agentId,
+        entityType: body.toolName ? "tool" : "event",
+        entityId: body.toolUseId ?? body.taskId ?? undefined,
+        action: body.eventType,
+        details: {
+          toolName: body.toolName,
+          ...(body.toolInput && { toolInput: body.toolInput }),
+          ...(body.error && { error: body.error }),
+          ...(body.teammateName && { teammateName: body.teammateName }),
+        },
+      })
+    } catch (err) {
+      logger.warn("Failed to persist activity log entry", err)
+    }
 
     return c.json({ ok: true, status })
   })

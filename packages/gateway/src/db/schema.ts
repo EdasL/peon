@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, jsonb } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, uuid, jsonb, unique } from "drizzle-orm/pg-core"
 import { relations } from "drizzle-orm"
 
 export const users = pgTable("users", {
@@ -55,9 +55,34 @@ export const tasks = pgTable("tasks", {
   owner: text("owner"),
   boardColumn: text("board_column", { enum: ["backlog", "todo", "in_progress", "qa", "done"] }).default("backlog").notNull(),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  lockedBy: text("locked_by"),
+  lockedAt: timestamp("locked_at"),
+  lockedRunId: text("locked_run_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
+
+export const activityLog = pgTable("activity_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  actorRole: text("actor_role"),
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
+  action: text("action").notNull(),
+  details: jsonb("details").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
+export const agentTaskSessions = pgTable("agent_task_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  agentRole: text("agent_role").notNull(),
+  taskId: uuid("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+  sessionId: text("session_id"),
+  workingDir: text("working_dir"),
+  lastActiveAt: timestamp("last_active_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [unique().on(t.projectId, t.agentRole, t.taskId)])
 
 export const teams = pgTable("teams", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -96,3 +121,5 @@ export type Team = typeof teams.$inferSelect
 export type NewTeam = typeof teams.$inferInsert
 export type TeamMember = typeof teamMembers.$inferSelect
 export type NewTeamMember = typeof teamMembers.$inferInsert
+export type ActivityLogEntry = typeof activityLog.$inferSelect
+export type AgentTaskSession = typeof agentTaskSessions.$inferSelect

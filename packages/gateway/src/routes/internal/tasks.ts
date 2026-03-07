@@ -15,8 +15,8 @@ import { getActiveProject } from "../../web/chat-routes.js"
 import { handleWorkerTaskUpdate, deleteProjectTask, getProjectTasks } from "../../web/task-sync.js"
 import type { WorkerTask } from "../../web/task-sync.js"
 import { db } from "../../db/connection.js"
-import { projects, users } from "../../db/schema.js"
-import { eq } from "drizzle-orm"
+import { projects, users, tasks } from "../../db/schema.js"
+import { eq, and, lt, sql } from "drizzle-orm"
 
 const logger = createLogger("internal-tasks")
 
@@ -28,6 +28,26 @@ setInterval(() => {
   const now = Date.now()
   for (const [key, val] of projectIdCache) {
     if (val.expiresAt <= now) projectIdCache.delete(key)
+  }
+}, 5 * 60_000)
+
+// Stale lock cleanup: release locks older than 30 minutes every 5 minutes
+setInterval(async () => {
+  try {
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60_000)
+    const released = await db.update(tasks)
+      .set({ lockedBy: null, lockedAt: null, lockedRunId: null, updatedAt: new Date() })
+      .where(and(
+        sql`${tasks.lockedAt} IS NOT NULL`,
+        lt(tasks.lockedAt, thirtyMinAgo)
+      ))
+      .returning({ id: tasks.id })
+
+    if (released.length > 0) {
+      logger.info(`Stale lock cleanup: released ${released.length} locks`)
+    }
+  } catch (err) {
+    logger.error("Stale lock cleanup failed", err)
   }
 }, 5 * 60_000)
 
@@ -134,8 +154,71 @@ export function createInternalTaskRoutes(): Hono {
     const projectId = await resolveProjectId(token.conversationId)
     if (!projectId) return c.json({ tasks: [] })
 
-    const tasks = await getProjectTasks(projectId)
-    return c.json({ tasks })
+    const projectTasks = await getProjectTasks(projectId)
+    return c.json({ tasks: projectTasks })
+  })
+
+  // POST /internal/tasks/:id/checkout — atomic task checkout
+  router.post("/internal/tasks/:id/checkout", async (c) => {
+    const token = authMiddleware(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    const taskId = c.req.param("id")
+    const body = await c.req.json<{ agentRole: string; runId: string }>().catch(() => null)
+    if (!body?.agentRole || !body?.runId) {
+      return c.json({ error: "agentRole and runId required" }, 400)
+    }
+
+    const projectId = await resolveProjectId(token.conversationId)
+    if (!projectId) return c.json({ error: "No active project found" }, 404)
+
+    const result = await db.update(tasks)
+      .set({
+        lockedBy: body.agentRole,
+        lockedAt: new Date(),
+        lockedRunId: body.runId,
+        owner: body.agentRole,
+        status: "in_progress",
+        boardColumn: "in_progress",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(tasks.id, taskId),
+          eq(tasks.projectId, projectId),
+          sql`${tasks.lockedBy} IS NULL`
+        )
+      )
+      .returning({ id: tasks.id })
+
+    if (result.length === 0) {
+      return c.json({ error: "Task already locked or not found" }, 409)
+    }
+
+    logger.debug(`internal/tasks: checked out task ${taskId} to ${body.agentRole}`)
+    return c.json({ ok: true, taskId })
+  })
+
+  // POST /internal/tasks/:id/release — release task lock
+  router.post("/internal/tasks/:id/release", async (c) => {
+    const token = authMiddleware(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    const taskId = c.req.param("id")
+    const projectId = await resolveProjectId(token.conversationId)
+    if (!projectId) return c.json({ error: "No active project found" }, 404)
+
+    await db.update(tasks)
+      .set({
+        lockedBy: null,
+        lockedAt: null,
+        lockedRunId: null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)))
+
+    logger.debug(`internal/tasks: released lock on task ${taskId}`)
+    return c.json({ ok: true })
   })
 
   return router
