@@ -219,7 +219,7 @@ export function ProjectPage() {
   const [status, setStatus] = useState<Project["status"] | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [bootStep, setBootStep] = useState<string | null>(null)
-  const [setupActivity, setSetupActivity] = useState<string | null>(null)
+  const [setupActivities, setSetupActivities] = useState<string[]>([])
   const [headerTeamMembers, setHeaderTeamMembers] = useState<TeamMember[]>([])
 
   useEffect(() => {
@@ -273,12 +273,13 @@ export function ProjectPage() {
     })
     es.addEventListener("agent_activity", (e) => {
       try {
-        const data = JSON.parse(e.data) as { type: string; tool?: string; text?: string; filePath?: string; command?: string }
+        const data = JSON.parse(e.data) as { type: string; tool?: string; text?: string; filePath?: string; command?: string; agentName?: string }
         if (data.type === "tool_start" && data.tool) {
           const label = data.text ?? data.filePath ?? data.command ?? data.tool
-          setSetupActivity(label)
+          const prefix = data.agentName ? `${data.agentName}: ` : ""
+          setSetupActivities((prev) => [...prev.slice(-4), prefix + label])
         } else if (data.type === "turn_end") {
-          setSetupActivity(null)
+          setSetupActivities([])
         }
       } catch {}
     })
@@ -317,7 +318,7 @@ export function ProjectPage() {
         projectName={project?.name ?? "your project"}
         status={status}
         bootStep={bootStep}
-        activityText={setupActivity}
+        activities={setupActivities}
         onReady={handleProvisioningReady}
         onBack={() => navigate("/dashboard")}
       />

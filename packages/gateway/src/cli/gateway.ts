@@ -325,6 +325,15 @@ function setupServer(
     logger.info("Hook event routes enabled at :8080/internal/hook-events");
   }
 
+  // Delegation-complete routes — workers notify when a delegated Claude Code team
+  // finishes, triggering the orchestrator to auto-report results to the user
+  {
+    const { createDelegationCompleteRoutes } = require("../routes/internal/delegation-complete");
+    const delegationCompleteRouter = createDelegationCompleteRoutes();
+    app.route("", delegationCompleteRouter);
+    logger.info("Delegation-complete routes enabled at :8080/internal/delegation-complete");
+  }
+
   // Messaging routes (already Hono)
   if (platformRegistry) {
     const { createMessagingRoutes } = require("../routes/public/messaging");

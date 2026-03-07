@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, MessageSquare, Send, X, RefreshCw, Copy, Check } from "lucide-react"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { RichMessage } from "./RichMessage"
+import { TeamActivityBanner } from "./TeamActivityBanner"
 import { cn } from "@/lib/utils"
 import type { ContentBlock } from "@/lib/api"
 import "@chatscope/chat-ui-kit-styles/dist/default/styles.min.css"
@@ -121,7 +122,7 @@ function formatTime(iso: string): string {
 }
 
 export function ChatPanel({ projectId, disabled }: { projectId: string; disabled?: boolean }) {
-  const { messages, send, sending, streamingContent, streamingTarget, streamingBlocks, loading, error, connected } =
+  const { messages, send, sending, streamingContent, streamingTarget, streamingBlocks, teamActivity, loading, error, connected } =
     useChat(projectId)
   const [input, setInput] = useState("")
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false)
@@ -252,13 +253,24 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
           </div>
         ) : messages.length === 0 && !streamingContent ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <MessageSquare className="h-8 w-8 text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">
-              Describe a feature or bug to get started
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Your team will pick up the work automatically
-            </p>
+            {connected ? (
+              <>
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mb-3" />
+                <p className="text-sm text-muted-foreground">
+                  Team Lead is getting ready...
+                </p>
+              </>
+            ) : (
+              <>
+                <MessageSquare className="h-8 w-8 text-muted-foreground mb-3" />
+                <p className="text-sm text-muted-foreground">
+                  Describe a feature or bug to get started
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Your team will pick up the work automatically
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <MessageList
@@ -305,6 +317,11 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
           </MessageList>
         )}
       </div>
+
+      {/* Team activity banner — shown when delegated agents are working */}
+      {teamActivity.length > 0 && (
+        <TeamActivityBanner activities={teamActivity} />
+      )}
 
       {/* Input */}
       <div className="p-3 border-t border-border">

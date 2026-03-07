@@ -1093,6 +1093,27 @@ NEVER report a task as done without concrete proof. Follow these rules:
         team.childProcess.kill("SIGTERM");
       }
       try { unlinkSync(sentinelPath(params.projectId)); } catch { /* ignore */ }
+
+      // Notify the gateway so the orchestrator auto-reports results
+      const gwUrl = process.env.DISPATCHER_URL || "http://localhost:8080";
+      const wToken = process.env.WORKER_TOKEN || "";
+      const resultSnippet = (team.output || "").trim().slice(-4000);
+      try {
+        await fetch(`${gwUrl}/internal/delegation-complete`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${wToken}`,
+          },
+          body: JSON.stringify({
+            projectId: params.projectId,
+            result: resultSnippet,
+            exitCode: team.exitCode,
+          }),
+        });
+      } catch (err) {
+        console.error(`[DelegateToProject] Failed to notify delegation-complete:`, err);
+      }
     }
   })();
 

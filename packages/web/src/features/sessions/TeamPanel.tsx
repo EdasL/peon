@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useParams } from "react-router-dom"
 import { Plus, RefreshCw } from "lucide-react"
 import type { TeamMember } from "@/lib/api"
@@ -15,28 +15,14 @@ interface AgentState {
 }
 
 function StatusDot({ status }: { status: AgentStatus }) {
+  const base = "inline-block size-[6px] rounded-full shrink-0 mt-[3px] transition-colors duration-500"
   if (status === "working") {
-    return (
-      <span
-        className="inline-block size-[6px] rounded-full bg-[#22C55E] shrink-0"
-        title="Working"
-      />
-    )
+    return <span className={`${base} bg-[#22C55E]`} title="Working" />
   }
   if (status === "error") {
-    return (
-      <span
-        className="inline-block size-[6px] rounded-full bg-[#EF4444] shrink-0"
-        title="Error"
-      />
-    )
+    return <span className={`${base} bg-[#EF4444]`} title="Error" />
   }
-  return (
-    <span
-      className="inline-block size-[6px] rounded-full border border-[#C8C5BC] shrink-0"
-      title="Idle"
-    />
-  )
+  return <span className={`${base} border border-[#C8C5BC]`} title="Idle" />
 }
 
 interface TeamPanelProps {
@@ -52,6 +38,7 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
   const [showAddForm, setShowAddForm] = useState(false)
 
   const ocContext = useOpenClaw()
+  const idleTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   const fetchMembers = useCallback(async () => {
     if (!projectId) return
@@ -102,6 +89,12 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
         const agentId = data.agentName
         if (!agentId) return
 
+        // Any real activity cancels pending idle timer
+        if (data.type === "tool_start" || data.type === "tool_end") {
+          clearTimeout(idleTimersRef.current[agentId])
+          delete idleTimersRef.current[agentId]
+        }
+
         if (data.type === "tool_start" && data.tool) {
           const label = data.text ?? data.tool
           setAgentStates((prev) => ({
@@ -109,22 +102,29 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
             [agentId]: { status: "working", currentAction: label },
           }))
         } else if (data.type === "tool_end") {
-          setAgentStates((prev) => {
-            const existing = prev[agentId]
-            if (!existing) return prev
-            return { ...prev, [agentId]: { ...existing, currentAction: null } }
-          })
+          // Keep the last action visible — it will be replaced by the
+          // next tool_start or cleared on turn_end. This prevents the
+          // rapid flash of action text appearing and disappearing.
         } else if (data.type === "turn_end") {
-          setAgentStates((prev) => {
-            const existing = prev[agentId]
-            if (!existing) return prev
-            return { ...prev, [agentId]: { status: "idle", currentAction: null } }
-          })
+          // Debounce idle transition — another tool may start shortly
+          clearTimeout(idleTimersRef.current[agentId])
+          idleTimersRef.current[agentId] = setTimeout(() => {
+            setAgentStates((prev) => {
+              const existing = prev[agentId]
+              if (!existing) return prev
+              return { ...prev, [agentId]: { status: "idle", currentAction: null } }
+            })
+            delete idleTimersRef.current[agentId]
+          }, 2000)
         }
       } catch {}
     })
 
-    return () => es.close()
+    return () => {
+      es.close()
+      Object.values(idleTimersRef.current).forEach(clearTimeout)
+      idleTimersRef.current = {}
+    }
   }, [projectId])
 
   useEffect(() => {
@@ -208,18 +208,20 @@ export function TeamPanel({ compact = false }: TeamPanelProps) {
               return (
                 <div
                   key={member.id}
-                  className="flex items-start gap-2.5 px-3 py-1.5 text-xs"
+                  className="flex items-start gap-2.5 px-3 py-1.5 text-xs transition-all duration-300"
                 >
                   <StatusDot status={status} />
                   <div className="min-w-0 flex-1">
                     <span className="truncate font-mono text-[11px] block">
                       {member.displayName || member.roleName}
                     </span>
-                    {action && (
-                      <span className="text-[10px] text-muted-foreground truncate block mt-0.5">
-                        {action}
-                      </span>
-                    )}
+                    <span
+                      className={`text-[10px] text-muted-foreground truncate block mt-0.5 transition-opacity duration-300 ${
+                        action ? "opacity-100" : "opacity-0 h-0 mt-0"
+                      }`}
+                    >
+                      {action ?? "\u00a0"}
+                    </span>
                   </div>
                 </div>
               )

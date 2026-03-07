@@ -27,14 +27,14 @@ export function ProvisioningOverlay({
   projectName,
   status,
   bootStep,
-  activityText,
+  activities,
   onReady,
   onBack,
 }: {
   projectName: string
   status: Project["status"]
   bootStep: string | null
-  activityText?: string | null
+  activities?: string[]
   onReady: () => void
   onBack: () => void
 }) {
@@ -145,10 +145,14 @@ export function ProvisioningOverlay({
                     {step.label}
                     {isActive && <span className="animate-pulse">...</span>}
                   </span>
-                  {isActive && step.key === "setup" && activityText && (
-                    <span className="text-xs text-muted-foreground truncate mt-0.5 max-w-[320px]">
-                      {activityText}
-                    </span>
+                  {isActive && step.key === "setup" && activities && activities.length > 0 && (
+                    <div className="mt-1 space-y-0.5">
+                      {activities.slice(-3).map((text, i) => (
+                        <span key={i} className="block text-xs text-muted-foreground truncate max-w-[320px]">
+                          {text}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>

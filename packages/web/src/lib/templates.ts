@@ -22,6 +22,7 @@ export const TEMPLATES: Template[] = [
       { role: "Backend", color: "bg-violet-500" },
       { role: "Designer", color: "bg-pink-500" },
       { role: "Infra", color: "bg-orange-500" },
+      { role: "Git", color: "bg-sky-500" },
       { role: "QA", color: "bg-amber-500" },
     ],
   },
@@ -32,6 +33,7 @@ export const TEMPLATES: Template[] = [
     agents: [
       { role: "Frontend", color: "bg-emerald-500" },
       { role: "Backend", color: "bg-violet-500" },
+      { role: "Git", color: "bg-sky-500" },
       { role: "QA", color: "bg-amber-500" },
     ],
   },
@@ -42,6 +44,7 @@ export const TEMPLATES: Template[] = [
     agents: [
       { role: "Backend", color: "bg-violet-500" },
       { role: "Infra", color: "bg-orange-500" },
+      { role: "Git", color: "bg-sky-500" },
       { role: "QA", color: "bg-amber-500" },
     ],
   },

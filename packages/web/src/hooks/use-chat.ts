@@ -4,6 +4,15 @@ import * as api from "@/lib/api";
 
 type StableMessage = ChatMessage & { _stableKey?: string };
 
+export interface TeamActivityEvent {
+  tool: string;
+  text: string;
+  agentName?: string;
+  timestamp: number;
+  loading: boolean;
+}
+
+const MAX_TEAM_ACTIVITY = 10;
 const STALE_THRESHOLD_MS = 30_000;
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
@@ -28,6 +37,7 @@ export function useChat(projectId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [teamActivity, setTeamActivity] = useState<TeamActivityEvent[]>([]);
   const eventSourceRef = useRef<EventSource | null>(null);
   const lastEventTimeRef = useRef<number>(0);
   const backoffRef = useRef<number>(BACKOFF_INITIAL_MS);
@@ -170,6 +180,7 @@ export function useChat(projectId: string) {
             }
           }
           resetStreaming();
+          setTeamActivity([]);
         }
         setMessages((prev) => {
           if (prev.some((m) => m.id === msg.id)) return prev;
@@ -197,9 +208,6 @@ export function useChat(projectId: string) {
       es.addEventListener("chat_delta", (e) => {
         markEvent();
         const { accumulated } = JSON.parse(e.data) as { accumulated: string };
-        // Feed the typewriter buffer — the rAF loop reveals text smoothly.
-        // streamingTarget is set immediately so the container can reserve
-        // the full height and avoid layout jumps as text is revealed.
         targetTextRef.current = accumulated;
         setStreamingTarget(accumulated);
         if (rafRef.current === null && revealedLenRef.current < accumulated.length) {
@@ -238,6 +246,12 @@ export function useChat(projectId: string) {
             _loading: true,
           });
           flushBlocks();
+
+          // Also track as background team activity (visible when orchestrator isn't streaming)
+          setTeamActivity((prev) => [
+            ...prev.slice(-(MAX_TEAM_ACTIVITY - 1)),
+            { tool: data.tool!, text: data.text || data.filePath || data.command || "", agentName: data.agentName, timestamp: data.timestamp, loading: true },
+          ]);
         } else if (data.type === "tool_end" && data.tool) {
           for (let i = blocksRef.current.length - 1; i >= 0; i--) {
             const b = blocksRef.current[i];
@@ -247,7 +261,26 @@ export function useChat(projectId: string) {
             }
           }
           flushBlocks();
+
+          // Mark the most recent matching tool as done in team activity
+          setTeamActivity((prev) => {
+            const updated = [...prev];
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].tool === data.tool && updated[i].loading) {
+                updated[i] = { ...updated[i], loading: false };
+                break;
+              }
+            }
+            return updated;
+          });
         }
+      });
+
+      es.addEventListener("delegation_complete", (e) => {
+        markEvent();
+        // Clear team activity — the orchestrator will start a new turn to report
+        setTeamActivity([]);
+        setStreamingContent("Reviewing team results...");
       });
 
       es.addEventListener("task_update", markEvent);
@@ -362,6 +395,7 @@ export function useChat(projectId: string) {
     streamingContent,
     streamingTarget,
     streamingBlocks,
+    teamActivity,
     loading,
     error,
     connected,

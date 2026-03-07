@@ -8,6 +8,7 @@ const FALLBACK_COLORS: Record<string, string> = {
   backend: "bg-violet-500",
   qa: "bg-amber-500",
   designer: "bg-pink-500",
+  git: "bg-sky-500",
   mobile: "bg-cyan-500",
 }
 

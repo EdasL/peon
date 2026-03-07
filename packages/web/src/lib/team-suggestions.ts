@@ -79,6 +79,19 @@ Responsibilities:
 
 You focus on infrastructure and deployment. You do not implement application features.`,
 
+  git: `You are the Git and release engineer. You own all version control operations, branching, pull requests, and repository management.
+
+Responsibilities:
+- Clone, fetch, and manage remote repositories
+- Create feature branches, manage rebases, and resolve merge conflicts
+- Create pull requests with clear titles, descriptions, and linked issues
+- Ensure commits are clean, atomic, and follow conventional commit messages
+- Tag releases and manage versioning
+- Push changes and ensure branches are up-to-date before PRs
+- Handle git submodules, LFS, and repository configuration when needed
+
+You own the full git workflow end-to-end. Other agents hand off to you when code needs to be committed, pushed, or turned into a PR. You never implement features — you manage the code lifecycle.`,
+
   mobile: `You are the mobile developer. You own native and cross-platform mobile implementation, navigation, and platform APIs.
 
 Responsibilities:
@@ -108,6 +121,7 @@ export const ROLE_NAMES: Record<string, string> = {
   qa: "QA Engineer",
   designer: "Designer",
   infra: "Infrastructure Engineer",
+  git: "Git Engineer",
   mobile: "Mobile Developer",
   engineer: "Engineer",
 }
@@ -119,6 +133,7 @@ export const ROLE_COLORS: Record<string, string> = {
   qa: "bg-amber-500",
   designer: "bg-pink-500",
   infra: "bg-orange-500",
+  git: "bg-sky-500",
   mobile: "bg-cyan-500",
   engineer: "bg-stone-500",
 }
@@ -130,6 +145,7 @@ export const ROLE_TAGLINES: Record<string, string> = {
   qa: "Tests, validates, and catches regressions",
   designer: "Owns layout, visuals, and UX decisions",
   infra: "Deployment, CI/CD, and DevOps",
+  git: "Branching, PRs, commits, and releases",
   mobile: "Native and cross-platform mobile",
   engineer: "Full-stack generalist",
 }
@@ -141,6 +157,7 @@ export const ROLE_BORDER_COLORS: Record<string, string> = {
   qa: "border-l-amber-500",
   designer: "border-l-pink-500",
   infra: "border-l-orange-500",
+  git: "border-l-sky-500",
   mobile: "border-l-cyan-500",
   engineer: "border-l-stone-500",
 }
@@ -152,6 +169,7 @@ export const ROLE_TEXT_COLORS: Record<string, string> = {
   qa: "text-amber-500",
   designer: "text-pink-500",
   infra: "text-orange-500",
+  git: "text-sky-500",
   mobile: "text-cyan-500",
   engineer: "text-stone-500",
 }
@@ -163,6 +181,7 @@ export const ALL_ROLES = [
   "qa",
   "designer",
   "infra",
+  "git",
   "mobile",
   "engineer",
 ] as const
@@ -181,6 +200,7 @@ export function getDefaultTeam(): SuggestedMember[] {
     makeMember("lead"),
     makeMember("frontend"),
     makeMember("backend"),
+    makeMember("git"),
     makeMember("qa"),
   ]
 }

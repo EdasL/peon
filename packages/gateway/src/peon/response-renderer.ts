@@ -4,13 +4,15 @@
  * them to the frontend via SSE, routed to the project's broadcast channel.
  */
 
+import { randomUUID } from "node:crypto"
 import { createLogger } from "@lobu/core"
 import type { ThreadResponsePayload } from "../infrastructure/queue/types.js"
 import type { ResponseRenderer } from "../platform/response-renderer.js"
 import { broadcastToProject } from "../web/chat-routes.js"
 import { and, eq, or } from "drizzle-orm"
 import { db } from "../db/connection.js"
-import { chatMessages, projects } from "../db/schema.js"
+import { chatMessages, projects, users } from "../db/schema.js"
+import { getPeonPlatform } from "./platform.js"
 
 const logger = createLogger("peon-response-renderer")
 
@@ -94,6 +96,12 @@ export class PeonResponseRenderer implements ResponseRenderer {
 
       if (updatedProject) {
         broadcastToProject(projectId, "project_status", { status: "running" })
+
+        // Auto-trigger the orchestrator to greet the user now that setup is done.
+        // This fires a non-system message so the response is visible in chat.
+        this.enqueueGreeting(projectId, payload).catch((err) => {
+          logger.error(`Failed to enqueue greeting for project ${projectId}:`, err)
+        })
       }
       streamBuffers.delete(messageId)
       logger.info(`System message completion (suppressed from chat): project ${projectId}`)
@@ -214,5 +222,51 @@ export class PeonResponseRenderer implements ResponseRenderer {
       state: statusUpdate.state,
       elapsedSeconds: statusUpdate.elapsedSeconds,
     })
+  }
+
+  /**
+   * After a system message completes (project setup), enqueue a non-system
+   * message so the orchestrator greets the user in the visible chat.
+   */
+  private async enqueueGreeting(
+    projectId: string,
+    payload: ThreadResponsePayload
+  ): Promise<void> {
+    const project = await db.query.projects.findFirst({
+      where: eq(projects.id, projectId),
+      columns: { id: true, name: true, userId: true, repoUrl: true },
+    })
+    if (!project) return
+
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, project.userId),
+      columns: { id: true, peonAgentId: true },
+    })
+    if (!user?.peonAgentId) return
+
+    const peonAgentId = user.peonAgentId
+
+    const services = getPeonPlatform().getServices()
+    const queueProducer = services.getQueueProducer()
+    await queueProducer.enqueueMessage({
+      userId: user.id,
+      conversationId: peonAgentId,
+      messageId: randomUUID(),
+      channelId: peonAgentId,
+      teamId: "peon",
+      agentId: peonAgentId,
+      botId: "peon-agent",
+      platform: "peon",
+      messageText: `[system] Project "${project.name}" environment is starting. The user is connected. First, verify the workspace: check if the repo is cloned, list the project files, and confirm the environment is ready. Then introduce yourself briefly with an honest status report — if setup is still in progress, say so. Finally ask what the user wants to build or work on. Be concise and action-oriented.`,
+      platformMetadata: {
+        projectId,
+        userId: user.id,
+        openclawAgentId: `project-${projectId}`,
+        projectName: project.name,
+        projectRepoUrl: project.repoUrl,
+      },
+      agentOptions: { provider: "claude" },
+    })
+    logger.info(`Enqueued greeting message for project ${projectId}`)
   }
 }
