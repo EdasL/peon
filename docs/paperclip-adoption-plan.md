@@ -1,126 +1,155 @@
-# Paperclip → Peon Adoption Plan
+# Paperclip → Peon Adoption Plan (Updated)
 
-How to lift the best coding-relevant patterns from Paperclip into Peon without breaking existing infrastructure. All changes are additive — no removal of existing systems.
+## Golden Rule
 
-Paperclip is MIT licensed. Code can be borrowed directly.
+**Before implementing anything from Paperclip, verify:**
+1. How does Paperclip actually implement it? (read the source)
+2. How does Peon currently implement it? (read the source)
+3. Does the Paperclip way conflict with Peon's working architecture?
+
+If it conflicts → don't port it. If it's additive → port it.
 
 ---
 
-## Phase 1 — Quick Wins (1–2 days each, zero infrastructure risk)
+## Peon's Core Architecture (Do Not Break)
 
-### 1.1 Task Checkout Locking
+```
+User → Peon UI (React)
+     → Gateway (Hono + Postgres + Redis + BullMQ)
+     → Docker container per user
+         → OpenClaw gateway (subprocess)
+             → Claude Code teams (tmux sessions per agent)
+     → SSE stream → Kanban board (live task progress)
+```
 
-**Problem:** Peon uses last-write-wins on task `owner` field. Two agents can grab the same task. On crash, task stays `in_progress` forever.
+- **Docker is mandatory.** Peon is SaaS. Isolation is required.
+- **OpenClaw is the agent runtime.** Claude Code runs inside OpenClaw inside Docker.
+- **Claude Code teams** are the coding unit — lead + frontend + backend + QA agents.
+- **Kanban board** shows live progress from agent activity via SSE.
 
-**Paperclip's solution:** `executionRunId` + `executionLockedAt` + `executionLockedBy` on issues table. Atomic checkout via `SELECT FOR UPDATE SKIP LOCKED`.
+Paperclip runs Claude Code as a child process on the host (no Docker, no OpenClaw). That entire approach is incompatible with Peon. Do not port the execution model.
 
-**Peon implementation:**
+---
 
-Add to `packages/gateway/src/db/schema.ts`:
+## Claude Code Integration Issues (Priority 0)
+
+These are **blocking issues** that prevent Peon from working at all. Fix before anything else.
+
+### Problem 1: First-run onboarding wizard (theme selection, permissions)
+
+**What happens:** Claude Code's first run in a container shows an interactive TTY wizard (theme selection, dark mode, onboarding steps). OpenClaw starts Claude Code in a tmux session with a TTY, so the wizard appears and blocks everything.
+
+**How Paperclip avoids it:** Runs Claude Code in headless mode — no TTY, no wizard.
+```bash
+claude --print - --output-format stream-json --verbose
+```
+This is irrelevant to Peon because Peon uses OpenClaw, not direct `claude` invocation.
+
+**Fix for Peon:** Pre-populate `~/.claude/settings.json` in the container before OpenClaw starts:
+```json
+{
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
+  "hasCompletedOnboarding": true
+}
+```
+
+Where to do it: in the container entrypoint script or in `packages/worker/src/core/workspace.ts` during workspace init — write this file to `~/.claude/settings.json` before `openclaw gateway` is spawned.
+
+**Verify:** Check what keys Claude Code reads from `~/.claude/settings.json` to determine onboarding state. The key `skipDangerousModePermissionPrompt: true` is confirmed to exist (from host machine). Find the onboarding/theme key by running `claude` fresh in a clean container and watching what gets written to `~/.claude/settings.json`.
+
+### Problem 2: Auth (`~/.claude/`) persistence across container restarts
+
+**What happens:** OAuth tokens live in `~/.claude/` inside the container. Container dies, tokens gone, re-auth required.
+
+**Peon's approach:** Mount `~/.claude/` as a named Docker volume per user (or pass the OAuth path in). This is already partially implemented.
+
+**What to verify:** Confirm the Docker volume for `~/.claude/` is actually mounted and persisted in `packages/gateway/src/orchestration/` (wherever containers are provisioned). If not, add the volume mount.
+
+**Paperclip's approach for comparison:** Not relevant — it runs on host directly.
+
+---
+
+## Phase 1 — Task Checkout Locking
+
+**Problem:** Peon uses last-write-wins on task `owner` field. Two agents can grab the same task simultaneously. On crash, task stays `in_progress` forever with no recovery.
+
+**Paperclip's solution:** `executionRunId` + `executionLockedAt` + `executionLockedBy` on issues table. Atomic checkout via `SELECT FOR UPDATE SKIP LOCKED`. Stale lock detection without auto-reassignment (surfaces on dashboard, human decides).
+
+**Verify Peon's current state:** Check `packages/gateway/src/db/schema.ts` tasks table and `packages/gateway/src/web/chat-routes.ts` for any existing locking. Check how agents currently claim tasks (`owner` field assignment).
+
+**If Peon has no locking → implement:**
+
+Add to `packages/gateway/src/db/schema.ts` tasks table:
 ```typescript
-// On tasks table
-lockedBy: text("locked_by"),                          // agent role name
-lockedAt: timestamp("locked_at"),                     // when checkout happened
-lockedRunId: text("locked_run_id"),                   // unique run ID per checkout
+lockedBy: text("locked_by"),       // agent role name
+lockedAt: timestamp("locked_at"),  // when checkout happened
+lockedRunId: text("locked_run_id") // unique ID per checkout
 ```
 
 Add to `packages/gateway/src/routes/internal/tasks.ts`:
-```typescript
-// POST /internal/tasks/:id/checkout
-// Uses db.transaction() + FOR UPDATE SKIP LOCKED
-// Returns 409 if already locked
-
-// POST /internal/tasks/:id/release
-// Clears lock fields, sets status back to pending if needed
+```
+POST /internal/tasks/:id/checkout  — atomic SELECT FOR UPDATE SKIP LOCKED, returns 409 if locked
+POST /internal/tasks/:id/release   — clears lock fields
 ```
 
-Add a cleanup job in `packages/gateway/src/orchestration/scheduled-wakeup.ts`:
-```typescript
-// Every 5 min: release locks older than 30min (dead agent detection)
+Add stale lock cleanup in `packages/gateway/src/orchestration/scheduled-wakeup.ts`:
+```
+Every 5min: release locks older than 30min (dead agent detection, no auto-reassign)
 ```
 
-**Risk:** Zero. Additive columns. Existing code still works — it just ignores locks until workers start using the new endpoints.
+**Risk:** Additive columns. Existing code ignores locks until workers start using new endpoints.
 
 ---
 
-### 1.2 Audit Log
+## Phase 2 — Audit Log
 
-**Problem:** Agent activity (tool calls, file edits, decisions) is broadcast over SSE and lost on reconnect/restart. Nothing is persisted.
+**Problem:** Agent activity (tool calls, file edits, bash commands) is broadcast over SSE and lost on gateway restart or browser disconnect. No way to answer "what did the agent do yesterday?"
 
-**Paperclip's solution:** `activity_log` table — every action saved with `actor`, `entityType`, `entityId`, `action`, `details` (JSONB).
+**Paperclip's solution:** `activity_log` table — every action saved with actor, entity, action, and JSONB details. Simultaneously publishes live events for real-time UI. File-based run logs with SHA256 checksums as secondary storage.
 
-**Peon implementation:**
+**Verify Peon's current state:** Check `packages/gateway/src/routes/internal/hook-events.ts` and `packages/gateway/src/routes/internal/agent-activity.ts` — confirm that activity events are currently SSE-only (not persisted).
+
+**If no persistence → implement:**
 
 Add to `packages/gateway/src/db/schema.ts`:
 ```typescript
 export const activityLog = pgTable("activity_log", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
-  actorRole: text("actor_role"),          // "lead", "frontend", etc.
-  entityType: text("entity_type"),        // "task", "file", "command"
-  entityId: text("entity_id"),            // task ID or file path
-  action: text("action").notNull(),       // "checkout", "edit", "bash", "complete"
-  details: jsonb("details"),              // { filePath, command, output snippet }
+  actorRole: text("actor_role"),       // "lead", "frontend", "backend"
+  entityType: text("entity_type"),     // "task", "file", "command"
+  entityId: text("entity_id"),         // task ID or file path
+  action: text("action").notNull(),    // "checkout", "edit", "bash", "complete"
+  details: jsonb("details"),           // { filePath, command, output snippet }
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 ```
 
-In `packages/gateway/src/routes/internal/hook-events.ts` (where agent activity arrives):
+In `packages/gateway/src/routes/internal/hook-events.ts`:
 ```typescript
-// Before SSE broadcast, insert into activity_log
+// Before SSE broadcast → insert into activity_log
 await db.insert(activityLog).values({ ... })
 ```
 
-Add to web frontend: a collapsible "Activity" panel per project showing the log. No new API needed — just query `activity_log` by `projectId`.
-
-**Risk:** Zero. Existing SSE broadcast unchanged. Log is a parallel write.
+**Risk:** Zero. Parallel write alongside existing SSE broadcast. Nothing changes for existing consumers.
 
 ---
 
-### 1.3 Cost Tracking
+## Phase 3 — Session Persistence (Resume Claude Code after restart)
 
-**Problem:** Users bring their own API keys and have zero visibility into spend. No limits, no alerts, no stopping a runaway agent.
+**Problem:** Container restart or crash → OpenClaw starts fresh → Claude Code loses context of what it was working on mid-task.
 
-**Paperclip's solution:** `cost_events` table (per-LLM-call recording) + budget fields on agents/companies + auto-pause when limit hit.
+**Paperclip's solution:** `agent_task_sessions` table keyed on `(agentId, taskKey)`. Stores `sessionId` (Claude Code `--resume` target) and `cwd`. On next run, passes `--resume <sessionId>` to Claude Code. If session is gone, retries with fresh session automatically.
 
-**Peon implementation — Phase 1 (visibility only, no enforcement):**
+**Verify Peon's current state:**
+1. Check if OpenClaw exposes session IDs from Claude Code runs
+2. Check if Peon's worker (`packages/worker/src/openclaw/`) captures or stores any Claude Code session ID
+3. Check if OpenClaw supports `--resume` passthrough to the underlying `claude` process
 
-Add to `packages/gateway/src/db/schema.ts`:
-```typescript
-export const costEvents = pgTable("cost_events", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").references(() => projects.id),
-  agentRole: text("agent_role"),
-  inputTokens: integer("input_tokens").default(0),
-  outputTokens: integer("output_tokens").default(0),
-  estimatedCostUsd: numeric("estimated_cost_usd", { precision: 10, scale: 6 }),
-  model: text("model"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-})
-```
+**This depends on OpenClaw internals.** If OpenClaw doesn't expose the Claude Code session ID, this cannot be implemented at the Peon layer without modifying OpenClaw.
 
-Worker already receives token usage data from Claude Code output — parse it in `packages/worker/src/openclaw/worker.ts` and POST to gateway alongside activity events.
-
-Add a `GET /api/projects/:id/cost` endpoint returning total spend + per-agent breakdown.
-
-Show spend on the project dashboard (small token counter near the chat input, like a fuel gauge).
-
-**Phase 2 (budget enforcement) — add later:**
-- `monthlyBudgetUsd` on projects table
-- Gateway checks running total before dispatching next job
-- Auto-pause + notify user when 80% / 100% hit
-
-**Risk:** Phase 1 is zero risk. Phase 2 requires a gateway dispatch check — minimal.
-
----
-
-## Phase 2 — Session Persistence (2–3 days, moderate complexity)
-
-**Problem:** When a worker container restarts, the agent starts fresh. No memory of what task it was working on or what it already tried.
-
-**Paperclip's solution:** `agent_task_sessions` table — keyed on `(agentId, taskKey)`, stores `sessionParams` JSONB. The `claude-local` adapter uses this to pass `--resume <sessionId>` to Claude Code CLI when the working directory matches.
-
-**Peon implementation:**
+**If feasible → implement:**
 
 Add to `packages/gateway/src/db/schema.ts`:
 ```typescript
@@ -129,55 +158,14 @@ export const agentTaskSessions = pgTable("agent_task_sessions", {
   projectId: uuid("project_id").references(() => projects.id),
   agentRole: text("agent_role").notNull(),
   taskId: uuid("task_id").references(() => tasks.id),
-  sessionId: text("session_id"),           // Claude Code session ID (--resume target)
-  workingDir: text("working_dir"),         // workspace path at time of session
+  sessionId: text("session_id"),        // Claude Code session ID for --resume
+  workingDir: text("working_dir"),      // workspace path when session was saved
   lastActiveAt: timestamp("last_active_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [unique().on(t.projectId, t.agentRole, t.taskId)])
 ```
 
-In worker (`packages/worker/src/openclaw/worker.ts`):
-1. When starting a task, check gateway for existing `agentTaskSessions` row
-2. If found and working dir matches, pass `--resume <sessionId>` to OpenClaw/Claude Code
-3. After each successful turn, POST updated `sessionId` to gateway to keep it current
-4. On task complete/fail, mark session as closed
-
-In `packages/gateway/src/routes/internal/`:
-- `POST /internal/sessions/agent-task` — upsert session record
-- `GET /internal/sessions/agent-task?projectId=&agentRole=&taskId=` — lookup
-
-**Risk:** Medium. Changes the worker startup flow. Needs testing that `--resume` works correctly in OpenClaw. Can be feature-flagged off initially.
-
----
-
-## Phase 3 — Approval Gates (3–5 days, new UX surface)
-
-**Problem:** No checkpoint between "agents are coding" and "code is committed to main." No way for a user to say "don't push without my approval."
-
-**Paperclip's solution:** `approvals` table with state machine (`pending → approved/rejected`). Agents pause and wait for human action before proceeding.
-
-**Peon implementation:**
-
-Add to schema:
-```typescript
-export const approvals = pgTable("approvals", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id").references(() => projects.id),
-  taskId: uuid("task_id").references(() => tasks.id),
-  type: text("type"),                      // "merge", "deploy", "delete"
-  requestedBy: text("requested_by"),       // agent role
-  status: text("status").default("pending"), // pending | approved | rejected
-  details: jsonb("details"),               // PR link, diff summary, etc.
-  decidedAt: timestamp("decided_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-})
-```
-
-Worker: when Lead agent signals it's ready to merge/deploy (detected from chat output or explicit `RequestApproval` tool), gateway creates approval row and SSEs a "waiting for approval" state to frontend.
-
-Frontend: approval card appears in chat. User clicks Approve/Reject. Gateway updates row and SSEs unblock signal to worker.
-
-**Risk:** Medium-high. New tool the agent needs to know about. Requires prompt engineering to make Lead reliably use it. Can ship as opt-in per-project setting initially.
+**Risk:** Medium. Requires verifying OpenClaw's session ID exposure. Gate behind feature flag.
 
 ---
 
@@ -185,42 +173,51 @@ Frontend: approval card appears in chat. User clicks Approve/Reject. Gateway upd
 
 | Paperclip Feature | Why Skip |
 |---|---|
-| Org charts / reporting lines | Peon's team is fixed (lead/FE/BE/QA). No org tree needed. |
-| Multi-company isolation | Peon is SaaS with per-user isolation already. |
-| Heartbeat scheduler | Peon uses BullMQ which is more reliable. |
-| ClipMart / templates export | Not relevant until Peon has a marketplace. |
-| `agent_config_revisions` | Nice-to-have but low impact. Add if agents go wrong in prod. |
-| CLI tool | Peon is web-only by design. |
-| Goal hierarchy (multi-level) | Peon's flat task list is sufficient for project scope. |
+| **Direct `claude` child process execution** | Peon uses OpenClaw + Docker. Completely different model. |
+| **`--print - --output-format stream-json`** | Paperclip's headless invocation. Peon uses OpenClaw which manages this internally. |
+| **`runClaudeLogin` / login URL flow** | Peon mounts `~/.claude/` as a volume. Auth is handled at the Docker level. |
+| **Hello probe (`testEnvironment`)** | Paperclip probes before each run. OpenClaw handles agent health internally. |
+| **Cost tracking (`cost_events`)** | Not required for Peon. |
+| **Multi-company isolation** | Peon is per-user isolated at Docker container level. |
+| **Heartbeat scheduler** | Peon uses BullMQ which is more reliable. |
+| **Adapter plugin architecture** | Peon is OpenClaw-only by design. |
+| **Goal hierarchy** | Peon's flat task list is sufficient. |
+| **Approval gates** | Future consideration, not now. |
+| **CLI tool** | Peon is web-only. |
+| **`agent_config_revisions`** | Low impact, nice-to-have later. |
 
 ---
 
 ## Implementation Order
 
 ```
+Priority 0 (blocking — do first):
+  Verify ~/.claude/ volume persistence in Docker provisioning
+  Pre-populate ~/.claude/settings.json to skip onboarding wizard
+  Test: launch team → agents start without wizard → tasks appear on board
+
 Week 1:
-  Day 1-2:  Task checkout locking (1.1) — schema + endpoints + worker usage
-  Day 3-4:  Audit log (1.2) — schema + hook into existing activity events
-  Day 5:    Cost visibility (1.3 Phase 1) — schema + worker parsing + dashboard widget
+  Task checkout locking — schema + endpoints + worker usage
+  Audit log — schema + persist before SSE broadcast
 
 Week 2:
-  Day 1-3:  Session persistence (2) — schema + worker startup flow + feature flag
-  Day 4-5:  Cost budget enforcement (1.3 Phase 2) — dispatch check + pause + notify
+  Investigate OpenClaw session ID exposure
+  Session persistence — if feasible, implement with feature flag
 
-Week 3+:
-  Approval gates (3) — new tool + frontend approval card + opt-in setting
+Later:
+  Approval gates (opt-in per project)
 ```
 
 ---
 
 ## Schema Migration Strategy
 
-All changes are additive (new tables + nullable columns). No existing queries break.
+All changes are additive (new tables + nullable columns on tasks). No existing queries break.
 
-1. Add new tables with `CREATE TABLE IF NOT EXISTS`
-2. Add nullable columns to existing tables (tasks: `lockedBy`, `lockedAt`, `lockedRunId`)
+1. Add nullable columns to tasks: `lockedBy`, `lockedAt`, `lockedRunId`
+2. Add new tables: `activity_log`, `agent_task_sessions`
 3. Deploy gateway — new tables exist, nothing uses them yet
-4. Deploy worker with feature flags off — smoke test
-5. Enable feature flags per-project in staging, then prod
+4. Deploy worker with locking disabled — smoke test
+5. Enable locking per-project in staging, then prod
 
 Zero-downtime. No backfill needed.
