@@ -3,6 +3,10 @@
 import type { AuthProfile, InstructionContext, WorkerTokenData } from "@lobu/core";
 import { createLogger, verifyWorkerToken } from "@lobu/core";
 import { AuthProfilesManager } from "../auth/settings/auth-profiles-manager";
+import { db } from "../db/connection";
+import { users } from "../db/schema";
+import { eq } from "drizzle-orm";
+import { decrypt } from "../services/encryption";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { stream } from "hono/streaming";
@@ -339,6 +343,21 @@ export class WorkerGateway {
         }));
       }
 
+      // Include GitHub token so the worker can clone private repos even if
+      // the token wasn't in the container env at creation time.
+      let githubToken: string | undefined;
+      try {
+        const ghUser = await db.query.users.findFirst({
+          where: eq(users.id, userId),
+          columns: { githubAccessToken: true },
+        });
+        if (ghUser?.githubAccessToken) {
+          githubToken = decrypt(ghUser.githubAccessToken);
+        }
+      } catch (error) {
+        logger.warn("Failed to look up GitHub token for session context:", error);
+      }
+
       logger.info(
         `Session context for ${userId}: ${Object.keys(mcpConfig.mcpServers || {}).length} MCPs, ${contextData.agentInstructions.length} chars agent instructions, ${contextData.platformInstructions.length} chars platform instructions, ${contextData.networkInstructions.length} chars network instructions, ${contextData.skillsInstructions.length} chars skills instructions, ${contextData.mcpStatus.length} MCP status entries, ${Object.keys(mcpTools).length} MCP tool lists, provider: ${providerConfig.defaultProvider || "none"}`
       );
@@ -353,6 +372,7 @@ export class WorkerGateway {
         mcpTools,
         providerConfig,
         authProfiles,
+        githubToken,
       });
     } catch (error) {
       logger.error("Failed to generate session context", { error });

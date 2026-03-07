@@ -47,6 +47,7 @@ interface SessionContextResponse {
   mcpTools?: Record<string, McpToolDef[]>;
   providerConfig?: ProviderConfig;
   authProfiles?: SessionAuthProfile[];
+  githubToken?: string;
 }
 
 // Module-level cache for session context
@@ -54,6 +55,7 @@ let cachedResult: {
   gatewayInstructions: string;
   providerConfig: ProviderConfig;
   authProfiles: SessionAuthProfile[];
+  githubToken?: string;
 } | null = null;
 
 /**
@@ -109,6 +111,7 @@ export async function getOpenClawSessionContext(): Promise<{
   gatewayInstructions: string;
   providerConfig: ProviderConfig;
   authProfiles: SessionAuthProfile[];
+  githubToken?: string;
 }> {
   if (cachedResult) {
     logger.debug("Returning cached session context");
@@ -172,6 +175,7 @@ export async function getOpenClawSessionContext(): Promise<{
       gatewayInstructions,
       providerConfig: data.providerConfig || {},
       authProfiles: Array.isArray(data.authProfiles) ? data.authProfiles : [],
+      githubToken: data.githubToken,
     };
     cachedResult = result;
     return result;

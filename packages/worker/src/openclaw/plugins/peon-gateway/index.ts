@@ -854,6 +854,16 @@ The user watches the task board to track your team's progress. You MUST keep it 
 When spawning teammates, include in each teammate's prompt:
 "Update the task board by running: bash .claude/hooks/peon-tasks.sh start <task-id> when you begin, and bash .claude/hooks/peon-tasks.sh done <task-id> when finished."
 
+## Verification (mandatory)
+
+NEVER report a task as done without concrete proof. Follow these rules:
+
+1. **Verify outputs exist.** If the task produces something (a PR, a file, a deployed service, test results), confirm it actually exists. For PRs: run \`gh pr view\` and include the URL. For files: confirm they exist with \`ls\` or \`cat\`. For tests: show the actual pass/fail output.
+2. **Complete workflows end-to-end.** A task like "create a PR" means: commit changes, push the branch, create the PR on GitHub, and return the PR URL. Stopping partway (e.g., committing but not pushing) is a failure, not a success.
+3. **No vague success.** Never say "done" or "completed" without showing evidence. Include URLs, command output, or file paths that prove the work is finished.
+4. **If something fails, say so.** Report the actual error instead of glossing over it. A clear failure report is more valuable than a false success.
+5. **Git workflow:** Always ensure changes are pushed to the remote before reporting completion. Run \`git status\` to confirm there are no unpushed commits. For PRs: use \`gh pr create\` and return the URL from its output.
+
 `;
 
   if (params.claudeMd) {

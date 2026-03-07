@@ -62,13 +62,16 @@ export function ProvisioningOverlay({
     }
   }, [status])
 
-  // Fallback: slowly advance step 0 after 8s if no boot_progress arrives
+  // Fallback: slowly auto-advance through early steps when no boot_progress
+  // events arrive, so the user doesn't stare at a stuck progress bar.
   useEffect(() => {
-    const fallbackTimer = setTimeout(() => {
-      setActiveStep((prev) => (prev === 0 ? 0 : prev))
-    }, 8000)
+    const fallbacks = [
+      setTimeout(() => setActiveStep((prev) => Math.max(prev, 1)), 8_000),
+      setTimeout(() => setActiveStep((prev) => Math.max(prev, 2)), 18_000),
+      setTimeout(() => setActiveStep((prev) => Math.max(prev, 3)), 30_000),
+    ]
     const skipTimer = setTimeout(() => setCanSkip(true), SKIP_TIMEOUT_MS)
-    timersRef.current.push(fallbackTimer, skipTimer)
+    timersRef.current.push(...fallbacks, skipTimer)
     return () => timersRef.current.forEach(clearTimeout)
   }, [])
 

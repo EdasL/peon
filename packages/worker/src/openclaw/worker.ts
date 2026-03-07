@@ -313,6 +313,14 @@ export class OpenClawWorker implements WorkerExecutor {
 
     // Fetch session context for provider config and gateway instructions
     const context = await getOpenClawSessionContext();
+
+    // Inject GitHub token dynamically so private repos can be cloned even
+    // when the token wasn't available at container creation time.
+    if (context.githubToken && !process.env.GH_TOKEN) {
+      process.env.GH_TOKEN = context.githubToken;
+      logger.info("Injected GH_TOKEN from session context");
+    }
+
     const pc = context.providerConfig;
     if (pc.defaultProvider) {
       process.env.AGENT_DEFAULT_PROVIDER = pc.defaultProvider;
@@ -449,8 +457,15 @@ Use it when the user references past discussions or you need context.`);
     // use the default https://api.anthropic.com endpoint.
     delete process.env.ANTHROPIC_BASE_URL;
 
-    // Write OpenClaw config files (SOUL.md, skills, agents config, auth-profiles.json)
+    // Check for project context early — bootstrap/system messages without a
+    // project don't need an AI session (no agent to talk to).
     const pmeta = this.config.platformMetadata as Record<string, unknown> | undefined;
+    if (!pmeta?.openclawAgentId || !pmeta?.projectId) {
+      logger.info("No openclawAgentId/projectId in platformMetadata, skipping AI session (system message)");
+      return { success: true, exitCode: 0, output: "", sessionKey: this.config.sessionKey };
+    }
+
+    // Write OpenClaw config files (SOUL.md, skills, agents config, auth-profiles.json)
     const teamMembers = Array.isArray(pmeta?.teamMembers)
       ? (pmeta.teamMembers as Array<{ roleName: string; displayName: string; systemPrompt: string }>)
       : undefined;
@@ -460,7 +475,7 @@ Use it when the user references past discussions or you need context.`);
       customInstructions: finalInstructions,
       providerConfig: pc,
       cliBackends: pc.cliBackends,
-      openclawAgentId: pmeta?.openclawAgentId as string | undefined,
+      openclawAgentId: pmeta.openclawAgentId as string,
       teamMembers,
     });
 
@@ -493,14 +508,10 @@ Use it when the user references past discussions or you need context.`);
 
     // Ensure per-project agent is registered in openclaw.json BEFORE
     // the gateway starts (or restarts), so it sees the agent on boot.
-    const pmeta2 = this.config.platformMetadata as Record<string, unknown> | undefined;
-    const openclawAgentId = pmeta2?.openclawAgentId as string | undefined;
-    if (!openclawAgentId || !pmeta2?.projectId) {
-      throw new Error("openclawAgentId and projectId are required in platformMetadata");
-    }
+    const openclawAgentId = pmeta.openclawAgentId as string;
     await ensureProjectAgent(
-      pmeta2.projectId as string,
-      (pmeta2.projectName as string) ?? "Untitled",
+      pmeta.projectId as string,
+      (pmeta.projectName as string) ?? "Untitled",
     );
 
     // Ensure OpenClaw gateway is running (adopts external process from entrypoint).
@@ -926,6 +937,22 @@ Create and show files for any output that helps answer the user's request by usi
         return repoDir;
       } catch {
         // Repo doesn't exist, proceed with clone
+      }
+
+      // If GH_TOKEN is available, ensure git URL rewriting is configured
+      // so private GitHub repos can be cloned. The entrypoint sets this up,
+      // but the token may have been injected after container creation (e.g.
+      // via dynamic auth profiles or env var updates).
+      const ghToken = process.env.GH_TOKEN;
+      if (ghToken) {
+        try {
+          await execAsync(
+            `git config --global url."https://x-access-token:${ghToken}@github.com/".insteadOf "https://github.com/"`,
+            { env: { ...process.env, HTTP_PROXY: "", HTTPS_PROXY: "", http_proxy: "", https_proxy: "" } },
+          );
+        } catch (cfgErr) {
+          logger.warn("Failed to set git URL rewriting for GH_TOKEN:", cfgErr);
+        }
       }
 
       logger.info(`Cloning repository: ${repoUrl}`);

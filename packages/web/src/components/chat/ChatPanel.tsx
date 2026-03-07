@@ -15,6 +15,57 @@ import {
 
 const THINKING_SENTINEL = "Thinking..."
 
+type ContentSegment =
+  | { type: "text"; text: string }
+  | { type: "tools"; blocks: ContentBlock[] }
+
+/** Split contentBlocks into consecutive text vs tool segments so each
+ *  can be rendered as its own chat bubble. */
+function splitContentSegments(blocks: ContentBlock[], fallbackText?: string): ContentSegment[] {
+  const segments: ContentSegment[] = []
+  let toolBuf: ContentBlock[] = []
+  let textBuf = ""
+
+  const flushText = () => {
+    if (textBuf.trim()) {
+      segments.push({ type: "text", text: textBuf })
+      textBuf = ""
+    }
+  }
+  const flushTools = () => {
+    if (toolBuf.length > 0) {
+      segments.push({ type: "tools", blocks: [...toolBuf] })
+      toolBuf = []
+    }
+  }
+
+  for (const block of blocks) {
+    if (block.type === "tool_use") {
+      flushText()
+      toolBuf.push(block)
+    } else if (block.type === "tool_result") {
+      continue
+    } else {
+      flushTools()
+      if (block.type === "text" && block.text) {
+        textBuf += block.text
+      } else if (block.type === "thinking") {
+        // keep thinking blocks with tools visually
+        toolBuf.push(block)
+      }
+    }
+  }
+  flushTools()
+  flushText()
+
+  // If nothing was produced, fall back to plain content
+  if (segments.length === 0 && fallbackText?.trim()) {
+    segments.push({ type: "text", text: fallbackText })
+  }
+
+  return segments
+}
+
 function TypingDots() {
   return (
     <span className="inline-flex items-center gap-[3px] py-1">
@@ -39,22 +90,67 @@ function formatTime(iso: string): string {
 }
 
 export function ChatPanel({ projectId, disabled }: { projectId: string; disabled?: boolean }) {
-  const { messages, send, sending, streamingContent, streamingBlocks, loading, error, connected } =
+  const { messages, send, sending, streamingContent, streamingTarget, streamingBlocks, loading, error, connected } =
     useChat(projectId)
   const [input, setInput] = useState("")
   const [hasConnectedOnce, setHasConnectedOnce] = useState(false)
 
-  const displayBlocks = useMemo(() => {
-    if (streamingBlocks.length === 0) return streamingBlocks
-    const copy = streamingBlocks.map((b) => ({ ...b }))
-    for (let i = copy.length - 1; i >= 0; i--) {
-      if (copy[i].type === "text" && copy[i].text) {
-        copy[i] = { ...copy[i], text: copy[i].text + "\u258D" }
-        break
-      }
-    }
-    return copy
+  const toolBlocks = useMemo(() => {
+    return streamingBlocks.filter((b) => b.type === "tool_use")
   }, [streamingBlocks])
+
+  const renderedMessages = useMemo(() => {
+    return messages.flatMap((msg) => {
+      const key = msg._stableKey || msg.id
+      const footer = (label: string) => (
+        <Message.Footer>
+          <span className="text-[11px] text-muted-foreground">
+            {label}
+            {msg.createdAt && ` \u00b7 ${formatTime(msg.createdAt)}`}
+          </span>
+        </Message.Footer>
+      )
+
+      if (msg.role !== "assistant") {
+        return (
+          <Message key={key} model={{ direction: "outgoing", position: "single" }}>
+            <Message.CustomContent>
+              <span className="text-sm leading-relaxed">{msg.content}</span>
+            </Message.CustomContent>
+            {footer("You")}
+          </Message>
+        )
+      }
+
+      if (msg.contentBlocks?.length) {
+        const segments = splitContentSegments(msg.contentBlocks, msg.content)
+        return segments.map((seg, i) => (
+          <Message
+            key={`${key}-seg-${i}`}
+            model={{ direction: "incoming", position: "single" }}
+          >
+            <Message.CustomContent>
+              {seg.type === "tools" ? (
+                <RichMessage blocks={seg.blocks} />
+              ) : (
+                <MarkdownMessage content={seg.text} />
+              )}
+            </Message.CustomContent>
+            {i === segments.length - 1 && footer("Team Lead")}
+          </Message>
+        ))
+      }
+
+      return (
+        <Message key={key} model={{ direction: "incoming", position: "single" }}>
+          <Message.CustomContent>
+            <MarkdownMessage content={msg.content} />
+          </Message.CustomContent>
+          {footer("Team Lead")}
+        </Message>
+      )
+    })
+  }, [messages])
 
   useEffect(() => {
     if (connected) setHasConnectedOnce(true)
@@ -136,39 +232,13 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
             autoScrollToBottom
             autoScrollToBottomOnMount
             typingIndicator={
-              streamingContent === THINKING_SENTINEL && displayBlocks.length === 0 ? (
+              streamingContent === THINKING_SENTINEL && toolBlocks.length === 0 ? (
                 <TypingIndicator content="Team Lead is thinking" />
               ) : null
             }
           >
-            {messages.map((msg) => (
-              <Message
-                key={msg._stableKey || msg.id}
-                model={{
-                  direction: msg.role === "user" ? "outgoing" : "incoming",
-                  position: "single",
-                }}
-              >
-                <Message.CustomContent>
-                  {msg.role === "assistant" ? (
-                    msg.contentBlocks?.length ? (
-                      <RichMessage blocks={msg.contentBlocks} />
-                    ) : (
-                      <MarkdownMessage content={msg.content} />
-                    )
-                  ) : (
-                    <span className="text-sm leading-relaxed">{msg.content}</span>
-                  )}
-                </Message.CustomContent>
-                <Message.Footer>
-                  <span className="text-[11px] text-muted-foreground">
-                    {msg.role === "user" ? "You" : "Team Lead"}
-                    {msg.createdAt && ` \u00b7 ${formatTime(msg.createdAt)}`}
-                  </span>
-                </Message.Footer>
-              </Message>
-            ))}
-            {((streamingContent && streamingContent !== THINKING_SENTINEL) || displayBlocks.length > 0) && (
+            {renderedMessages}
+            {toolBlocks.length > 0 && (
               <Message
                 model={{
                   direction: "incoming",
@@ -176,11 +246,22 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
                 }}
               >
                 <Message.CustomContent>
-                  {displayBlocks.length > 0 ? (
-                    <RichMessage blocks={displayBlocks} />
-                  ) : (
-                    <MarkdownMessage content={streamingContent + "\u258D"} />
-                  )}
+                  <RichMessage blocks={toolBlocks} />
+                </Message.CustomContent>
+                <Message.Footer>
+                  <span className="text-[11px] text-muted-foreground">Team Lead</span>
+                </Message.Footer>
+              </Message>
+            )}
+            {streamingContent && streamingContent !== THINKING_SENTINEL && (
+              <Message
+                model={{
+                  direction: "incoming",
+                  position: "single",
+                }}
+              >
+                <Message.CustomContent>
+                  <MarkdownMessage content={streamingContent + " |"} />
                 </Message.CustomContent>
                 <Message.Footer>
                   <span className="text-[11px] text-muted-foreground">Team Lead</span>

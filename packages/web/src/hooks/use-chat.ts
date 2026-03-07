@@ -23,6 +23,7 @@ export function useChat(projectId: string) {
   const [messages, setMessages] = useState<StableMessage[]>([]);
   const [sending, setSending] = useState(false);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
+  const [streamingTarget, setStreamingTarget] = useState<string | null>(null);
   const [streamingBlocks, setStreamingBlocks] = useState<ContentBlock[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,22 +35,54 @@ export function useChat(projectId: string) {
   const staleCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelledRef = useRef(false);
 
-  // Mutable refs for rapid SSE event handlers to avoid stale closures
+  // Mutable ref for tool blocks accumulated during streaming
   const blocksRef = useRef<ContentBlock[]>([]);
-  const textCursorRef = useRef(0);
-  const accumulatedLenRef = useRef(0);
   const toolIdCounterRef = useRef(0);
+
+  // Typewriter effect: buffer the full accumulated text from SSE and reveal
+  // it gradually so the output feels smooth rather than jumping in chunks.
+  const targetTextRef = useRef("");
+  const revealedLenRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
+
+  // Smooth typewriter: reveal text gradually.  We vary speed based on how
+  // far behind the reveal cursor is — fast enough to keep up with real-time
+  // streaming but slow enough to look like typing when text arrives in bursts.
+  const tickTypewriter = useCallback(() => {
+    rafRef.current = null;
+    const target = targetTextRef.current;
+    const current = revealedLenRef.current;
+    if (current >= target.length) return;
+
+    // How much unrevealed text is buffered
+    const pending = target.length - current;
+    // 2-4 chars/frame when close to caught up (typing feel),
+    // scales up to 12 when buffer grows so we don't fall behind.
+    const speed = Math.min(2 + Math.floor(pending / 40), 12);
+    const next = Math.min(current + speed, target.length);
+    revealedLenRef.current = next;
+    setStreamingContent(target.slice(0, next));
+
+    if (next < target.length) {
+      rafRef.current = requestAnimationFrame(tickTypewriter);
+    }
+  }, []);
 
   const flushBlocks = useCallback(() => {
     setStreamingBlocks([...blocksRef.current]);
   }, []);
 
   const resetStreaming = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
     blocksRef.current = [];
-    textCursorRef.current = 0;
-    accumulatedLenRef.current = 0;
+    targetTextRef.current = "";
+    revealedLenRef.current = 0;
     setStreamingBlocks([]);
     setStreamingContent(null);
+    setStreamingTarget(null);
   }, []);
 
   const clearReconnectTimer = () => {
@@ -120,6 +153,8 @@ export function useChat(projectId: string) {
         markEvent();
         const msg = JSON.parse(e.data) as ChatMessage;
         if (msg.role === "assistant") {
+          // Merge streamed tool blocks into the final message if
+          // the backend didn't already include them.
           const toolBlocks = blocksRef.current
             .filter((b) => b.type === "tool_use")
             .map((b) => ({ ...b, _loading: false }));
@@ -130,7 +165,8 @@ export function useChat(projectId: string) {
               const textBlocks = existing.length > 0
                 ? existing
                 : msg.content ? [{ type: "text" as const, text: msg.content }] : [];
-              msg.contentBlocks = [...toolBlocks, ...textBlocks];
+              // Text first, then tools — matches natural reading order.
+              msg.contentBlocks = [...textBlocks, ...toolBlocks];
             }
           }
           resetStreaming();
@@ -151,27 +187,24 @@ export function useChat(projectId: string) {
               return updated;
             }
           }
-          return [...prev, msg];
+          // Insert in chronological order to handle out-of-order arrivals.
+          const next = [...prev, msg];
+          next.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+          return next;
         });
       });
 
       es.addEventListener("chat_delta", (e) => {
         markEvent();
         const { accumulated } = JSON.parse(e.data) as { accumulated: string };
-        setStreamingContent(accumulated);
-        accumulatedLenRef.current = accumulated.length;
-
-        const segmentText = accumulated.slice(textCursorRef.current);
-        if (!segmentText) return;
-
-        const blocks = blocksRef.current;
-        const last = blocks[blocks.length - 1];
-        if (last?.type === "text") {
-          last.text = segmentText;
-        } else {
-          blocks.push({ type: "text", text: segmentText });
+        // Feed the typewriter buffer — the rAF loop reveals text smoothly.
+        // streamingTarget is set immediately so the container can reserve
+        // the full height and avoid layout jumps as text is revealed.
+        targetTextRef.current = accumulated;
+        setStreamingTarget(accumulated);
+        if (rafRef.current === null && revealedLenRef.current < accumulated.length) {
+          rafRef.current = requestAnimationFrame(tickTypewriter);
         }
-        flushBlocks();
       });
 
       es.addEventListener("chat_status", (e) => {
@@ -192,8 +225,6 @@ export function useChat(projectId: string) {
         }
 
         if (data.type === "tool_start" && data.tool) {
-          textCursorRef.current = accumulatedLenRef.current;
-
           const input: Record<string, unknown> = {};
           if (data.filePath) input.file_path = data.filePath;
           if (data.command) input.command = data.command;
@@ -222,7 +253,7 @@ export function useChat(projectId: string) {
       es.addEventListener("task_update", markEvent);
       es.addEventListener("project_status", markEvent);
     },
-    [projectId, flushBlocks, resetStreaming],
+    [projectId, flushBlocks, resetStreaming, tickTypewriter],
   );
 
   useEffect(() => {
@@ -269,6 +300,10 @@ export function useChat(projectId: string) {
     return () => {
       cancelledRef.current = true;
       clearReconnectTimer();
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       if (staleCheckRef.current !== null) {
         clearInterval(staleCheckRef.current);
         staleCheckRef.current = null;
@@ -325,6 +360,7 @@ export function useChat(projectId: string) {
     send,
     sending,
     streamingContent,
+    streamingTarget,
     streamingBlocks,
     loading,
     error,
