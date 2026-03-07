@@ -14,14 +14,7 @@ import { readFileSync, existsSync, unlinkSync } from "node:fs";
 import { readFile, stat, writeFile, mkdir, unlink, copyFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
-import { spawnSync } from "node:child_process";
-import {
-  createSession,
-  sendKeys,
-  capturePane,
-  killSession,
-  hasSession,
-} from "../../tmux-manager.js";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -656,6 +649,7 @@ interface TeamProcess {
   exitCode: number | null;
   completionPromise: Promise<void>;
   resolveCompletion: () => void;
+  childProcess?: ChildProcess;
 }
 
 const activeTeams = new Map<string, TeamProcess>();
@@ -871,8 +865,19 @@ Never skip task status updates — the user watches the board to track progress.
   // Clean up any stale sentinel file from a previous run
   try { unlinkSync(sentinelPath(params.projectId)); } catch { /* ignore */ }
 
-  // Background health check: polls tmux session and sentinel file to
-  // resolve completionPromise when the team finishes or the session dies.
+  // Build Claude CLI args — same structure for both team and solo modes.
+  // Uses direct child process with stdin pipe (Paperclip-style), eliminating
+  // tmux, interactive prompt detection, and shell escaping issues.
+  const claudeArgs = [
+    "--print", "-",
+    "--verbose",
+    "--dangerously-skip-permissions",
+    ...(hasTeam ? ["--teammate-mode", "in-process"] : []),
+    "--allowedTools", allowedTools,
+  ];
+
+  // Background health check: polls sentinel file and process liveness
+  // to resolve completionPromise when the task finishes.
   const healthCheckInterval = setInterval(async () => {
     if (team.completed) { clearInterval(healthCheckInterval); return; }
     try {
@@ -884,93 +889,48 @@ Never skip task status updates — the user watches the board to track progress.
           team.resolveCompletion();
         }
         clearInterval(healthCheckInterval);
-        return;
-      }
-      if (!await hasSession(sessionName)) {
-        if (!team.completed) {
-          team.completed = true;
-          team.exitCode = 0;
-          team.resolveCompletion();
-        }
-        clearInterval(healthCheckInterval);
       }
     } catch { /* ignore health-check errors */ }
   }, 2000);
 
   try {
-    await createSession(sessionName, projectDir);
+    const proc = spawn("claude", claudeArgs, {
+      cwd: projectDir,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env },
+    });
+    team.childProcess = proc;
 
-    if (hasTeam) {
-      // --- Interactive mode for Agent Teams ---
-      const claudeCmd = [
-        "claude",
-        "--dangerously-skip-permissions",
-        "--teammate-mode", "in-process",
-        "--allowedTools", allowedTools,
-      ].join(" ");
+    proc.stdin.write(fullTask);
+    proc.stdin.end();
 
-      await sendKeys(sessionName, claudeCmd);
+    proc.stdout.on("data", (data: Buffer) => {
+      team.output += data.toString();
+    });
 
-      // Wait for Claude's interactive input prompt (not a theme/onboarding prompt).
-      const readyTimeout = 60_000;
-      const readyStart = Date.now();
-      let ready = false;
-      while (Date.now() - readyStart < readyTimeout) {
-        const pane = await capturePane(sessionName).catch(() => "");
-        // #region agent log
-        fetch('http://127.0.0.1:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1162a6'},body:JSON.stringify({sessionId:'1162a6',location:'peon-gateway/index.ts:ready-check',message:'Pane capture during ready check',data:{pane:pane.slice(-500),elapsed:Date.now()-readyStart},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-        const isThemePrompt = pane.includes("theme") || pane.includes("Theme") || pane.includes("onboarding");
-        if (isThemePrompt) {
-          console.error(`[DelegateToProject] Detected theme/onboarding prompt for ${params.projectId}, sending Enter to dismiss`);
-          // #region agent log
-          fetch('http://127.0.0.1:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1162a6'},body:JSON.stringify({sessionId:'1162a6',location:'peon-gateway/index.ts:theme-detected',message:'Theme/onboarding prompt detected, sending Enter',data:{pane:pane.slice(-500)},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
-          await sendKeys(sessionName, "");
-          await new Promise((r) => setTimeout(r, 2000));
-          continue;
-        }
-        if (pane.includes("Type your") || pane.includes("> ")) {
-          ready = true;
-          break;
-        }
-        if (!await hasSession(sessionName)) break;
-        await new Promise((r) => setTimeout(r, 500));
+    proc.stderr.on("data", (data: Buffer) => {
+      const line = data.toString().trim();
+      if (line) console.error(`[DelegateToProject:${params.projectId}:stderr] ${line}`);
+    });
+
+    proc.on("exit", (code, signal) => {
+      console.error(`[DelegateToProject] Claude exited for ${params.projectId}: code=${code}, signal=${signal}`);
+      if (!team.completed) {
+        team.completed = true;
+        team.exitCode = code ?? 0;
+        team.resolveCompletion();
       }
+    });
 
-      if (!ready) {
-        const finalPane = await capturePane(sessionName).catch(() => "");
-        console.error(`[DelegateToProject] Claude did not become ready within ${readyTimeout}ms for ${params.projectId}`);
-        // #region agent log
-        fetch('http://127.0.0.1:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1162a6'},body:JSON.stringify({sessionId:'1162a6',location:'peon-gateway/index.ts:ready-timeout',message:'Claude not ready - timeout',data:{pane:finalPane.slice(-800),projectId:params.projectId},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
+    proc.on("error", (err) => {
+      console.error(`[DelegateToProject] Spawn error for ${params.projectId}:`, err.message);
+      if (!team.completed) {
         team.completed = true;
         team.exitCode = 1;
-        team.output += "\nError: Claude Code did not start within timeout";
+        team.output += `\nError: ${err.message}`;
         team.resolveCompletion();
-        await killSession(sessionName).catch(() => {});
-        clearInterval(healthCheckInterval);
-        activeTeams.delete(params.projectId);
-        const elapsed = Math.floor((Date.now() - team.startedAt) / 1000);
-        return text(`Team for "${params.projectId}" failed after ${elapsed}s: Claude Code did not start within timeout.`);
       }
-
-      // #region agent log
-      fetch('http://127.0.0.1:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1162a6'},body:JSON.stringify({sessionId:'1162a6',location:'peon-gateway/index.ts:task-send',message:'Sending task to Claude',data:{taskLength:fullTask.length,projectId:params.projectId,readyElapsed:Date.now()-readyStart},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      await sendKeys(sessionName, fullTask);
-    } else {
-      // --- Print mode for solo tasks (no team) ---
-      const claudeCmd = [
-        "claude",
-        "--dangerously-skip-permissions",
-        "--output-format", "stream-json",
-        "--allowedTools", allowedTools,
-        "-p", fullTask,
-      ].join(" ");
-
-      await sendKeys(sessionName, claudeCmd);
-    }
+    });
   } catch (err) {
     team.completed = true;
     team.exitCode = 1;
@@ -983,7 +943,7 @@ Never skip task status updates — the user watches the board to track progress.
     return text(`Error starting team for "${params.projectId}": ${errMsg}`);
   }
 
-  // Background cleanup: wait for the team to finish, then clean up resources.
+  // Background cleanup: wait for the task to finish, then clean up resources.
   // This runs detached so DelegateToProject returns immediately.
   const maxWaitMs = hasTeam ? 30 * 60 * 1000 : 10 * 60 * 1000;
   void (async () => {
@@ -997,11 +957,6 @@ Never skip task status updates — the user watches the board to track progress.
         team.output += `\nError: Timed out after ${hasTeam ? "30" : "10"} minutes`;
         console.error(`[DelegateToProject] Timed out for ${params.projectId} (mode=${hasTeam ? "team" : "solo"})`);
       }
-
-      const finalPane = await capturePane(sessionName).catch(() => "");
-      if (finalPane && !team.output.includes(finalPane.slice(-200))) {
-        team.output += finalPane;
-      }
     } catch (err) {
       if (!team.completed) {
         team.completed = true;
@@ -1010,7 +965,9 @@ Never skip task status updates — the user watches the board to track progress.
       }
     } finally {
       clearInterval(healthCheckInterval);
-      await killSession(sessionName).catch(() => {});
+      if (team.childProcess && !team.childProcess.killed) {
+        team.childProcess.kill("SIGTERM");
+      }
       try { unlinkSync(sentinelPath(params.projectId)); } catch { /* ignore */ }
     }
   })();

@@ -21,6 +21,24 @@ function toolVerb(tool: string): string {
     case "websearch": return "Searched web"
     case "todowrite": return "Updated tasks"
     case "task": return "Launched task"
+    case "delegatetoproject": return "Delegated to project team"
+    case "createprojecttasks": return "Created tasks"
+    case "updatetaskstatus": return "Updated task"
+    case "listprojecttasks": return "Listed tasks"
+    case "deletetask": return "Deleted task"
+    case "checkteamstatus": return "Checked team status"
+    case "getteamresult": return "Got team result"
+    case "uploaduserfile": return "Shared file"
+    case "schedulereminder": return "Scheduled reminder"
+    case "cancelreminder": return "Cancelled reminder"
+    case "listreminders": return "Listed reminders"
+    case "searchextensions": return "Searched extensions"
+    case "installextension": return "Installed extension"
+    case "getsettingslink":
+    case "getsettingslinkfordomain": return "Opened settings"
+    case "generateaudio": return "Generated audio"
+    case "getchannelhistory": return "Loaded chat history"
+    case "askuserquestion": return "Asked question"
     default: return tool
   }
 }
@@ -31,13 +49,62 @@ function describeToolUse(name: string, input: Record<string, unknown>): string {
   const command = input.command
   const query = input.pattern ?? input.query ?? input.search_term ?? input.glob_pattern
 
+  switch (name.toLowerCase()) {
+    case "delegatetoproject": {
+      const task = input.task as string | undefined
+      return task ? `Setting up project — ${task.length > 60 ? task.slice(0, 60) + "…" : task}` : "Setting up project with Claude Code team"
+    }
+    case "createprojecttasks": {
+      const tasks = input.tasks as unknown[] | undefined
+      return tasks?.length ? `Created ${tasks.length} task${tasks.length > 1 ? "s" : ""} on the board` : "Creating project tasks"
+    }
+    case "updatetaskstatus": {
+      const status = input.status as string | undefined
+      return status ? `Moved task to ${status.replace(/_/g, " ")}` : verb
+    }
+    case "uploaduserfile": {
+      const fp = (input.file_path ?? input.path) as string | undefined
+      const desc = input.description as string | undefined
+      if (desc) return `Shared file — ${desc}`
+      if (fp) return `Shared \`${fp}\``
+      return "Sharing file"
+    }
+    case "schedulereminder": {
+      const task = input.task as string | undefined
+      return task ? `Scheduled — ${task.length > 50 ? task.slice(0, 50) + "…" : task}` : verb
+    }
+    case "generateaudio": {
+      const text = input.text as string | undefined
+      return text ? `Generated audio — "${text.length > 40 ? text.slice(0, 40) + "…" : text}"` : verb
+    }
+    case "searchextensions": {
+      const q = input.query as string | undefined
+      return q ? `Searched extensions for "${q}"` : verb
+    }
+    case "installextension": {
+      const id = input.id as string | undefined
+      return id ? `Installed extension \`${id}\`` : verb
+    }
+    case "askuserquestion": {
+      const question = input.question as string | undefined
+      return question ? `Asked — ${question.length > 50 ? question.slice(0, 50) + "…" : question}` : verb
+    }
+    case "getchannelhistory":
+      return "Loaded previous messages"
+    case "getsettingslink":
+    case "getsettingslinkfordomain": {
+      const reason = input.reason as string | undefined
+      return reason ? `Opened settings — ${reason}` : verb
+    }
+  }
+
   if (typeof filePath === "string") return `${verb} \`${filePath}\``
   if (typeof command === "string") {
     const cmd = String(command).length > 60 ? `${String(command).slice(0, 60)}…` : command
     return `${verb} \`${cmd}\``
   }
   if (typeof query === "string") return `${verb} \`${query}\``
-  if (typeof input._description === "string") return input._description
+  if (typeof input._description === "string") return input._description as string
   return verb
 }
 

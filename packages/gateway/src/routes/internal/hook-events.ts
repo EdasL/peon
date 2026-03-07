@@ -58,6 +58,57 @@ function buildHookToolText(toolName: string, input: Record<string, unknown>): st
       return "Updating tasks"
     case "task":
       return "Launching task"
+    case "delegatetoproject": {
+      const task = (input.task as string | undefined) ?? ""
+      return task ? `Setting up project — ${task.slice(0, 60)}` : "Setting up project with Claude Code team"
+    }
+    case "createprojecttasks": {
+      const tasks = input.tasks as unknown[] | undefined
+      return tasks?.length ? `Creating ${tasks.length} task${tasks.length > 1 ? "s" : ""} on the board` : "Planning project tasks"
+    }
+    case "updatetaskstatus": {
+      const status = (input.status as string | undefined) ?? ""
+      return status ? `Moving task to ${status.replace(/_/g, " ")}` : "Updating task status"
+    }
+    case "listprojecttasks":
+      return "Reviewing project tasks"
+    case "deletetask":
+      return "Removing task from board"
+    case "checkteamstatus":
+      return "Checking if team is still working"
+    case "getteamresult":
+      return "Getting team results"
+    case "uploaduserfile": {
+      const desc = (input.description as string | undefined) ?? ""
+      return desc ? `Sharing file — ${desc.slice(0, 60)}` : shortPath ? `Sharing ${shortPath}` : "Sharing file"
+    }
+    case "schedulereminder": {
+      const reminderTask = (input.task as string | undefined) ?? ""
+      return reminderTask ? `Scheduling — ${reminderTask.slice(0, 50)}` : "Scheduling a reminder"
+    }
+    case "cancelreminder":
+      return "Cancelling reminder"
+    case "listreminders":
+      return "Checking pending reminders"
+    case "searchextensions": {
+      const q = (input.query as string | undefined) ?? ""
+      return q ? `Searching extensions for "${q.slice(0, 40)}"` : "Searching extensions"
+    }
+    case "installextension": {
+      const extId = (input.id as string | undefined) ?? ""
+      return extId ? `Installing extension ${extId}` : "Installing extension"
+    }
+    case "getsettingslink":
+    case "getsettingslinkfordomain":
+      return "Opening settings"
+    case "generateaudio":
+      return "Generating audio"
+    case "getchannelhistory":
+      return "Loading chat history"
+    case "askuserquestion": {
+      const question = (input.question as string | undefined) ?? ""
+      return question ? `Asking — ${question.slice(0, 50)}` : "Asking a question"
+    }
     default: {
       if (shortPath) return shortPath
       if (input.command) return String(input.command).slice(0, 80)

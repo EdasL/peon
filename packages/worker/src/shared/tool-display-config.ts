@@ -58,6 +58,99 @@ const TOOL_DISPLAY_CONFIG: Record<string, ToolDisplayEntry> = {
     action: "Searching web",
     getParam: (p) => `\`${p.query || ""}\``,
   },
+  DelegateToProject: {
+    emoji: "🚀",
+    action: "Setting up project",
+    getParam: (p) => p.task ? String(p.task).slice(0, 60) : "with Claude Code team",
+  },
+  CreateProjectTasks: {
+    emoji: "📋",
+    action: "Planning tasks",
+    getParam: (p) => {
+      const tasks = p.tasks as unknown[] | undefined;
+      return tasks?.length ? `(${tasks.length} task${tasks.length > 1 ? "s" : ""})` : "";
+    },
+  },
+  UpdateTaskStatus: {
+    emoji: "📋",
+    action: "Updating task",
+    getParam: (p) => p.status ? String(p.status).replace(/_/g, " ") : "",
+  },
+  ListProjectTasks: {
+    emoji: "📋",
+    action: "Reviewing tasks",
+    getParam: () => "",
+  },
+  DeleteTask: {
+    emoji: "🗑️",
+    action: "Removing task",
+    getParam: () => "",
+  },
+  CheckTeamStatus: {
+    emoji: "👥",
+    action: "Checking team",
+    getParam: () => "",
+  },
+  GetTeamResult: {
+    emoji: "👥",
+    action: "Getting results",
+    getParam: () => "",
+  },
+  UploadUserFile: {
+    emoji: "📤",
+    action: "Sharing file",
+    getParam: (p) => p.file_path ? `\`${p.file_path}\`` : "",
+  },
+  ScheduleReminder: {
+    emoji: "⏰",
+    action: "Scheduling",
+    getParam: (p) => p.task ? String(p.task).slice(0, 50) : "reminder",
+  },
+  CancelReminder: {
+    emoji: "⏰",
+    action: "Cancelling reminder",
+    getParam: () => "",
+  },
+  ListReminders: {
+    emoji: "⏰",
+    action: "Checking reminders",
+    getParam: () => "",
+  },
+  SearchExtensions: {
+    emoji: "🧩",
+    action: "Searching extensions",
+    getParam: (p) => p.query ? `\`${p.query}\`` : "",
+  },
+  InstallExtension: {
+    emoji: "🧩",
+    action: "Installing extension",
+    getParam: (p) => p.id ? `\`${p.id}\`` : "",
+  },
+  GetSettingsLink: {
+    emoji: "⚙️",
+    action: "Opening settings",
+    getParam: () => "",
+  },
+  GetSettingsLinkForDomain: {
+    emoji: "⚙️",
+    action: "Opening settings",
+    getParam: () => "",
+  },
+  GenerateAudio: {
+    emoji: "🔊",
+    action: "Generating audio",
+    getParam: () => "",
+  },
+  GetChannelHistory: {
+    emoji: "💬",
+    action: "Loading history",
+    getParam: () => "",
+  },
+  AskUserQuestion: {
+    emoji: "❓",
+    action: "Asking question",
+    getParam: (p) => p.question ? String(p.question).slice(0, 50) : "",
+  },
 };
 
 /**

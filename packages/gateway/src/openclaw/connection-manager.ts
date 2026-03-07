@@ -265,6 +265,27 @@ function buildToolActivityText(tool: string, input: Record<string, unknown>): st
     case "grep": return query ? `Searching for "${query}"` : "Searching codebase"
     case "glob": return "Scanning files"
     case "websearch": return query ? `Searching web: ${query}` : "Searching web"
+    case "delegatetoproject": {
+      const task = input.task as string | undefined
+      return task ? `Setting up project — ${task.slice(0, 60)}` : "Setting up project with Claude Code team"
+    }
+    case "createprojecttasks": return "Planning project tasks"
+    case "updatetaskstatus": return "Updating task status"
+    case "listprojecttasks": return "Reviewing project tasks"
+    case "deletetask": return "Removing task from board"
+    case "checkteamstatus": return "Checking if team is still working"
+    case "getteamresult": return "Getting team results"
+    case "uploaduserfile": return filePath ? `Sharing ${filePath}` : "Sharing file"
+    case "schedulereminder": return "Scheduling a reminder"
+    case "cancelreminder": return "Cancelling reminder"
+    case "listreminders": return "Checking pending reminders"
+    case "searchextensions": return query ? `Searching extensions for "${query}"` : "Searching extensions"
+    case "installextension": return "Installing extension"
+    case "getsettingslink":
+    case "getsettingslinkfordomain": return "Opening settings"
+    case "generateaudio": return "Generating audio"
+    case "getchannelhistory": return "Loading chat history"
+    case "askuserquestion": return "Asking a question"
     default: return undefined
   }
 }

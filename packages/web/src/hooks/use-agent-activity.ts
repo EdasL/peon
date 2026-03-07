@@ -73,6 +73,41 @@ function toolVerb(tool: string): string {
       return "Fetching"
     case "websearch":
       return "Searching web"
+    case "delegatetoproject":
+      return "Setting up project"
+    case "createprojecttasks":
+      return "Planning tasks"
+    case "updatetaskstatus":
+      return "Updating task"
+    case "listprojecttasks":
+      return "Checking tasks"
+    case "deletetask":
+      return "Removing task"
+    case "checkteamstatus":
+      return "Checking team"
+    case "getteamresult":
+      return "Getting results"
+    case "uploaduserfile":
+      return "Sharing file"
+    case "schedulereminder":
+      return "Scheduling reminder"
+    case "cancelreminder":
+      return "Cancelling reminder"
+    case "listreminders":
+      return "Checking reminders"
+    case "searchextensions":
+      return "Searching extensions"
+    case "installextension":
+      return "Installing extension"
+    case "getsettingslink":
+    case "getsettingslinkfordomain":
+      return "Opening settings"
+    case "generateaudio":
+      return "Generating audio"
+    case "getchannelhistory":
+      return "Loading history"
+    case "askuserquestion":
+      return "Asking question"
     default:
       return `Using ${tool}`
   }
@@ -103,6 +138,24 @@ function toolLabel(tool: string, opts?: { filePath?: string; command?: string; t
     case "webbrowser":
     case "webfetch": return "Fetching URL"
     case "websearch": return "Searching web"
+    case "delegatetoproject": return "Setting up project with Claude Code team"
+    case "createprojecttasks": return "Planning project tasks"
+    case "updatetaskstatus": return "Updating task status"
+    case "listprojecttasks": return "Reviewing project tasks"
+    case "deletetask": return "Removing task from board"
+    case "checkteamstatus": return "Checking if team is still working"
+    case "getteamresult": return "Getting team results"
+    case "uploaduserfile": return "Sharing file with you"
+    case "schedulereminder": return "Scheduling a reminder"
+    case "cancelreminder": return "Cancelling reminder"
+    case "listreminders": return "Checking pending reminders"
+    case "searchextensions": return "Searching for extensions"
+    case "installextension": return "Installing extension"
+    case "getsettingslink":
+    case "getsettingslinkfordomain": return "Opening settings"
+    case "generateaudio": return "Generating audio"
+    case "getchannelhistory": return "Loading chat history"
+    case "askuserquestion": return "Asking you a question"
     default: return `Using ${tool}`
   }
 }

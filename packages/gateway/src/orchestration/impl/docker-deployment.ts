@@ -576,10 +576,6 @@ export class DockerDeploymentManager extends BaseDeploymentManager {
           ...BASE_WORKER_LABELS,
           "peon.io/created": new Date().toISOString(),
           "peon.io/agent-id": agentId,
-          // Docker Compose labels to associate with the project
-          "com.docker.compose.project": composeProjectName,
-          "com.docker.compose.service": deploymentName,
-          "com.docker.compose.oneoff": "False",
           // Add platform-specific metadata
           ...resolvePlatformDeploymentMetadata(messageData),
         },

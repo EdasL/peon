@@ -83,6 +83,58 @@ export function buildToolActivityText(
     case "task":
       return "Launching task";
 
+    case "delegatetoproject": {
+      const dTask = (input.task as string | undefined) ?? "";
+      return dTask ? `Setting up project — ${dTask.slice(0, 60)}` : "Setting up project with Claude Code team";
+    }
+    case "createprojecttasks": {
+      const tasks = input.tasks as unknown[] | undefined;
+      return tasks?.length ? `Creating ${tasks.length} task${tasks.length > 1 ? "s" : ""} on the board` : "Planning project tasks";
+    }
+    case "updatetaskstatus": {
+      const ustatus = (input.status as string | undefined) ?? "";
+      return ustatus ? `Moving task to ${ustatus.replace(/_/g, " ")}` : "Updating task status";
+    }
+    case "listprojecttasks":
+      return "Reviewing project tasks";
+    case "deletetask":
+      return "Removing task from board";
+    case "checkteamstatus":
+      return "Checking if team is still working";
+    case "getteamresult":
+      return "Getting team results";
+    case "uploaduserfile": {
+      const desc = (input.description as string | undefined) ?? "";
+      return desc ? `Sharing file — ${desc.slice(0, 60)}` : shortPath ? `Sharing ${shortPath}` : "Sharing file";
+    }
+    case "schedulereminder": {
+      const reminderTask = (input.task as string | undefined) ?? "";
+      return reminderTask ? `Scheduling — ${reminderTask.slice(0, 50)}` : "Scheduling a reminder";
+    }
+    case "cancelreminder":
+      return "Cancelling reminder";
+    case "listreminders":
+      return "Checking pending reminders";
+    case "searchextensions": {
+      const sq = (input.query as string | undefined) ?? "";
+      return sq ? `Searching extensions for "${sq.slice(0, 40)}"` : "Searching extensions";
+    }
+    case "installextension": {
+      const extId = (input.id as string | undefined) ?? "";
+      return extId ? `Installing extension ${extId}` : "Installing extension";
+    }
+    case "getsettingslink":
+    case "getsettingslinkfordomain":
+      return "Opening settings";
+    case "generateaudio":
+      return "Generating audio";
+    case "getchannelhistory":
+      return "Loading chat history";
+    case "askuserquestion": {
+      const q = (input.question as string | undefined) ?? "";
+      return q ? `Asking — ${q.slice(0, 50)}` : "Asking a question";
+    }
+
     default: {
       // Generic fallback: use most useful available field
       if (shortPath) return shortPath;

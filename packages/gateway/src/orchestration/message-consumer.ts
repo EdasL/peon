@@ -555,17 +555,15 @@ export class MessageConsumer {
         );
 
         if (isNewThread) {
-          // If the worker already has an active SSE connection, the container
-          // is running but Docker may not have indexed it yet (e.g. after
-          // gateway restart). Skip creation to avoid killing the live worker
-          // and losing in-flight jobs.
+          // If a stale SSE connection exists but the container is NOT in
+          // Docker's container list, the container was deleted externally
+          // (e.g. via Docker Desktop). Proceed with creation — Docker will
+          // reject if a same-named container actually exists.
           if (this.workerConnectionChecker?.(deploymentName)) {
-            logger.info(
+            logger.warn(
               { traceId, deploymentName },
-              "Worker already connected via SSE, skipping deployment creation"
+              "Worker SSE connection exists but container not found in Docker — treating as stale, proceeding with creation"
             );
-            await this.deploymentManager.updateDeploymentActivity(deploymentName);
-            return;
           }
 
           // Acquire lock to prevent concurrent deployment creation

@@ -158,6 +158,27 @@ projectsRouter.post("/", async (c) => {
       broadcastToProject(project.id, "project_status", { status: "error" })
       return
     }
+
+    // If the session already existed but the container is gone (e.g. deleted
+    // via Docker Desktop), delete the stale session and retry so that
+    // ensureUserContainer enqueues the bootstrap message that triggers
+    // container creation through the queue consumer.
+    if (!containerResult.created) {
+      const deploymentName = getPeonDeploymentName(session.userId, containerResult.peonAgentId)
+      const dockerStatus = await getContainerStatus(deploymentName)
+      if (dockerStatus === "not_found") {
+        disconnectByDeployment(deploymentName)
+        const sessionManager = services.getSessionManager()
+        await sessionManager.deleteSession(containerResult.peonAgentId)
+        const retryResult = await ensureUserContainer(session.userId, services)
+        if (retryResult.error) {
+          await db.update(projects).set({ status: "error", updatedAt: new Date() }).where(eq(projects.id, project.id))
+          broadcastToProject(project.id, "project_status", { status: "error" })
+          return
+        }
+      }
+    }
+
     // Store deployment name in DB for future status queries and cleanup
     const deploymentName = getPeonDeploymentName(session.userId, containerResult.peonAgentId)
     await db.update(projects)
@@ -295,10 +316,26 @@ projectsRouter.post("/:id/restart", async (c) => {
 
   const restarted = await restartContainer(project.deploymentName)
   if (!restarted) {
-    // Container doesn't exist — need to re-provision
+    // Container was deleted externally — clean up stale gateway state
+    // so ensureUserContainer re-creates the session + bootstrap message.
     try {
       const services = getPeonPlatform().getServices()
       const { ensureUserContainer, initProjectWorkspace, waitForContainerReady } = await import("../../web/project-launcher.js")
+
+      // Clean up stale OpenClaw connections for the dead container
+      disconnectByDeployment(project.deploymentName)
+
+      // Delete the stale session so ensureUserContainer treats this as
+      // a fresh setup and enqueues the bootstrap message that triggers
+      // container creation through the queue consumer.
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, session.userId),
+        columns: { peonAgentId: true },
+      })
+      if (user?.peonAgentId) {
+        const sessionManager = services.getSessionManager()
+        await sessionManager.deleteSession(user.peonAgentId)
+      }
 
       const containerResult = await ensureUserContainer(session.userId, services)
       if (containerResult.error) {
