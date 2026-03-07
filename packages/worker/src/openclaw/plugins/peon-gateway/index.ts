@@ -788,6 +788,12 @@ ${spawnLines}
 
 Each teammate is an independent Claude Code session. They coordinate through the shared task list and can message each other directly. You assign tasks and review results.
 
+IMPORTANT — every teammate must follow these rules:
+- Read the acceptance criteria for their assigned tasks before starting
+- Verify their work against each criterion before marking done
+- Run typecheck before committing
+- Report problems clearly instead of glossing over them. A clear failure is more valuable than a false success
+
 `;
 }
 
@@ -857,6 +863,16 @@ When spawning each teammate, you MUST include this VERBATIM in their prompt, rep
 3. LAST action before finishing: run \\\`bash .claude/hooks/peon-tasks.sh done <TASK-ID>\\\`
 Never skip the done step. The user is watching the board."
 
+## Task Assignment Quality
+
+When assigning tasks to teammates, ALWAYS include in their prompt:
+1. **What to build and why** — not just "build X" but the context and purpose
+2. **Acceptance criteria** — the specific checklist from the task. The teammate must verify each item before marking done
+3. **Scope** — exact files/directories to touch. This prevents conflicts between agents
+4. **Integration context** — API contracts, data shapes, or design specs they depend on from other agents
+
+If a task has no acceptance criteria, write them before assigning it. Every task needs testable criteria.
+
 ## Verification (mandatory)
 
 NEVER report a task as done without concrete proof. Follow these rules:
@@ -866,6 +882,16 @@ NEVER report a task as done without concrete proof. Follow these rules:
 3. **No vague success.** Never say "done" or "completed" without showing evidence. Include URLs, command output, or file paths that prove the work is finished.
 4. **If something fails, say so.** Report the actual error instead of glossing over it. A clear failure report is more valuable than a false success.
 5. **Git workflow:** Always ensure changes are pushed to the remote before reporting completion. Run \`git status\` to confirm there are no unpushed commits. For PRs: use \`gh pr create\` and return the URL from its output.
+
+## Definition of Done
+
+A task is NOT done until:
+- The implementation meets every acceptance criterion
+- QA has verified each criterion (PASS/FAIL with evidence)
+- Typecheck passes with zero errors
+- The feature works end-to-end, not just compiles
+
+If a teammate says "done" without meeting all criteria, send them back to finish. Do not mark the task complete.
 
 `;
 

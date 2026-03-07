@@ -74,6 +74,10 @@ export async function writeBootstrapConfig(
     agents: {
       defaults: {
         model: "anthropic/claude-sonnet-4-20250514",
+        heartbeat: {
+          every: "10m",
+          lightContext: true,
+        },
       },
       list: [] as Array<{ id: string; workspace: string; name: string }>,
     },
