@@ -1109,6 +1109,14 @@ export async function startGateway(
   );
   logger.info("Orchestrator configured with core services");
 
+  // Wire worker connection checker so the orchestrator doesn't recreate
+  // containers that already have a live SSE connection.
+  const workerGateway = coreServices.getWorkerGateway();
+  if (workerGateway) {
+    const connMgr = workerGateway.getConnectionManager();
+    orchestrator.setWorkerConnectionChecker((name) => connMgr.isConnected(name));
+  }
+
   // Initialize Redis pub/sub for multi-instance SSE broadcasts
   const redisUrl = process.env.QUEUE_URL
   if (redisUrl) {

@@ -32,6 +32,12 @@ export interface ProviderConfig {
   providerBaseUrlMappings?: Record<string, string>;
 }
 
+export interface SessionAuthProfile {
+  provider: string;
+  credential: string;
+  authType: string;
+}
+
 interface SessionContextResponse {
   agentInstructions: string;
   platformInstructions: string;
@@ -40,12 +46,14 @@ interface SessionContextResponse {
   mcpStatus: McpStatus[];
   mcpTools?: Record<string, McpToolDef[]>;
   providerConfig?: ProviderConfig;
+  authProfiles?: SessionAuthProfile[];
 }
 
 // Module-level cache for session context
 let cachedResult: {
   gatewayInstructions: string;
   providerConfig: ProviderConfig;
+  authProfiles: SessionAuthProfile[];
 } | null = null;
 
 /**
@@ -100,6 +108,7 @@ function buildMcpInstructions(mcpStatus: McpStatus[]): string {
 export async function getOpenClawSessionContext(): Promise<{
   gatewayInstructions: string;
   providerConfig: ProviderConfig;
+  authProfiles: SessionAuthProfile[];
 }> {
   if (cachedResult) {
     logger.debug("Returning cached session context");
@@ -111,7 +120,7 @@ export async function getOpenClawSessionContext(): Promise<{
 
   if (!dispatcherUrl || !workerToken) {
     logger.warn("Missing dispatcher URL or worker token for session context");
-    return { gatewayInstructions: "", providerConfig: {} };
+    return { gatewayInstructions: "", providerConfig: {}, authProfiles: [] };
   }
 
   try {
@@ -129,7 +138,7 @@ export async function getOpenClawSessionContext(): Promise<{
       logger.warn("Gateway returned non-success status for session context", {
         status: response.status,
       });
-      return { gatewayInstructions: "", providerConfig: {} };
+      return { gatewayInstructions: "", providerConfig: {}, authProfiles: [] };
     }
 
     const data = (await response.json()) as SessionContextResponse;
@@ -162,11 +171,12 @@ export async function getOpenClawSessionContext(): Promise<{
     const result = {
       gatewayInstructions,
       providerConfig: data.providerConfig || {},
+      authProfiles: Array.isArray(data.authProfiles) ? data.authProfiles : [],
     };
     cachedResult = result;
     return result;
   } catch (error) {
     logger.error("Failed to fetch session context from gateway", { error });
-    return { gatewayInstructions: "", providerConfig: {} };
+    return { gatewayInstructions: "", providerConfig: {}, authProfiles: [] };
   }
 }

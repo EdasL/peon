@@ -63,7 +63,7 @@ export function projectAgentId(projectId: string): string {
 export async function ensureProjectAgent(
   projectId: string,
   projectName: string,
-): Promise<string> {
+): Promise<boolean> {
   const agentId = projectAgentId(projectId);
   const config = await readConfig();
 
@@ -75,7 +75,7 @@ export async function ensureProjectAgent(
   const existing = config.agents.list.find((a) => a.id === agentId);
   if (existing) {
     await propagateAuthProfiles(agentDir);
-    return agentId;
+    return false;
   }
 
   const workspace = `/workspace/projects/${projectId}`;
@@ -105,7 +105,7 @@ export async function ensureProjectAgent(
   ]);
 
   logger.info({ agentId, workspace }, "Registered project agent");
-  return agentId;
+  return true;
 }
 
 /**

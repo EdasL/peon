@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 
-import type { InstructionContext, WorkerTokenData } from "@lobu/core";
+import type { AuthProfile, InstructionContext, WorkerTokenData } from "@lobu/core";
 import { createLogger, verifyWorkerToken } from "@lobu/core";
+import { AuthProfilesManager } from "../auth/settings/auth-profiles-manager";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { stream } from "hono/streaming";
@@ -314,13 +315,29 @@ export class WorkerGateway {
       }
 
       // Resolve dynamic provider configuration
+      const agentSettings = this.agentSettingsStore
+        ? await this.agentSettingsStore.getSettings(agentId || "")
+        : null;
+
       const providerConfig = await this.resolveProviderConfig(
         agentId || "",
-        this.agentSettingsStore
-          ? (await this.agentSettingsStore.getSettings(agentId || ""))?.model
-          : undefined,
+        agentSettings?.model,
         baseUrl
       );
+
+      // Include auth profiles so the worker can write auth-profiles.json
+      // dynamically, eliminating the dependency on env vars at container
+      // creation time.
+      let authProfiles: Array<{ provider: string; credential: string; authType: string }> = [];
+      if (this.agentSettingsStore && agentId) {
+        const profilesManager = new AuthProfilesManager(this.agentSettingsStore);
+        const allProfiles = await profilesManager.listProfiles(agentId);
+        authProfiles = allProfiles.map((p: AuthProfile) => ({
+          provider: p.provider,
+          credential: p.credential,
+          authType: p.authType,
+        }));
+      }
 
       logger.info(
         `Session context for ${userId}: ${Object.keys(mcpConfig.mcpServers || {}).length} MCPs, ${contextData.agentInstructions.length} chars agent instructions, ${contextData.platformInstructions.length} chars platform instructions, ${contextData.networkInstructions.length} chars network instructions, ${contextData.skillsInstructions.length} chars skills instructions, ${contextData.mcpStatus.length} MCP status entries, ${Object.keys(mcpTools).length} MCP tool lists, provider: ${providerConfig.defaultProvider || "none"}`
@@ -335,6 +352,7 @@ export class WorkerGateway {
         mcpStatus: contextData.mcpStatus,
         mcpTools,
         providerConfig,
+        authProfiles,
       });
     } catch (error) {
       logger.error("Failed to generate session context", { error });

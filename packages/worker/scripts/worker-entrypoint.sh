@@ -290,6 +290,24 @@ SETTINGSEOF
 chmod 644 "$CLAUDE_CONFIG_DIR/settings.json"
 echo "  Claude Code settings.json written to $CLAUDE_CONFIG_DIR/settings.json"
 
+# Copy plugins to a non-mounted path so permissions are correct.
+# On Windows/NTFS bind mounts, everything appears as mode=777 inside the
+# container and chmod is a no-op. OpenClaw blocks world-writable plugin paths.
+# We mirror the directory structure so relative imports (e.g. ../../tmux-manager.js)
+# still resolve correctly.
+OPENCLAW_PLUGIN_MIRROR="/tmp/openclaw-plugins"
+OPENCLAW_PLUGIN_DIR="$OPENCLAW_PLUGIN_MIRROR/plugins/peon-gateway"
+rm -rf "$OPENCLAW_PLUGIN_MIRROR"
+mkdir -p "$OPENCLAW_PLUGIN_DIR"
+# Copy the plugin itself
+cp -a /app/packages/worker/src/openclaw/plugins/peon-gateway/. "$OPENCLAW_PLUGIN_DIR/"
+# Copy sibling files the plugin imports via relative paths (../../tmux-manager.js)
+cp -a /app/packages/worker/src/openclaw/tmux-manager.ts "$OPENCLAW_PLUGIN_MIRROR/"
+# Fix permissions on the whole tree
+find "$OPENCLAW_PLUGIN_MIRROR" -type d -exec chmod 755 {} +
+find "$OPENCLAW_PLUGIN_MIRROR" -type f -exec chmod 644 {} +
+export OPENCLAW_PLUGIN_DIR
+
 # Start the OpenClaw gateway as a background subprocess
 echo "🚀 Starting OpenClaw gateway..."
 OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
@@ -324,7 +342,7 @@ else
     "load": { "extraDirs": ["/app/packages/worker/src/openclaw/skills"] }
   },
   "plugins": {
-    "load": { "paths": ["/app/packages/worker/src/openclaw/plugins/peon-gateway"] }
+    "load": { "paths": ["${OPENCLAW_PLUGIN_DIR}"] }
   },
   "tools": { "agentToAgent": { "enabled": true, "allow": ["*"] } }
 }

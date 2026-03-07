@@ -76,6 +76,15 @@ export class Orchestrator {
     logger.info("✅ Core services injected into orchestrator");
   }
 
+  /**
+   * Set a callback to check if a worker has an active SSE connection.
+   * Prevents the orchestrator from recreating containers that are already live,
+   * which would kill the running worker and lose in-flight jobs.
+   */
+  setWorkerConnectionChecker(checker: (deploymentName: string) => boolean): void {
+    this.queueConsumer.setWorkerConnectionChecker(checker);
+  }
+
   private createDeploymentManager(
     config: OrchestratorConfig
   ): BaseDeploymentManager {

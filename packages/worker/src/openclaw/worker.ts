@@ -42,6 +42,10 @@ interface AgentActivityPayload {
 
 const logger = createLogger("worker");
 
+/** Track agents the OpenClaw gateway knows about (survived a restart). */
+const gatewayKnownAgents = new Set<string>();
+let gatewayCredentialsInjected = false;
+
 export class OpenClawWorker implements WorkerExecutor {
   private workspaceManager: WorkspaceManager;
   public workerTransport: WorkerTransport;
@@ -401,7 +405,51 @@ Use it when the user references past discussions or you need context.`);
 
     const finalInstructions = instructionParts.filter(Boolean).join("\n\n");
 
-    // Write OpenClaw config files (SOUL.md, skills, agents config)
+    // Credential injection — ensure ANTHROPIC_API_KEY is in process.env
+    // BEFORE the OpenClaw gateway is (re)started so it inherits the credential.
+    const gatewayUrl = process.env.DISPATCHER_URL ?? "";
+    const workerToken = process.env.WORKER_TOKEN ?? "";
+    const apiKeyEnvVar = getApiKeyEnvVarForProvider(provider);
+    let credentialJustInjected = false;
+
+    if (process.env.ANTHROPIC_API_KEY) {
+      logger.info("Credential injection: ANTHROPIC_API_KEY present in env");
+    } else if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+      // OAuth token works as ANTHROPIC_API_KEY for the Anthropic API
+      process.env.ANTHROPIC_API_KEY = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      logger.info("Credential injection: copied CLAUDE_CODE_OAUTH_TOKEN to ANTHROPIC_API_KEY");
+      credentialJustInjected = true;
+    } else if (process.env[apiKeyEnvVar]) {
+      process.env.ANTHROPIC_API_KEY = process.env[apiKeyEnvVar]!;
+      logger.info(
+        `Credential injection: copied ${apiKeyEnvVar} to ANTHROPIC_API_KEY`,
+      );
+      credentialJustInjected = true;
+    } else if (context.authProfiles?.length) {
+      // Extract credential from dynamically fetched auth profiles
+      const anthropicProfile = context.authProfiles.find(
+        (p) => p.provider === "claude" || p.provider === "anthropic",
+      );
+      if (anthropicProfile?.credential) {
+        process.env.ANTHROPIC_API_KEY = anthropicProfile.credential;
+        logger.info(
+          "Credential injection: extracted ANTHROPIC_API_KEY from dynamic auth profiles",
+        );
+        credentialJustInjected = true;
+      }
+    }
+
+    if (!process.env.ANTHROPIC_API_KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+      logger.warn(
+        `Credential injection: NO credential found — ${apiKeyEnvVar}, CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, and dynamic auth profiles are all empty`,
+      );
+    }
+
+    // Ensure ANTHROPIC_BASE_URL is not set to a proxy — let the SDK
+    // use the default https://api.anthropic.com endpoint.
+    delete process.env.ANTHROPIC_BASE_URL;
+
+    // Write OpenClaw config files (SOUL.md, skills, agents config, auth-profiles.json)
     const pmeta = this.config.platformMetadata as Record<string, unknown> | undefined;
     const teamMembers = Array.isArray(pmeta?.teamMembers)
       ? (pmeta.teamMembers as Array<{ roleName: string; displayName: string; systemPrompt: string }>)
@@ -415,30 +463,6 @@ Use it when the user references past discussions or you need context.`);
       openclawAgentId: pmeta?.openclawAgentId as string | undefined,
       teamMembers,
     });
-
-    // Credential injection — the real API key or OAuth token is passed via env vars.
-    const gatewayUrl = process.env.DISPATCHER_URL ?? "";
-    const workerToken = process.env.WORKER_TOKEN ?? "";
-    const apiKeyEnvVar = getApiKeyEnvVarForProvider(provider);
-
-    if (process.env.ANTHROPIC_API_KEY) {
-      logger.info("Credential injection: ANTHROPIC_API_KEY present in env");
-    } else if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-      logger.info("Credential injection: CLAUDE_CODE_OAUTH_TOKEN present (OAuth subscription)");
-    } else if (process.env[apiKeyEnvVar]) {
-      process.env.ANTHROPIC_API_KEY = process.env[apiKeyEnvVar]!;
-      logger.info(
-        `Credential injection: copied ${apiKeyEnvVar} to ANTHROPIC_API_KEY`,
-      );
-    } else {
-      logger.warn(
-        `Credential injection: NO credential found — ${apiKeyEnvVar}, CLAUDE_CODE_OAUTH_TOKEN, and ANTHROPIC_API_KEY are all unset`,
-      );
-    }
-
-    // Ensure ANTHROPIC_BASE_URL is not set to a proxy — let the SDK
-    // use the default https://api.anthropic.com endpoint.
-    delete process.env.ANTHROPIC_BASE_URL;
 
     // Set MCP server env vars so OpenClaw passes them to the peon-gateway MCP subprocess
     process.env.CHANNEL_ID = this.config.channelId;
@@ -467,11 +491,46 @@ Use it when the user references past discussions or you need context.`);
       `Starting OpenClaw session: provider=${provider}, model=${modelId}`,
     );
 
-    // Ensure OpenClaw gateway is running
+    // Ensure per-project agent is registered in openclaw.json BEFORE
+    // the gateway starts (or restarts), so it sees the agent on boot.
+    const pmeta2 = this.config.platformMetadata as Record<string, unknown> | undefined;
+    const openclawAgentId = pmeta2?.openclawAgentId as string | undefined;
+    if (!openclawAgentId || !pmeta2?.projectId) {
+      throw new Error("openclawAgentId and projectId are required in platformMetadata");
+    }
+    await ensureProjectAgent(
+      pmeta2.projectId as string,
+      (pmeta2.projectName as string) ?? "Untitled",
+    );
+
+    // Ensure OpenClaw gateway is running (adopts external process from entrypoint).
     const openclawProcess = getOpenClawProcess();
     await openclawProcess.ensureRunning();
 
-    // Connect to OpenClaw via WebSocket (auth.mode=none, no token needed)
+    // The gateway only reads openclaw.json at startup, so we must restart
+    // it whenever a new agent is added or credentials are first injected.
+    const agentUnknownToGateway = !gatewayKnownAgents.has(openclawAgentId);
+    const needsRestart = agentUnknownToGateway
+      || (credentialJustInjected && !gatewayCredentialsInjected);
+    if (needsRestart) {
+      if (credentialJustInjected) gatewayCredentialsInjected = true;
+      await openclawProcess.restart();
+      // After restart, the gateway loaded ALL agents from openclaw.json.
+      try {
+        const { getConfigPath } = await import("./bootstrap-config");
+        const raw = await fs.readFile(getConfigPath(), "utf-8");
+        const cfg = JSON.parse(raw) as { agents?: { list?: Array<{ id: string }> } };
+        for (const a of cfg.agents?.list ?? []) {
+          gatewayKnownAgents.add(a.id);
+        }
+      } catch {
+        gatewayKnownAgents.add(openclawAgentId);
+      }
+    } else {
+      gatewayKnownAgents.add(openclawAgentId);
+    }
+
+    // Connect to OpenClaw via WebSocket
     const wsUrl = openclawProcess.getWebSocketUrl();
     this.wsClient = new OpenClawWsClient({ url: wsUrl });
 
@@ -539,17 +598,6 @@ Use it when the user references past discussions or you need context.`);
           logger.error("Failed to send heartbeat:", err);
         });
       }, HEARTBEAT_INTERVAL_MS);
-
-      // Ensure per-project agent exists if this message targets a project
-      const meta = this.config.platformMetadata as Record<string, unknown> | undefined;
-      const openclawAgentId = meta?.openclawAgentId as string | undefined;
-      if (!openclawAgentId || !meta?.projectId) {
-        throw new Error("openclawAgentId and projectId are required in platformMetadata");
-      }
-      await ensureProjectAgent(
-        meta.projectId as string,
-        (meta.projectName as string) ?? "Untitled",
-      );
 
       // Send message to OpenClaw and process streaming events
       const sessionKey = `agent:${openclawAgentId}:peon:${this.config.conversationId}`;

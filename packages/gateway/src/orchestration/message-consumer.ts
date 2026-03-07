@@ -40,6 +40,7 @@ export class MessageConsumer {
   private providerModules: ModelProviderModule[];
   private providerCatalogService?: ProviderCatalogService;
   private systemMessageLimiter?: SystemMessageLimiter;
+  private workerConnectionChecker?: (deploymentName: string) => boolean;
 
   constructor(
     config: OrchestratorConfig,
@@ -121,6 +122,14 @@ export class MessageConsumer {
 
   setProviderCatalogService(service: ProviderCatalogService): void {
     this.providerCatalogService = service;
+  }
+
+  /**
+   * Set a callback to check if a worker is connected via SSE.
+   * Used to prevent recreating containers that already have live connections.
+   */
+  setWorkerConnectionChecker(checker: (deploymentName: string) => boolean): void {
+    this.workerConnectionChecker = checker;
   }
 
   private async getEffectiveProviders(
@@ -546,6 +555,19 @@ export class MessageConsumer {
         );
 
         if (isNewThread) {
+          // If the worker already has an active SSE connection, the container
+          // is running but Docker may not have indexed it yet (e.g. after
+          // gateway restart). Skip creation to avoid killing the live worker
+          // and losing in-flight jobs.
+          if (this.workerConnectionChecker?.(deploymentName)) {
+            logger.info(
+              { traceId, deploymentName },
+              "Worker already connected via SSE, skipping deployment creation"
+            );
+            await this.deploymentManager.updateDeploymentActivity(deploymentName);
+            return;
+          }
+
           // Acquire lock to prevent concurrent deployment creation
           const acquired = await this.acquireDeploymentLock(deploymentName);
           if (!acquired) {

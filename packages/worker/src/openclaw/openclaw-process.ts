@@ -5,7 +5,7 @@
  * restarts on crash, and tears down on SIGTERM.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { createLogger } from "@lobu/core";
 
 const logger = createLogger("openclaw-process");
@@ -66,14 +66,23 @@ export class OpenClawProcess {
       `Starting OpenClaw gateway on port ${this.port} (restart #${this.restartCount})`
     );
 
-    this.process = spawn(
-      "openclaw",
-      ["gateway", "--port", String(this.port), "--bind", "lan"],
-      {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env },
-      }
-    );
+    const args = ["gateway", "--port", String(this.port), "--bind", "lan"];
+    const token = process.env.OPENCLAW_GATEWAY_TOKEN;
+    if (token) {
+      args.push("--token", token);
+    }
+
+    this.process = spawn("openclaw", args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        // Ensure the gateway calls LLM APIs directly, not through the worker proxy
+        HTTP_PROXY: "",
+        HTTPS_PROXY: "",
+        http_proxy: "",
+        https_proxy: "",
+      },
+    });
 
     this.process.stdout?.on("data", (data: Buffer) => {
       const line = data.toString().trim();
@@ -173,6 +182,44 @@ export class OpenClawProcess {
       this.process.kill("SIGTERM");
       this.process = null;
     }
+  }
+
+  /**
+   * Restart the OpenClaw gateway so it picks up updated environment
+   * variables (e.g. ANTHROPIC_API_KEY set after initial startup).
+   * Kills the current process (external or managed) and starts a fresh one.
+   */
+  async restart(): Promise<void> {
+    logger.info("Restarting OpenClaw gateway to pick up new credentials...");
+
+    // Kill the external process started by the entrypoint
+    if (this.externalProcess) {
+      try {
+        // pkill is more reliably available than lsof in minimal containers
+        execSync(`pkill -f "openclaw-gateway" 2>/dev/null || pkill -f "openclaw gateway" 2>/dev/null || true`, {
+          stdio: "ignore",
+        });
+      } catch {
+        // Best-effort kill
+      }
+      this.externalProcess = false;
+    }
+
+    // Kill the managed process if any
+    this.kill();
+
+    // Wait for the port to free up — the gateway needs time to release it
+    for (let i = 0; i < 10; i++) {
+      const stillUp = await this.healthCheck();
+      if (!stillUp) break;
+      await sleep(500);
+    }
+
+    // Start fresh — inherits current process.env
+    this.restartCount = 0;
+    await this.start();
+    await this.waitForReady();
+    logger.info("OpenClaw gateway restarted successfully");
   }
 
   /**
