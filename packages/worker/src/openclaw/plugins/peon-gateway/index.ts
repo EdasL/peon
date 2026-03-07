@@ -839,20 +839,23 @@ You are the lead agent. Before writing any code, you MUST spawn teammates using 
 The user watches the task board to track your team's progress. You MUST keep it updated using the peon-tasks.sh script via Bash.
 
 ### Commands (run via Bash):
-- Create task: \`bash .claude/hooks/peon-tasks.sh create <id> "<subject>" <owner>\`
+- List tasks:  \`bash .claude/hooks/peon-tasks.sh list\`
 - Start task:  \`bash .claude/hooks/peon-tasks.sh start <id>\`
 - Complete:    \`bash .claude/hooks/peon-tasks.sh done <id>\`
-- List tasks:  \`bash .claude/hooks/peon-tasks.sh list\`
 
 ### Protocol:
-1. Before spawning teammates: create all tasks on the board with unique ids, clear subjects, and owner names matching teammate roles
-2. When a teammate begins work: mark it in_progress
-3. When a teammate finishes: mark it done
-4. Include these task board instructions when spawning each teammate so they can update their own task status
+1. Run \`bash .claude/hooks/peon-tasks.sh list\` to see pre-created tasks and their IDs
+2. Assign tasks to teammates by matching task subjects to teammate roles
+3. When spawning each teammate, include the EXACT task IDs they are responsible for
 
-### IMPORTANT for teammates:
-When spawning teammates, include in each teammate's prompt:
-"Update the task board by running: bash .claude/hooks/peon-tasks.sh start <task-id> when you begin, and bash .claude/hooks/peon-tasks.sh done <task-id> when finished."
+### CRITICAL — teammate prompt template:
+When spawning each teammate, you MUST include this VERBATIM in their prompt, replacing <TASK-ID> with the actual UUID from the task list:
+
+"TASK BOARD RULES (you MUST follow these):
+1. FIRST action: run \\\`bash .claude/hooks/peon-tasks.sh start <TASK-ID>\\\`
+2. Do your work
+3. LAST action before finishing: run \\\`bash .claude/hooks/peon-tasks.sh done <TASK-ID>\\\`
+Never skip the done step. The user is watching the board."
 
 ## Verification (mandatory)
 

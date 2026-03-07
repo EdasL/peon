@@ -257,10 +257,6 @@ export function createHookEventRoutes(): Hono {
       return c.json({ error: "eventType and agentId are required" }, 400)
     }
 
-    // #region agent log
-    fetch('http://host.docker.internal:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'02b42e'},body:JSON.stringify({sessionId:'02b42e',location:'hook-events.ts:entry',message:'hook event received',data:{eventType:body.eventType,agentId:body.agentId,toolName:body.toolName,teammateName:body.teammateName,taskId:body.taskId,taskSubject:body.taskSubject,hasToolInput:!!body.toolInput,projectIdFromBody:body.projectId},timestamp:Date.now(),hypothesisId:'H-B'})}).catch(()=>{});
-    // #endregion
-
     // Resolve projectId: prefer explicit from payload, fall back to token lookup
     const projectId = body.projectId || await resolveProjectId(tokenData.conversationId)
     if (!projectId) {
@@ -331,9 +327,6 @@ export function createHookEventRoutes(): Hono {
           ),
           columns: { id: true, subject: true },
         })
-        // #region agent log
-        fetch('http://host.docker.internal:7528/ingest/3b5868df-547b-40a4-99d5-868316344423',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'02b42e'},body:JSON.stringify({sessionId:'02b42e',location:'hook-events.ts:TaskCompleted',message:'TaskCompleted subject match attempt',data:{taskSubject:body.taskSubject,taskIdFromCC:body.taskId,matchedTaskId:existing?.id??null,matchedSubject:existing?.subject??null,projectId},timestamp:Date.now(),hypothesisId:'H-C'})}).catch(()=>{});
-        // #endregion
         if (existing) matchedTaskId = existing.id
       }
 
@@ -351,6 +344,36 @@ export function createHookEventRoutes(): Hono {
       }
       await handleWorkerTaskUpdate(projectId, task)
       logger.debug(`hook-events: TaskCompleted task=${taskId}${matchedTaskId ? " (matched by subject)" : ""} for project=${projectId}`)
+    }
+
+    // Auto-complete in-progress tasks when the Claude Code session ends.
+    // SubagentStop/TaskCompleted hooks don't fire in --teammate-mode in-process,
+    // so SessionEnd (which fires after all teammates finish) is our only signal.
+    if (body.eventType === "SessionEnd") {
+      const inProgressTasks = await db.query.tasks.findMany({
+        where: and(
+          eq(tasks.projectId, projectId),
+          eq(tasks.status, "in_progress"),
+        ),
+        columns: { id: true, subject: true, owner: true },
+      })
+      for (const t of inProgressTasks) {
+        const doneTask: WorkerTask = {
+          id: t.id,
+          subject: t.subject,
+          description: "",
+          status: "completed",
+          owner: t.owner,
+          boardColumn: "done",
+          updatedAt: Date.now(),
+          blocks: [],
+          blockedBy: [],
+        }
+        await handleWorkerTaskUpdate(projectId, doneTask)
+      }
+      if (inProgressTasks.length > 0) {
+        logger.info(`hook-events: SessionEnd auto-completed ${inProgressTasks.length} in_progress tasks for project=${projectId}`)
+      }
     }
 
     // Broadcast agent_activity from hook events (PreToolUse/PostToolUse have full toolInput)

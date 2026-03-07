@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { useChat } from "@/hooks/use-chat"
 import { Button } from "@/components/ui/button"
-import { Loader2, MessageSquare, Send, X, RefreshCw } from "lucide-react"
+import { Loader2, MessageSquare, Send, X, RefreshCw, Copy, Check } from "lucide-react"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { RichMessage } from "./RichMessage"
 import { cn } from "@/lib/utils"
@@ -50,7 +50,6 @@ function splitContentSegments(blocks: ContentBlock[], fallbackText?: string): Co
       if (block.type === "text" && block.text) {
         textBuf += block.text
       } else if (block.type === "thinking") {
-        // keep thinking blocks with tools visually
         toolBuf.push(block)
       }
     }
@@ -58,12 +57,44 @@ function splitContentSegments(blocks: ContentBlock[], fallbackText?: string): Co
   flushTools()
   flushText()
 
-  // If nothing was produced, fall back to plain content
   if (segments.length === 0 && fallbackText?.trim()) {
     segments.push({ type: "text", text: fallbackText })
   }
 
   return segments
+}
+
+function extractText(blocks: ContentBlock[] | undefined, fallback: string): string {
+  if (!blocks?.length) return fallback
+  return blocks
+    .filter((b) => b.type === "text" && b.text)
+    .map((b) => b.text!)
+    .join("\n\n") || fallback
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }, [text])
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="opacity-0 group-hover/msg:opacity-100 transition-opacity duration-150 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 -m-0.5 rounded-sm"
+      aria-label="Copy message"
+    >
+      {copied ? (
+        <Check className="h-3 w-3 text-green-500" />
+      ) : (
+        <Copy className="h-3 w-3" />
+      )}
+    </button>
+  )
 }
 
 function TypingDots() {
@@ -102,18 +133,20 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
   const renderedMessages = useMemo(() => {
     return messages.flatMap((msg) => {
       const key = msg._stableKey || msg.id
+      const copyText = extractText(msg.contentBlocks, msg.content)
       const footer = (label: string) => (
         <Message.Footer>
-          <span className="text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             {label}
             {msg.createdAt && ` \u00b7 ${formatTime(msg.createdAt)}`}
+            <CopyButton text={copyText} />
           </span>
         </Message.Footer>
       )
 
       if (msg.role !== "assistant") {
         return (
-          <Message key={key} model={{ direction: "outgoing", position: "single" }}>
+          <Message key={key} model={{ direction: "outgoing", position: "single" }} className="group/msg">
             <Message.CustomContent>
               <span className="text-sm leading-relaxed">{msg.content}</span>
             </Message.CustomContent>
@@ -128,6 +161,7 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
           <Message
             key={`${key}-seg-${i}`}
             model={{ direction: "incoming", position: "single" }}
+            className="group/msg"
           >
             <Message.CustomContent>
               {seg.type === "tools" ? (
@@ -142,7 +176,7 @@ export function ChatPanel({ projectId, disabled }: { projectId: string; disabled
       }
 
       return (
-        <Message key={key} model={{ direction: "incoming", position: "single" }}>
+        <Message key={key} model={{ direction: "incoming", position: "single" }} className="group/msg">
           <Message.CustomContent>
             <MarkdownMessage content={msg.content} />
           </Message.CustomContent>
