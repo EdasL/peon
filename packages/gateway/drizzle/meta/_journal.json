@@ -5,64 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1772454471596,
-      "tag": "0000_late_kulan_gath",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1772482890690,
-      "tag": "0001_premium_patch",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1772506723058,
-      "tag": "0002_motionless_black_cat",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1772507075937,
-      "tag": "0003_mushy_morlun",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1772600000000,
-      "tag": "0004_team_builder",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1772700000000,
-      "tag": "0005_master_chat",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1772800000000,
-      "tag": "0006_rename_lobu_to_peon",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1772900000000,
-      "tag": "0007_content_blocks",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1772869912627,
-      "tag": "0008_chunky_ironclad",
+      "when": 1772872564754,
+      "tag": "0000_nasty_angel",
       "breakpoints": true
     }
   ]
